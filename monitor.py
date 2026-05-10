@@ -382,17 +382,36 @@ def ai_analyze_failure(job: dict, log_text: str) -> str:
     if not OPENAI_API_KEY:
         return ""
 
-    log_truncated = log_text[-4000:] if len(log_text) > 4000 else log_text
+    log_truncated = log_text[-8000:] if len(log_text) > 8000 else log_text
 
-    prompt = f"""You are a CI failure analyst for OpenShift. Analyze this failed CI job log and provide a concise summary.
+    prompt = f"""You are a senior CI failure analyst for OpenShift. Analyze this failed CI job and provide a detailed, structured investigation report.
 
 Job: {job['name']}
 State: {job['state']}
 
-Answer these questions in 2-3 sentences:
-1. What is the root cause of the failure?
-2. Is this an infrastructure issue (cluster setup, timeout, network) or a real test/code failure?
-3. What is the recommended action?
+Provide your analysis in this exact format:
+
+**Failed Tests:**
+- List each test that failed with its full name
+- If no specific test names visible, say "Test names not found in logs"
+
+**Failure Messages:**
+- Quote the exact error messages from the logs (1-2 lines each)
+
+**Root Cause:**
+- What specifically caused the failure? Be precise (e.g. "port 9443 missing from expected matrix" not just "test failed")
+
+**Classification:**
+- INFRA (cluster setup, timeout, network, node issues — not a code bug)
+- TEST_FAILURE (a real test assertion failed — code or config needs fixing)
+- BUILD_ERROR (compilation or dependency issue)
+- FLAKE (intermittent failure, likely passes on retry)
+- MATRIX_MISMATCH (expected vs actual communication matrix differs)
+
+**Recommended Action:**
+- Specific steps to fix (e.g. "update expected matrix in docs/stable/", "bump dependency X to vY.Z", "retry — likely a flake")
+
+**Severity:** CRITICAL / HIGH / MEDIUM / LOW
 
 Log (last portion):
 {log_truncated}
@@ -408,7 +427,7 @@ Log (last portion):
             json={
                 "model": AI_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 300,
+                "max_tokens": 600,
                 "temperature": 0.2,
             },
             timeout=30,
