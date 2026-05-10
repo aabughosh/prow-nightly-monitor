@@ -19,7 +19,10 @@ import json
 import logging
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,6 +41,9 @@ JOB_FILTER = os.environ.get("JOB_FILTER", "network-flow-matrix")
 MIN_VERSION = os.environ.get("MIN_VERSION", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 AI_MODEL = os.environ.get("AI_MODEL", "gpt-4o-mini")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+AUTO_FIX = os.environ.get("AUTO_FIX", "false").lower() == "true"
+TARGET_REPO = os.environ.get("TARGET_REPO", "")
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "./public"))
 GCS_BASE = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs"
 
@@ -419,6 +425,155 @@ Log (last portion):
 
 
 # ---------------------------------------------------------------------------
+# Auto-fix PR creation
+# ---------------------------------------------------------------------------
+
+def _run(cmd: list[str], cwd: str | None = None, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=check, timeout=300)
+
+
+def attempt_auto_fix(job: dict, category: str, log_text: str,
+                     ai_summary: str) -> str:
+    """Try to auto-fix the failure and create a PR. Returns PR URL or empty string."""
+    if not AUTO_FIX or not GITHUB_TOKEN:
+        return ""
+
+    repo_url = TARGET_REPO
+    if not repo_url:
+        repo_url = _guess_repo_from_job(job["name"])
+    if not repo_url:
+        log.info("  Cannot determine target repo for auto-fix")
+        return ""
+
+    if category == "infra":
+        log.info("  Infra failure — no auto-fix needed")
+        return ""
+
+    version = extract_version(job["name"])
+    branch = f"release-{version}" if version else "main"
+
+    tmpdir = tempfile.mkdtemp(prefix="prow-fix-")
+    try:
+        auth_url = repo_url
+        if GITHUB_TOKEN and "github.com" in repo_url:
+            auth_url = repo_url.replace(
+                "https://github.com/",
+                f"https://x-access-token:{GITHUB_TOKEN}@github.com/",
+            )
+
+        clone_result = _run(["git", "clone", "--depth=50", "--branch", branch,
+                             auth_url, tmpdir], check=False)
+        if clone_result.returncode != 0:
+            for fallback in ["main", "master"]:
+                clone_result = _run(["git", "clone", "--depth=50", "--branch",
+                                     fallback, auth_url, tmpdir], check=False)
+                if clone_result.returncode == 0:
+                    branch = fallback
+                    break
+            if clone_result.returncode != 0:
+                log.warning("  Could not clone %s", repo_url)
+                return ""
+
+        _run(["git", "config", "user.email", "prow-monitor@redhat.com"],
+             cwd=tmpdir, check=False)
+        _run(["git", "config", "user.name", "Prow Nightly Monitor"],
+             cwd=tmpdir, check=False)
+
+        fix_branch = f"fix-nightly-{version}-{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+        _run(["git", "checkout", "-b", fix_branch], cwd=tmpdir)
+
+        fixed = False
+        fix_description = ""
+
+        if category == "build_error" or "go.mod" in log_text.lower():
+            result = _run(["go", "mod", "tidy"], cwd=tmpdir, check=False)
+            if result.returncode == 0:
+                diff = _run(["git", "diff", "--stat"], cwd=tmpdir, check=False)
+                if diff.stdout.strip():
+                    fixed = True
+                    fix_description = "Run go mod tidy to fix dependency issues"
+
+        if not fixed:
+            govulncheck_result = _run(
+                ["govulncheck", "./..."], cwd=tmpdir, check=False
+            )
+            if "Fixed in:" in govulncheck_result.stdout:
+                fix_match = re.search(
+                    r"Module:\s+(\S+).*?Found in:\s+(\S+).*?Fixed in:\s+\S+@(v[\d.]+[\w.-]*)",
+                    govulncheck_result.stdout, re.DOTALL,
+                )
+                if fix_match:
+                    pkg = fix_match.group(1)
+                    fixed_ver = fix_match.group(3)
+                    _run(["go", "get", f"{pkg}@{fixed_ver}"], cwd=tmpdir, check=False)
+                    _run(["go", "mod", "tidy"], cwd=tmpdir, check=False)
+                    vendor_dir = Path(tmpdir) / "vendor"
+                    if vendor_dir.exists():
+                        _run(["go", "mod", "vendor"], cwd=tmpdir, check=False)
+                    diff = _run(["git", "diff", "--stat"], cwd=tmpdir, check=False)
+                    if diff.stdout.strip():
+                        fixed = True
+                        fix_description = f"Bump {pkg} to {fixed_ver} (vulnerability fix)"
+
+        if not fixed:
+            log.info("  Could not determine an auto-fix for this failure")
+            return ""
+
+        _run(["git", "add", "-A"], cwd=tmpdir)
+        _run(["git", "commit", "-m", f"fix: {fix_description}\n\nAuto-fix by prow-nightly-monitor for job:\n{job['name']}"],
+             cwd=tmpdir, check=False)
+
+        push_result = _run(["git", "push", "--force", "origin", fix_branch],
+                           cwd=tmpdir, check=False)
+        if push_result.returncode != 0:
+            log.error("  Push failed: %s", push_result.stderr[:200])
+            return ""
+
+        repo_slug = repo_url.replace("https://github.com/", "")
+        pr_result = _run(
+            ["gh", "pr", "create",
+             "--head", fix_branch,
+             "--title", f"fix: {fix_description}",
+             "--body", f"## Auto-fix by Prow Nightly Monitor\n\n"
+                       f"**Job:** {job['name']}\n"
+                       f"**Status:** {job['state']}\n"
+                       f"**Fix:** {fix_description}\n\n"
+                       f"**Prow URL:** {job['url']}\n\n"
+                       f"{'**AI Analysis:** ' + ai_summary if ai_summary else ''}\n\n"
+                       f"---\n*Created automatically by [prow-nightly-monitor]"
+                       f"(https://github.com/aabughosh/prow-nightly-monitor)*",
+             "--repo", repo_slug],
+            cwd=tmpdir, check=False,
+        )
+        if pr_result.returncode == 0:
+            pr_url = pr_result.stdout.strip()
+            log.info("  PR created: %s", pr_url)
+            return pr_url
+        else:
+            log.error("  PR creation failed: %s", pr_result.stderr[:200])
+            return ""
+
+    except Exception as e:
+        log.warning("  Auto-fix error: %s", e)
+        return ""
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _guess_repo_from_job(job_name: str) -> str:
+    """Guess the GitHub repo from the Prow job name."""
+    if "network-flow-matrix" in job_name:
+        return "https://github.com/openshift-kni/commatrix"
+    if "ptp" in job_name:
+        return "https://github.com/openshift/ptp-operator"
+    if "cnf-features" in job_name:
+        return "https://github.com/openshift-kni/cnf-features-deploy"
+    if "sriov" in job_name:
+        return "https://github.com/k8snetworkplumbingwg/sriov-network-operator"
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # HTML generation
 # ---------------------------------------------------------------------------
 
@@ -489,6 +644,10 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
 
             if ai_summary:
                 analysis_html += f'<details><summary>AI Analysis</summary><p style="font-size:13px;color:#333;margin:8px 0">{ai_summary}</p></details>'
+
+            pr_url_fix = analysis.get("pr_url", "")
+            if pr_url_fix:
+                analysis_html += f'<div style="margin-top:4px"><span style="background:#28a745;color:white;padding:2px 8px;border-radius:4px;font-size:12px">AUTO-FIX</span> <a href="{pr_url_fix}" target="_blank">PR Created</a></div>'
 
         rows.append(f"""
         <tr style="background:{color}">
@@ -641,11 +800,17 @@ def main():
             if ai_summary:
                 log.info("  AI: %s", ai_summary[:100])
 
+        pr_url = ""
+        if AUTO_FIX and category not in ("infra",):
+            log.info("  Attempting auto-fix...")
+            pr_url = attempt_auto_fix(job, category, log_text, ai_summary)
+
         analyses[job["name"]] = {
             "category": category,
             "reason": reason,
             "ai_summary": ai_summary,
             "junit_failures": junit_failures,
+            "pr_url": pr_url,
             "log_snippet": log_text[-500:] if log_text else "",
         }
 

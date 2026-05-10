@@ -23,12 +23,21 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+      - name: Install Go (for auto-fix)
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
       - name: Run monitor
         env:
           JOB_FILTER: ${{ vars.JOB_FILTER || 'network-flow-matrix' }}
           MIN_VERSION: ${{ vars.MIN_VERSION || '' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           AI_MODEL: ${{ vars.AI_MODEL || 'gpt-4o-mini' }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
+          AUTO_FIX: ${{ vars.AUTO_FIX || 'false' }}
+          TARGET_REPO: ${{ vars.TARGET_REPO || '' }}
           OUTPUT_DIR: ./public
         run: python monitor.py
 
