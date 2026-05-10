@@ -345,6 +345,110 @@ def generate_trend_html(history: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Test layer categorization
+# ---------------------------------------------------------------------------
+
+TEST_LAYERS = [
+    {
+        "name": "cluster_setup",
+        "label": "Cluster Setup",
+        "badge_color": "#6c757d",
+        "patterns": [
+            r"cluster.*install",
+            r"creating.*cluster",
+            r"waiting for cluster",
+            r"bootstrap",
+            r"machine-config.*pool",
+            r"clusterversion.*progressing",
+        ],
+    },
+    {
+        "name": "upgrade",
+        "label": "Upgrade",
+        "badge_color": "#795548",
+        "patterns": [
+            r"upgrade.*fail",
+            r"upgrade.*timeout",
+            r"waiting.*upgrade",
+            r"clusterversion.*error",
+            r"from.*stable.*to",
+        ],
+    },
+    {
+        "name": "e2e_platform",
+        "label": "OpenShift e2e",
+        "badge_color": "#9c27b0",
+        "patterns": [
+            r"\[sig-",
+            r"openshift-tests",
+            r"e2e.*conformance",
+            r"\[Conformance\]",
+            r"\[Serial\]",
+            r"\[Disruptive\]",
+        ],
+    },
+    {
+        "name": "commatrix",
+        "label": "commatrix",
+        "badge_color": "#e91e63",
+        "patterns": [
+            r"network.?flow.?matrix",
+            r"commatrix",
+            r"communication.*matrix",
+            r"matrix.*diff",
+            r"matrix.*mismatch",
+            r"endpointslice",
+            r"ss.*command",
+        ],
+    },
+    {
+        "name": "ptp",
+        "label": "PTP",
+        "badge_color": "#ff5722",
+        "patterns": [
+            r"ptp",
+            r"linuxptp",
+            r"clock.*sync",
+            r"phc2sys",
+            r"ptp4l",
+        ],
+    },
+]
+
+
+def categorize_test_layer(log_text: str, job_name: str) -> tuple[str, str]:
+    """Determine which test layer the failure is in.
+
+    Returns (layer_name, layer_label).
+    """
+    fail_section = ""
+    for line in log_text.splitlines():
+        if re.search(r"FAIL|error|fatal|panic", line, re.IGNORECASE):
+            fail_section += line + "\n"
+
+    search_text = fail_section if fail_section else log_text[-3000:]
+
+    for layer in TEST_LAYERS:
+        for pattern in layer["patterns"]:
+            if re.search(pattern, search_text, re.IGNORECASE):
+                return layer["name"], layer["label"]
+            if re.search(pattern, job_name, re.IGNORECASE):
+                return layer["name"], layer["label"]
+
+    return "unknown_layer", "Unknown Layer"
+
+
+def get_layer_badge(layer_name: str) -> str:
+    """Get HTML badge for a test layer."""
+    for layer in TEST_LAYERS:
+        if layer["name"] == layer_name:
+            return (f'<span style="background:{layer["badge_color"]};color:white;'
+                    f'padding:2px 8px;border-radius:4px;font-size:11px">'
+                    f'{layer["label"]}</span>')
+    return '<span style="background:#999;color:white;padding:2px 8px;border-radius:4px;font-size:11px">?</span>'
+
+
+# ---------------------------------------------------------------------------
 # AI failure analysis
 # ---------------------------------------------------------------------------
 
@@ -703,7 +807,8 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                 "unknown": '<span style="background:#6c757d;color:white;padding:2px 8px;border-radius:4px;font-size:12px">UNKNOWN</span>',
             }.get(category, "")
 
-            analysis_html = f"{cat_badge} {reason}"
+            layer_badge = get_layer_badge(analysis.get("layer", ""))
+            analysis_html = f"{layer_badge} {cat_badge} {reason}"
 
             junit_failures = analysis.get("junit_failures", [])
             if junit_failures:
@@ -855,7 +960,8 @@ def main():
         log_text = fetch_failure_log(job)
 
         category, reason = classify_failure(log_text)
-        log.info("  Classification: %s — %s", category, reason)
+        layer_name, layer_label = categorize_test_layer(log_text, job["name"])
+        log.info("  Classification: %s — %s (layer: %s)", category, reason, layer_label)
 
         log.info("  Fetching JUnit results...")
         junit_failures = fetch_junit_results(job)
@@ -887,6 +993,8 @@ def main():
         analyses[job["name"]] = {
             "category": category,
             "reason": reason,
+            "layer": layer_name,
+            "layer_label": layer_label,
             "ai_summary": ai_summary,
             "junit_failures": junit_failures,
             "pr_url": pr_url,
