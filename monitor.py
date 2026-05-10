@@ -294,7 +294,7 @@ def update_history(history: dict, jobs: list[dict]) -> dict:
 
 
 def generate_trend_html(history: dict) -> str:
-    """Generate HTML for the trend chart using simple CSS bars."""
+    """Generate HTML for the trend chart — dark theme with links."""
     runs = history.get("runs", [])[-14:]
     if not runs:
         return ""
@@ -309,40 +309,48 @@ def generate_trend_html(history: dict) -> str:
         total = max(run.get("total", 1), 1)
         passed = run.get("passed", 0)
         failed = run.get("failed", 0)
-        pass_pct = int(passed / total * 100)
-        fail_pct = int(failed / total * 100)
+        pass_pct = min(int(passed / total * 100), 100)
+        fail_pct = min(int(failed / total * 100), 100)
+        prow_link = f'{PROW_URL}/?type=periodic&job=*{JOB_FILTER}*'
 
-        bars_html += f"""
-        <div style="text-align:center;flex:1;min-width:40px">
-          <div style="height:100px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">
-            <div style="width:24px;background:#dc3545;height:{fail_pct}px;border-radius:2px 2px 0 0" title="{failed} failed"></div>
-            <div style="width:24px;background:#28a745;height:{pass_pct}px" title="{passed} passed"></div>
-          </div>
-          <div style="font-size:10px;color:#666;margin-top:4px">{date}</div>
-        </div>"""
+        bars_html += (
+            f'<a href="{prow_link}" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px">'
+            f'<div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center">'
+            f'<div style="font-size:10px;color:#8b949e;margin-bottom:2px">{passed}/{total}</div>'
+            f'<div style="width:28px;background:#f85149;height:{fail_pct}px;border-radius:3px 3px 0 0" title="{failed} failed"></div>'
+            f'<div style="width:28px;background:#3fb950;height:{max(pass_pct, 2)}px;border-radius:0 0 3px 3px" title="{passed} passed"></div>'
+            f'</div>'
+            f'<div style="font-size:10px;color:#484f58;margin-top:6px">{date}</div>'
+            f'</a>'
+        )
 
     version_trends = ""
     for version in versions:
         dots = ""
         for run in runs:
             vdata = run.get("by_version", {}).get(version, {})
-            passed = vdata.get("passed", 0)
-            failed = vdata.get("failed", 0)
-            if failed > 0:
-                dots += '<span style="color:#dc3545;font-size:18px" title="failed">●</span>'
-            elif passed > 0:
-                dots += '<span style="color:#28a745;font-size:18px" title="passed">●</span>'
+            p = vdata.get("passed", 0)
+            f = vdata.get("failed", 0)
+            if f > 0:
+                dots += f'<span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="{run["date"]}: {f} failed"></span>'
+            elif p > 0:
+                dots += f'<span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="{run["date"]}: {p} passed"></span>'
             else:
-                dots += '<span style="color:#ccc;font-size:18px" title="no data">○</span>'
-        version_trends += f'<div style="margin:4px 0"><strong>{version}:</strong> {dots}</div>'
+                dots += f'<span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="{run["date"]}: no data"></span>'
+        version_trends += (
+            f'<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d">'
+            f'<span class="version-badge" style="min-width:50px;text-align:center">{version}</span>'
+            f'<div>{dots}</div>'
+            f'</div>'
+        )
 
     return f"""
-    <div style="background:white;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);margin:16px 0">
-      <h2 style="margin-top:0">Trend (last 14 days)</h2>
-      <div style="display:flex;align-items:flex-end;gap:4px;margin-bottom:16px">
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:20px;margin-bottom:24px">
+      <h2 style="font-size:16px;color:#f0f6fc;margin-bottom:16px">Trend (last 14 days)</h2>
+      <div style="display:flex;align-items:flex-end;gap:4px;margin-bottom:24px;padding:12px;background:#0d1117;border-radius:8px">
         {bars_html}
       </div>
-      <h3>Pass/Fail by Version</h3>
+      <h3 style="font-size:14px;color:#8b949e;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px">Pass/Fail by Version</h3>
       {version_trends}
     </div>"""
 
