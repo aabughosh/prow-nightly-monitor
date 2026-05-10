@@ -813,13 +813,18 @@ STATE_COLOR = {
 
 def generate_html(jobs: list[dict], analyses: dict[str, dict],
                    trend_html: str = "") -> str:
-    """Generate the HTML dashboard."""
+    """Generate the HTML dashboard using template."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     total = len(jobs)
     passed = sum(1 for j in jobs if j["state"] == "success")
     failed = sum(1 for j in jobs if j["state"] in ("failure", "error"))
     pending = sum(1 for j in jobs if j["state"] == "pending")
+    pass_rate = int(passed / max(passed + failed, 1) * 100)
+    rate_color = "green" if pass_rate >= 80 else "yellow" if pass_rate >= 50 else "red"
+
+    ai_provider, _, ai_model = _get_ai_provider()
+    ai_status = f"{ai_provider} ({ai_model})" if ai_provider else "disabled"
 
     versions = sorted(set(extract_version(j["name"]) for j in jobs if extract_version(j["name"])))
 
@@ -841,11 +846,12 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
         analysis_html = ""
         if state in ("failure", "error"):
             cat_badge = {
-                "infra": '<span style="background:#ffc107;padding:2px 8px;border-radius:4px;font-size:12px">INFRA</span>',
-                "test_failure": '<span style="background:#dc3545;color:white;padding:2px 8px;border-radius:4px;font-size:12px">TEST FAILURE</span>',
-                "build_error": '<span style="background:#dc3545;color:white;padding:2px 8px;border-radius:4px;font-size:12px">BUILD ERROR</span>',
-                "matrix_mismatch": '<span style="background:#fd7e14;color:white;padding:2px 8px;border-radius:4px;font-size:12px">MATRIX MISMATCH</span>',
-                "unknown": '<span style="background:#6c757d;color:white;padding:2px 8px;border-radius:4px;font-size:12px">UNKNOWN</span>',
+                "infra": '<span class="badge badge-infra">INFRA</span>',
+                "test_failure": '<span class="badge badge-test">TEST FAILURE</span>',
+                "build_error": '<span class="badge badge-build">BUILD ERROR</span>',
+                "matrix_mismatch": '<span class="badge badge-matrix">MATRIX MISMATCH</span>',
+                "error": '<span class="badge badge-error">ERROR</span>',
+                "unknown": '<span class="badge badge-unknown">UNKNOWN</span>',
             }.get(category, "")
 
             layer_badge = get_layer_badge(analysis.get("layer", ""), analysis.get("layer_label", ""))
@@ -865,115 +871,49 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
 
             pr_url_fix = analysis.get("pr_url", "")
             if pr_url_fix:
-                analysis_html += f'<div style="margin-top:4px"><span style="background:#28a745;color:white;padding:2px 8px;border-radius:4px;font-size:12px">AUTO-FIX</span> <a href="{pr_url_fix}" target="_blank">PR Created</a></div>'
+                analysis_html += f'<div style="margin-top:4px"><span class="badge badge-fix">AUTO-FIX</span> <a href="{pr_url_fix}" target="_blank">PR Created</a></div>'
 
-        rows.append(f"""
-        <tr style="background:{color}">
-            <td>{emoji} {state}</td>
-            <td><strong>{version}</strong></td>
-            <td><a href="{url}" target="_blank" title="{job['name']}">{name_short}</a></td>
-            <td>{duration}</td>
-            <td>{analysis_html}</td>
-            <td>{job['start_time'][:16] if job['start_time'] else ''}</td>
-        </tr>""")
+        rows.append(
+            f'<tr data-state="{state}">'
+            f'<td>{emoji} {state}</td>'
+            f'<td><span class="version-badge">{version}</span></td>'
+            f'<td><a href="{url}" target="_blank" title="{job["name"]}">{name_short}</a></td>'
+            f'<td class="duration">{duration}</td>'
+            f'<td>{analysis_html}</td>'
+            f'<td class="duration">{job["start_time"][:16] if job["start_time"] else ""}</td>'
+            f'</tr>'
+        )
 
-    version_filter_buttons = " ".join(
-        f'<button onclick="filterVersion(\'{v}\')" style="margin:2px;padding:4px 12px;border:1px solid #ccc;border-radius:4px;cursor:pointer">{v}</button>'
+    version_buttons = " ".join(
+        f'<button class="filter-btn" onclick="filterVersion(\'{v}\', this)">{v}</button>'
         for v in versions
     )
 
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prow Nightly Monitor — {JOB_FILTER}</title>
-<style>
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 20px; background: #f5f5f5; }}
-  h1 {{ color: #333; }}
-  .stats {{ display: flex; gap: 16px; margin: 16px 0; }}
-  .stat {{ background: white; padding: 16px 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; }}
-  .stat-num {{ font-size: 32px; font-weight: bold; }}
-  .stat-label {{ font-size: 14px; color: #666; }}
-  .green {{ color: #28a745; }}
-  .red {{ color: #dc3545; }}
-  .blue {{ color: #007bff; }}
-  .gray {{ color: #6c757d; }}
-  table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-top: 16px; }}
-  th {{ background: #343a40; color: white; padding: 12px; text-align: left; }}
-  td {{ padding: 10px 12px; border-bottom: 1px solid #eee; }}
-  a {{ color: #007bff; text-decoration: none; }}
-  a:hover {{ text-decoration: underline; }}
-  details {{ margin-top: 4px; }}
-  summary {{ cursor: pointer; color: #007bff; font-size: 13px; }}
-  .filters {{ margin: 12px 0; }}
-  .footer {{ margin-top: 20px; font-size: 12px; color: #999; }}
-</style>
-</head>
-<body>
-<h1>Prow Nightly Monitor — <code>{JOB_FILTER}</code></h1>
-<p>Last updated: {now}</p>
+    template_path = Path(__file__).parent / "template.html"
+    if template_path.exists():
+        html = template_path.read_text()
+    else:
+        log.warning("template.html not found, using basic output")
+        html = "<html><body><h1>Prow Monitor</h1>{{TABLE_ROWS}}</body></html>"
 
-<div class="stats">
-  <div class="stat"><div class="stat-num">{total}</div><div class="stat-label">Total Jobs</div></div>
-  <div class="stat"><div class="stat-num green">{passed}</div><div class="stat-label">Passed</div></div>
-  <div class="stat"><div class="stat-num red">{failed}</div><div class="stat-label">Failed</div></div>
-  <div class="stat"><div class="stat-num blue">{pending}</div><div class="stat-label">Pending</div></div>
-</div>
+    replacements = {
+        "{{JOB_FILTER}}": JOB_FILTER,
+        "{{NOW}}": now,
+        "{{AI_STATUS}}": ai_status,
+        "{{TOTAL}}": str(total),
+        "{{PASSED}}": str(passed),
+        "{{FAILED}}": str(failed),
+        "{{PENDING}}": str(pending),
+        "{{PASS_RATE}}": str(pass_rate),
+        "{{RATE_COLOR}}": rate_color,
+        "{{TREND_HTML}}": trend_html,
+        "{{VERSION_BUTTONS}}": version_buttons,
+        "{{TABLE_ROWS}}": "\n".join(rows),
+        "{{PROW_URL}}": PROW_URL,
+    }
+    for key, value in replacements.items():
+        html = html.replace(key, value)
 
-{trend_html}
-
-<div class="filters">
-  <strong>Filter by version:</strong>
-  <button onclick="filterVersion('')" style="margin:2px;padding:4px 12px;border:1px solid #ccc;border-radius:4px;cursor:pointer">All</button>
-  {version_filter_buttons}
-  &nbsp;
-  <strong>Status:</strong>
-  <button onclick="filterState('')" style="margin:2px;padding:4px 12px;border:1px solid #ccc;border-radius:4px;cursor:pointer">All</button>
-  <button onclick="filterState('failure')" style="margin:2px;padding:4px 12px;border:1px solid #ccc;border-radius:4px;cursor:pointer;background:#f8d7da">Failed</button>
-  <button onclick="filterState('success')" style="margin:2px;padding:4px 12px;border:1px solid #ccc;border-radius:4px;cursor:pointer;background:#d4edda">Passed</button>
-</div>
-
-<table id="jobsTable">
-<thead>
-<tr>
-  <th>Status</th>
-  <th>Version</th>
-  <th>Job</th>
-  <th>Duration</th>
-  <th>Analysis</th>
-  <th>Started</th>
-</tr>
-</thead>
-<tbody>
-{"".join(rows)}
-</tbody>
-</table>
-
-<div class="footer">
-  Powered by <a href="https://github.com/aabughosh/prow-nightly-monitor">prow-nightly-monitor</a> |
-  Data from <a href="{PROW_URL}/?type=periodic&job=*{JOB_FILTER}*">Prow</a> |
-  AI analysis: {'enabled (' + AI_MODEL + ')' if OPENAI_API_KEY else 'disabled (set OPENAI_API_KEY to enable)'}
-</div>
-
-<script>
-function filterVersion(v) {{
-  const rows = document.querySelectorAll('#jobsTable tbody tr');
-  rows.forEach(row => {{
-    const version = row.cells[1].textContent.trim();
-    row.style.display = (!v || version === v) ? '' : 'none';
-  }});
-}}
-function filterState(s) {{
-  const rows = document.querySelectorAll('#jobsTable tbody tr');
-  rows.forEach(row => {{
-    const state = row.cells[0].textContent.trim().toLowerCase();
-    row.style.display = (!s || state.includes(s)) ? '' : 'none';
-  }});
-}}
-</script>
-</body>
-</html>"""
     return html
 
 
