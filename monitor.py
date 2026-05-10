@@ -349,32 +349,85 @@ def generate_trend_html(history: dict) -> str:
 # ---------------------------------------------------------------------------
 
 INFRA_PATTERNS = [
-    (r"cluster.*install.*(?:timed? ?out|fail)", "Cluster installation failed (infra issue)"),
-    (r"node.*NotReady", "Node not ready (infra issue)"),
-    (r"context deadline exceeded", "Timeout — likely infra or slow cluster"),
-    (r"error.*creating.*cluster", "Cluster creation error (infra issue)"),
-    (r"unable to connect to the server", "Cannot connect to cluster (infra issue)"),
-    (r"etcd.*not.*ready", "etcd not ready (infra issue)"),
-    (r"pod.*CrashLoopBackOff", "Pod crash loop — could be infra or real bug"),
-    (r"quota.*exceeded", "Resource quota exceeded (infra issue)"),
-    (r"lease.*expired", "Lease expired (infra issue)"),
+    (r"cluster.*install.*(?:timed? ?out|fail)", "Cluster installation failed"),
+    (r"node.*NotReady", "Node not ready"),
+    (r"context deadline exceeded", "Timeout — context deadline exceeded"),
+    (r"error.*creating.*cluster", "Cluster creation error"),
+    (r"unable to connect to the server", "Cannot connect to cluster API"),
+    (r"etcd.*not.*ready", "etcd not ready"),
+    (r"pod.*CrashLoopBackOff", "Pod crash loop"),
+    (r"quota.*exceeded", "Resource quota exceeded"),
+    (r"lease.*expired", "Lease expired"),
+    (r"failed to pull image", "Image pull failed"),
+    (r"ImagePullBackOff", "Image pull backoff"),
+    (r"timed out waiting for the condition", "Timed out waiting for condition"),
+    (r"no suitable.*node", "No suitable node for scheduling"),
+    (r"i/o timeout", "Network I/O timeout"),
+    (r"connection refused", "Connection refused"),
+    (r"connection reset by peer", "Connection reset by peer"),
+    (r"TLS handshake timeout", "TLS handshake timeout"),
+    (r"insufficient.*(?:cpu|memory|resources)", "Insufficient cluster resources"),
+    (r"cloud provider.*error", "Cloud provider error"),
+    (r"aws.*error|ec2.*error", "AWS infrastructure error"),
+    (r"failed to create.*machine", "Machine creation failed"),
+    (r"clusteroperator.*degraded", "Cluster operator degraded"),
+    (r"must-gather", "Cluster in error state (must-gather triggered)"),
+]
+
+TEST_PATTERNS = [
+    (r"FAIL:\s+(Test\S+)", "test_failure"),
+    (r"FAIL\s+\[.*?\]\s+(.+?)(?:\s+\[)", "test_failure"),
+    (r"\[FAIL\]\s+(.+)", "test_failure"),
+    (r"Error:.*?expected.*?(?:but got|to equal|to match)", "test_failure"),
+    (r"(?:assert|expect).*?fail", "test_failure"),
 ]
 
 
 def classify_failure(log_text: str) -> tuple[str, str]:
-    """Quick pattern-based classification. Returns (category, reason)."""
+    """Pattern-based classification with extracted details. Returns (category, reason)."""
     for pattern, reason in INFRA_PATTERNS:
         if re.search(pattern, log_text, re.IGNORECASE):
             return "infra", reason
 
-    if re.search(r"FAIL.*Test", log_text):
-        return "test_failure", "Test assertion failed"
-    if re.search(r"go.*build.*fail|compile.*error", log_text, re.IGNORECASE):
-        return "build_error", "Build/compile error"
-    if re.search(r"matrix.*mismatch|unexpected.*port|expected.*port", log_text, re.IGNORECASE):
+    if re.search(r"go.*build.*fail|compile.*error|cannot find package", log_text, re.IGNORECASE):
+        err_match = re.search(r"(.*(?:build|compile|cannot find).*)", log_text, re.IGNORECASE)
+        detail = err_match.group(1).strip()[:150] if err_match else ""
+        return "build_error", f"Build error: {detail}" if detail else "Build/compile error"
+
+    if re.search(r"matrix.*mismatch|unexpected.*port|expected.*port|matrix.*diff", log_text, re.IGNORECASE):
         return "matrix_mismatch", "Communication matrix mismatch — ports changed"
 
-    return "unknown", "Unknown failure — needs investigation"
+    for pattern, _ in TEST_PATTERNS:
+        match = re.search(pattern, log_text, re.IGNORECASE)
+        if match:
+            test_name = match.group(1).strip()[:100] if match.lastindex else ""
+            return "test_failure", f"Test failed: {test_name}" if test_name else "Test assertion failed"
+
+    if re.search(r"FAIL", log_text):
+        fail_lines = [l.strip() for l in log_text.splitlines() if "FAIL" in l and len(l.strip()) > 5]
+        if fail_lines:
+            return "test_failure", f"Test failed: {fail_lines[-1][:150]}"
+
+    error_lines = [l.strip() for l in log_text.splitlines()
+                   if re.search(r"(?:error|fatal|panic):", l, re.IGNORECASE)
+                   and len(l.strip()) > 10]
+    if error_lines:
+        last_errors = error_lines[-3:]
+        summary = "; ".join(e[:100] for e in last_errors)
+        return "error", f"Errors found: {summary[:250]}"
+
+    return "unknown", _extract_last_meaningful_lines(log_text)
+
+
+def _extract_last_meaningful_lines(log_text: str) -> str:
+    """Extract the last few meaningful lines from the log as a fallback summary."""
+    lines = [l.strip() for l in log_text.splitlines()
+             if l.strip() and len(l.strip()) > 15
+             and not l.strip().startswith(("#", "//", "---"))]
+    if not lines:
+        return "No meaningful output found in logs"
+    last_lines = lines[-5:]
+    return "Last log lines: " + " | ".join(l[:80] for l in last_lines)[:300]
 
 
 def ai_analyze_failure(job: dict, log_text: str) -> str:
