@@ -40,7 +40,9 @@ PROW_URL = os.environ.get("PROW_URL", "https://prow.ci.openshift.org").rstrip("/
 JOB_FILTER = os.environ.get("JOB_FILTER", "network-flow-matrix")
 MIN_VERSION = os.environ.get("MIN_VERSION", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-AI_MODEL = os.environ.get("AI_MODEL", "gpt-4o-mini")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "auto")
+AI_MODEL = os.environ.get("AI_MODEL", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 AUTO_FIX = os.environ.get("AUTO_FIX", "false").lower() == "true"
 TARGET_REPO = os.environ.get("TARGET_REPO", "")
@@ -511,9 +513,23 @@ def _extract_last_meaningful_lines(log_text: str) -> str:
     return "Last log lines: " + " | ".join(l[:80] for l in last_lines)[:300]
 
 
+def _get_ai_provider() -> tuple[str, str, str]:
+    """Determine which AI provider to use. Returns (provider, api_key, model)."""
+    if AI_PROVIDER == "claude" and ANTHROPIC_API_KEY:
+        return "claude", ANTHROPIC_API_KEY, AI_MODEL or "claude-sonnet-4-20250514"
+    if AI_PROVIDER == "openai" and OPENAI_API_KEY:
+        return "openai", OPENAI_API_KEY, AI_MODEL or "gpt-4o-mini"
+    if ANTHROPIC_API_KEY:
+        return "claude", ANTHROPIC_API_KEY, AI_MODEL or "claude-sonnet-4-20250514"
+    if OPENAI_API_KEY:
+        return "openai", OPENAI_API_KEY, AI_MODEL or "gpt-4o-mini"
+    return "", "", ""
+
+
 def ai_analyze_failure(job: dict, log_text: str) -> str:
-    """Use an LLM to analyze the failure log and produce a summary."""
-    if not OPENAI_API_KEY:
+    """Use an LLM (Claude or OpenAI) to analyze the failure log."""
+    provider, api_key, model = _get_ai_provider()
+    if not provider:
         return ""
 
     log_truncated = log_text[-8000:] if len(log_text) > 8000 else log_text
@@ -552,26 +568,48 @@ Log (last portion):
 """
 
     try:
-        resp = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": AI_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 600,
-                "temperature": 0.2,
-            },
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            return data["choices"][0]["message"]["content"].strip()
+        if provider == "claude":
+            resp = requests.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 800,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["content"][0]["text"].strip()
+            else:
+                log.warning("Claude analysis failed: HTTP %d — %s", resp.status_code, resp.text[:200])
+                return ""
         else:
-            log.warning("AI analysis failed: HTTP %d", resp.status_code)
-            return ""
+            resp = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 600,
+                    "temperature": 0.2,
+                },
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["choices"][0]["message"]["content"].strip()
+            else:
+                log.warning("OpenAI analysis failed: HTTP %d", resp.status_code)
+                return ""
     except Exception as e:
         log.warning("AI analysis error: %s", e)
         return ""
@@ -921,7 +959,8 @@ def main():
     log.info("Prow Nightly Monitor starting")
     log.info("Job filter: %s", JOB_FILTER)
     log.info("Min version: %s", MIN_VERSION or "(all)")
-    log.info("AI analysis: %s", "enabled" if OPENAI_API_KEY else "disabled")
+    ai_provider, _, ai_model = _get_ai_provider()
+    log.info("AI analysis: %s", f"{ai_provider} ({ai_model})" if ai_provider else "disabled")
 
     jobs = fetch_prow_jobs()
     jobs = filter_by_version(jobs)
@@ -950,7 +989,7 @@ def main():
         log.info("  Layer: %s (%s), Classification: %s", layer_label, layer_name, category)
 
         ai_summary = ""
-        if OPENAI_API_KEY and log_text and not log_text.startswith("("):
+        if (OPENAI_API_KEY or ANTHROPIC_API_KEY) and log_text and not log_text.startswith("("):
             log.info("  Running AI analysis...")
             import time
             time.sleep(2)
