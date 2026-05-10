@@ -345,107 +345,84 @@ def generate_trend_html(history: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Test layer categorization
+# Test layer auto-detection
 # ---------------------------------------------------------------------------
 
-TEST_LAYERS = [
-    {
-        "name": "cluster_setup",
-        "label": "Cluster Setup",
-        "badge_color": "#6c757d",
-        "patterns": [
-            r"cluster.*install",
-            r"creating.*cluster",
-            r"waiting for cluster",
-            r"bootstrap",
-            r"machine-config.*pool",
-            r"clusterversion.*progressing",
-        ],
-    },
-    {
-        "name": "upgrade",
-        "label": "Upgrade",
-        "badge_color": "#795548",
-        "patterns": [
-            r"upgrade.*fail",
-            r"upgrade.*timeout",
-            r"waiting.*upgrade",
-            r"clusterversion.*error",
-            r"from.*stable.*to",
-        ],
-    },
-    {
-        "name": "e2e_platform",
-        "label": "OpenShift e2e",
-        "badge_color": "#9c27b0",
-        "patterns": [
-            r"\[sig-",
-            r"openshift-tests",
-            r"e2e.*conformance",
-            r"\[Conformance\]",
-            r"\[Serial\]",
-            r"\[Disruptive\]",
-        ],
-    },
-    {
-        "name": "commatrix",
-        "label": "commatrix",
-        "badge_color": "#e91e63",
-        "patterns": [
-            r"network.?flow.?matrix",
-            r"commatrix",
-            r"communication.*matrix",
-            r"matrix.*diff",
-            r"matrix.*mismatch",
-            r"endpointslice",
-            r"ss.*command",
-        ],
-    },
-    {
-        "name": "ptp",
-        "label": "PTP",
-        "badge_color": "#ff5722",
-        "patterns": [
-            r"ptp",
-            r"linuxptp",
-            r"clock.*sync",
-            r"phc2sys",
-            r"ptp4l",
-        ],
-    },
+LAYER_COLORS = [
+    "#e91e63", "#9c27b0", "#3f51b5", "#009688", "#ff5722",
+    "#795548", "#607d8b", "#4caf50", "#ff9800", "#673ab7",
+]
+
+INFRA_LAYER_PATTERNS = [
+    (r"cluster.*install|creating.*cluster|bootstrap|waiting for cluster", "Cluster Setup"),
+    (r"upgrade.*fail|upgrade.*timeout|clusterversion.*error|from.*stable.*to", "Upgrade"),
+    (r"must-gather|clusteroperator.*degraded", "Cluster Health"),
 ]
 
 
-def categorize_test_layer(log_text: str, job_name: str) -> tuple[str, str]:
-    """Determine which test layer the failure is in.
+def categorize_test_layer(log_text: str, job_name: str,
+                          junit_failures: list[dict] | None = None) -> tuple[str, str]:
+    """Auto-detect which test layer the failure is in.
 
-    Returns (layer_name, layer_label).
+    Instead of hardcoded layers, it extracts the layer from:
+    1. JUnit classname/test name (most accurate)
+    2. [sig-xxx] tags in log lines
+    3. Step names in CI logs
+    4. Job name patterns
     """
-    fail_section = ""
-    for line in log_text.splitlines():
-        if re.search(r"FAIL|error|fatal|panic", line, re.IGNORECASE):
-            fail_section += line + "\n"
+    for pattern, label in INFRA_LAYER_PATTERNS:
+        if re.search(pattern, log_text, re.IGNORECASE):
+            return label.lower().replace(" ", "_"), label
 
-    search_text = fail_section if fail_section else log_text[-3000:]
+    if junit_failures:
+        classnames = set()
+        for f in junit_failures:
+            cn = f.get("classname", "")
+            if cn:
+                parts = cn.split(".")
+                classnames.add(parts[0] if parts else cn)
+            name = f.get("name", "")
+            sig_match = re.search(r"\[sig-([^\]]+)\]", name)
+            if sig_match:
+                classnames.add(f"sig-{sig_match.group(1)}")
+        if classnames:
+            label = ", ".join(sorted(classnames))[:60]
+            return "test_suite", label
 
-    for layer in TEST_LAYERS:
-        for pattern in layer["patterns"]:
-            if re.search(pattern, search_text, re.IGNORECASE):
-                return layer["name"], layer["label"]
-            if re.search(pattern, job_name, re.IGNORECASE):
-                return layer["name"], layer["label"]
+    sig_matches = re.findall(r"\[sig-([^\]]+)\]", log_text)
+    if sig_matches:
+        sigs = sorted(set(sig_matches))[:3]
+        label = ", ".join(f"sig-{s}" for s in sigs)
+        return "sig_test", label
 
-    return "unknown_layer", "Unknown Layer"
+    step_match = re.findall(r"(?:step|container|pod).*?[\"']([^\"']+)[\"'].*(?:fail|error)", log_text, re.IGNORECASE)
+    if step_match:
+        label = step_match[-1][:50]
+        return "ci_step", label
+
+    job_parts = job_name.split("-")
+    keywords = [p for p in job_parts if p not in
+                ("periodic", "ci", "openshift", "release", "main", "nightly",
+                 "e2e", "ovn", "from", "stable", "upgrade", "aws", "metal",
+                 "ipi", "bm", "single", "node")]
+    if keywords:
+        label = "-".join(keywords[-3:])[:40]
+        return "job_specific", label
+
+    return "unknown", "Unknown"
 
 
-def get_layer_badge(layer_name: str) -> str:
-    """Get HTML badge for a test layer."""
-    for layer in TEST_LAYERS:
-        if layer["name"] == layer_name:
-            return (f'<span style="background:{layer["badge_color"]};color:white;'
-                    f'padding:2px 8px;border-radius:4px;font-size:11px">'
-                    f'{layer["label"]}</span>')
-    return '<span style="background:#999;color:white;padding:2px 8px;border-radius:4px;font-size:11px">?</span>'
+def get_layer_badge(layer_name: str, layer_label: str = "") -> str:
+    """Generate an HTML badge for any test layer."""
+    if not layer_label:
+        layer_label = layer_name.replace("_", " ").title()
+
+    color_idx = hash(layer_name) % len(LAYER_COLORS)
+    color = LAYER_COLORS[color_idx]
+
+    return (f'<span style="background:{color};color:white;'
+            f'padding:2px 8px;border-radius:4px;font-size:11px">'
+            f'{layer_label}</span>')
 
 
 # ---------------------------------------------------------------------------
@@ -807,7 +784,7 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                 "unknown": '<span style="background:#6c757d;color:white;padding:2px 8px;border-radius:4px;font-size:12px">UNKNOWN</span>',
             }.get(category, "")
 
-            layer_badge = get_layer_badge(analysis.get("layer", ""))
+            layer_badge = get_layer_badge(analysis.get("layer", ""), analysis.get("layer_label", ""))
             analysis_html = f"{layer_badge} {cat_badge} {reason}"
 
             junit_failures = analysis.get("junit_failures", [])
@@ -960,8 +937,6 @@ def main():
         log_text = fetch_failure_log(job)
 
         category, reason = classify_failure(log_text)
-        layer_name, layer_label = categorize_test_layer(log_text, job["name"])
-        log.info("  Classification: %s — %s (layer: %s)", category, reason, layer_label)
 
         log.info("  Fetching JUnit results...")
         junit_failures = fetch_junit_results(job)
@@ -970,6 +945,9 @@ def main():
             if category == "unknown":
                 category = "test_failure"
                 reason = f"{len(junit_failures)} test(s) failed: {junit_failures[0]['name'][:60]}"
+
+        layer_name, layer_label = categorize_test_layer(log_text, job["name"], junit_failures)
+        log.info("  Layer: %s (%s), Classification: %s", layer_label, layer_name, category)
 
         ai_summary = ""
         if OPENAI_API_KEY and log_text and not log_text.startswith("("):
