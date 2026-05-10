@@ -815,9 +815,16 @@ def main():
         ai_summary = ""
         if OPENAI_API_KEY and log_text and not log_text.startswith("("):
             log.info("  Running AI analysis...")
+            import time
+            time.sleep(2)
             ai_summary = ai_analyze_failure(job, log_text)
             if ai_summary:
                 log.info("  AI: %s", ai_summary[:100])
+            else:
+                time.sleep(5)
+                ai_summary = ai_analyze_failure(job, log_text)
+                if ai_summary:
+                    log.info("  AI (retry): %s", ai_summary[:100])
 
         pr_url = ""
         if AUTO_FIX and category not in ("infra",):
