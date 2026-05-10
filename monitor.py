@@ -41,6 +41,7 @@ JOB_FILTER = os.environ.get("JOB_FILTER", "network-flow-matrix")
 MIN_VERSION = os.environ.get("MIN_VERSION", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "auto")
 AI_MODEL = os.environ.get("AI_MODEL", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -519,8 +520,12 @@ def _get_ai_provider() -> tuple[str, str, str]:
         return "claude", ANTHROPIC_API_KEY, AI_MODEL or "claude-sonnet-4-20250514"
     if AI_PROVIDER == "openai" and OPENAI_API_KEY:
         return "openai", OPENAI_API_KEY, AI_MODEL or "gpt-4o-mini"
+    if AI_PROVIDER == "gemini" and GEMINI_API_KEY:
+        return "gemini", GEMINI_API_KEY, AI_MODEL or "gemini-2.0-flash"
     if ANTHROPIC_API_KEY:
         return "claude", ANTHROPIC_API_KEY, AI_MODEL or "claude-sonnet-4-20250514"
+    if GEMINI_API_KEY:
+        return "gemini", GEMINI_API_KEY, AI_MODEL or "gemini-2.0-flash"
     if OPENAI_API_KEY:
         return "openai", OPENAI_API_KEY, AI_MODEL or "gpt-4o-mini"
     return "", "", ""
@@ -588,6 +593,27 @@ Log (last portion):
                 return data["content"][0]["text"].strip()
             else:
                 log.warning("Claude analysis failed: HTTP %d — %s", resp.status_code, resp.text[:200])
+                return ""
+        elif provider == "gemini":
+            resp = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"maxOutputTokens": 800, "temperature": 0.2},
+                },
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        return parts[0].get("text", "").strip()
+                return ""
+            else:
+                log.warning("Gemini analysis failed: HTTP %d — %s", resp.status_code, resp.text[:200])
                 return ""
         else:
             resp = requests.post(
@@ -989,7 +1015,7 @@ def main():
         log.info("  Layer: %s (%s), Classification: %s", layer_label, layer_name, category)
 
         ai_summary = ""
-        if (OPENAI_API_KEY or ANTHROPIC_API_KEY) and log_text and not log_text.startswith("("):
+        if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY) and log_text and not log_text.startswith("("):
             log.info("  Running AI analysis...")
             import time
             time.sleep(2)
