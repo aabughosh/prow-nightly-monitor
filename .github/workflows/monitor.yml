@@ -1,0 +1,49 @@
+name: Prow Nightly Monitor
+
+on:
+  schedule:
+    - cron: "0 7 * * 1-5"  # Weekdays at 7am UTC (after nightlies finish)
+  workflow_dispatch:        # Manual trigger
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run monitor
+        env:
+          JOB_FILTER: ${{ vars.JOB_FILTER || 'network-flow-matrix' }}
+          MIN_VERSION: ${{ vars.MIN_VERSION || '' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AI_MODEL: ${{ vars.AI_MODEL || 'gpt-4o-mini' }}
+          OUTPUT_DIR: ./public
+        run: python monitor.py
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./public
+
+  deploy:
+    needs: monitor
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
