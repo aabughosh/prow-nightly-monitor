@@ -956,17 +956,20 @@ def main():
 
         ai_summary = ""
         if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY) and log_text and not log_text.startswith("("):
-            log.info("  Running AI analysis...")
             import time
-            time.sleep(2)
+            log.info("  Running AI analysis (waiting 10s for rate limit)...")
+            time.sleep(10)
             ai_summary = ai_analyze_failure(job, log_text)
             if ai_summary:
-                log.info("  AI: %s", ai_summary[:100])
+                log.info("  AI: %s", ai_summary[:200])
             else:
-                time.sleep(5)
+                log.info("  AI failed, retrying in 30s...")
+                time.sleep(30)
                 ai_summary = ai_analyze_failure(job, log_text)
                 if ai_summary:
-                    log.info("  AI (retry): %s", ai_summary[:100])
+                    log.info("  AI (retry): %s", ai_summary[:200])
+                else:
+                    log.warning("  AI analysis unavailable, using pattern classification only")
 
         pr_url = ""
         if AUTO_FIX and category not in ("infra",):
