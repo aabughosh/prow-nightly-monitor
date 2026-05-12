@@ -208,8 +208,10 @@ def fetch_junit_results(job: dict) -> list[dict]:
     for junit_url in junit_paths:
         try:
             resp = requests.get(junit_url, timeout=15)
-            if resp.status_code == 200 and "<?xml" in resp.text[:100]:
-                return _parse_junit_xml(resp.text)
+            if resp.status_code == 200 and ("<testsuites" in resp.text[:200] or "<?xml" in resp.text[:200]):
+                results = _parse_junit_xml(resp.text)
+                if results:
+                    return results
         except Exception:
             continue
     return []
@@ -949,18 +951,51 @@ def main():
         log.info("Fetching log for: %s", job["name"])
         log_text = fetch_failure_log(job)
 
-        category, reason = classify_failure(log_text)
-
         log.info("  Fetching JUnit results...")
         junit_failures = fetch_junit_results(job)
+
         if junit_failures:
-            log.info("  Found %d test failures in JUnit", len(junit_failures))
-            if category == "unknown":
+            log.info("  Found %d test failures in JUnit:", len(junit_failures))
+            for jf in junit_failures[:5]:
+                test_name = jf.get("name", "?")[:80]
+                msg_preview = jf.get("message", "")[:100].replace("\n", " ")
+                log.info("    - %s: %s", test_name, msg_preview)
+
+            real_test_failures = [
+                f for f in junit_failures
+                if "network-flow-matrix" in f.get("name", "").lower()
+                or "commatrix" in f.get("message", "").lower()
+                or "matrix" in f.get("message", "").lower()
+                or "validation" in f.get("message", "").lower()
+                or "e2e" in f.get("name", "").lower()
+                or "test" in f.get("name", "").lower()
+            ]
+
+            if real_test_failures:
+                f0 = real_test_failures[0]
+                msg = f0.get("message", "")
+                ginkgo_match = re.search(r"\[FAIL\]\s*(.+?)(?:\n|$)", msg)
+                if ginkgo_match:
+                    fail_detail = ginkgo_match.group(1).strip()[:150]
+                else:
+                    fail_detail = f0.get("name", "")[:100]
+
                 category = "test_failure"
-                reason = f"{len(junit_failures)} test(s) failed: {junit_failures[0]['name'][:60]}"
+                reason = f"Test failed: {fail_detail}"
+
+                if re.search(r"matrix.*equal|matrix.*match|matrix.*diff", msg, re.IGNORECASE):
+                    category = "matrix_mismatch"
+                    reason = f"Matrix mismatch: {fail_detail}"
+            else:
+                category, reason = classify_failure(log_text)
+                if junit_failures and category == "unknown":
+                    category = "test_failure"
+                    reason = f"{len(junit_failures)} step(s) failed: {junit_failures[0]['name'][:60]}"
+        else:
+            category, reason = classify_failure(log_text)
 
         layer_name, layer_label = categorize_test_layer(log_text, job["name"], junit_failures)
-        log.info("  Layer: %s (%s), Classification: %s", layer_label, layer_name, category)
+        log.info("  Layer: %s (%s), Classification: %s — %s", layer_label, layer_name, category, reason[:80])
 
         ai_summary = ""
         if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY) and log_text and not log_text.startswith("("):
