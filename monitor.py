@@ -1221,47 +1221,37 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
             }.get(category, "")
 
             layer_badge = get_layer_badge(analysis.get("layer", ""), analysis.get("layer_label", ""))
-            analysis_html = f"{layer_badge} {cat_badge} {reason}"
-
-            mdiff = analysis.get("matrix_diff", {})
-            if mdiff.get("is_matrix_mismatch"):
-                diff_html = '<div style="font-size:13px;margin:8px 0">'
-                if mdiff.get("undocumented_ports"):
-                    diff_html += '<div style="margin-bottom:8px"><strong style="color:#f85149">Ports used but NOT documented (need to add):</strong><ul style="margin:4px 0;padding-left:16px">'
-                    for p in mdiff["undocumented_ports"][:10]:
-                        diff_html += f'<li><code style="color:#f0883e">{p}</code></li>'
-                    diff_html += '</ul></div>'
-                if mdiff.get("stale_ports"):
-                    diff_html += '<div><strong style="color:#d29922">Ports documented but no longer used (can remove):</strong><ul style="margin:4px 0;padding-left:16px">'
-                    for p in mdiff["stale_ports"][:10]:
-                        diff_html += f'<li><code style="color:#8b949e">{p}</code></li>'
-                    diff_html += '</ul></div>'
-                diff_html += '</div>'
-                analysis_html += f'<details><summary>Matrix Diff Details</summary><div>{diff_html}</div></details>'
-
-            junit_failures = analysis.get("junit_failures", [])
-            if junit_failures:
-                test_list = "".join(
-                    f'<li><code>{f["name"][:120]}</code><br><small style="color:#8b949e">{f["message"][:200]}</small></li>'
-                    for f in junit_failures[:5]
-                )
-                more = f"<li><em>...and {len(junit_failures)-5} more</em></li>" if len(junit_failures) > 5 else ""
-                analysis_html += f'<details><summary>Failed Tests ({len(junit_failures)})</summary><div><ul style="font-size:13px;margin:8px 0">{test_list}{more}</ul></div></details>'
-
             inv = analysis.get("investigation", {})
-            if inv and (inv.get("root_cause") or inv.get("error_output")):
-                sev = inv.get("severity", "MEDIUM")
-                sev_colors = {
-                    "CRITICAL": "#f85149", "HIGH": "#f0883e",
-                    "MEDIUM": "#d29922", "LOW": "#8b949e",
-                }
+            sev = inv.get("severity", "")
+            sev_colors = {
+                "CRITICAL": "#f85149", "HIGH": "#f0883e",
+                "MEDIUM": "#d29922", "LOW": "#8b949e",
+            }
+            sev_badge = ""
+            if sev:
                 sev_color = sev_colors.get(sev, "#8b949e")
+                sev_badge = (
+                    f'<span style="background:{sev_color};color:white;'
+                    f'padding:2px 8px;border-radius:4px;font-size:11px;'
+                    f'font-weight:600;margin-left:6px">{sev}</span>'
+                )
 
+            analysis_html = f"{layer_badge} {cat_badge} {sev_badge}"
+            analysis_html += f'<div style="margin-top:4px;color:#c9d1d9;font-size:13px">{reason}</div>'
+
+            if inv.get("suggested_fix"):
+                fix_escaped = inv["suggested_fix"].replace("\n", "<br>").replace("  ", "&nbsp;&nbsp;")
+                analysis_html += (
+                    f'<div style="margin-top:8px;padding:10px 12px;background:#0d1117;'
+                    f'border:1px solid #238636;border-radius:8px;font-size:12px">'
+                    f'<strong style="color:#3fb950">Suggested Fix:</strong><br>'
+                    f'<span style="color:#c9d1d9">{fix_escaped}</span>'
+                    f'</div>'
+                )
+
+            if inv and (inv.get("root_cause") or inv.get("error_output")):
                 inv_html = '<div style="font-size:13px;color:#c9d1d9">'
-                inv_html += f'<div style="margin-bottom:8px"><span style="background:{sev_color};color:white;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">Severity: {sev}</span></div>'
 
-                if inv.get("summary"):
-                    inv_html += f'<div style="margin-bottom:8px"><strong style="color:#58a6ff">Summary:</strong> {inv["summary"]}</div>'
                 if inv.get("root_cause"):
                     inv_html += f'<div style="margin-bottom:8px"><strong style="color:#f0883e">Root Cause:</strong> {inv["root_cause"]}</div>'
 
@@ -1293,18 +1283,33 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                         inv_html += f'{err}\n'
                     inv_html += '</pre></div>'
 
-                if inv.get("suggested_fix"):
-                    fix_escaped = inv["suggested_fix"].replace("\n", "<br>").replace("  ", "&nbsp;&nbsp;")
-                    inv_html += (
-                        f'<div style="margin-top:8px;padding:12px;background:#0d1117;'
-                        f'border:1px solid #238636;border-radius:8px">'
-                        f'<strong style="color:#3fb950">Suggested Fix:</strong><br>'
-                        f'<span style="color:#c9d1d9;font-size:12px">{fix_escaped}</span>'
-                        f'</div>'
-                    )
-
                 inv_html += '</div>'
-                analysis_html += f'<details><summary>Investigation Report</summary><div>{inv_html}</div></details>'
+                analysis_html += f'<details><summary>Full Investigation Details</summary><div>{inv_html}</div></details>'
+
+            mdiff = analysis.get("matrix_diff", {})
+            if mdiff.get("is_matrix_mismatch"):
+                diff_html = '<div style="font-size:13px;margin:8px 0">'
+                if mdiff.get("undocumented_ports"):
+                    diff_html += '<div style="margin-bottom:8px"><strong style="color:#f85149">Ports used but NOT documented (need to add):</strong><ul style="margin:4px 0;padding-left:16px">'
+                    for p in mdiff["undocumented_ports"][:10]:
+                        diff_html += f'<li><code style="color:#f0883e">{p}</code></li>'
+                    diff_html += '</ul></div>'
+                if mdiff.get("stale_ports"):
+                    diff_html += '<div><strong style="color:#d29922">Ports documented but no longer used (can remove):</strong><ul style="margin:4px 0;padding-left:16px">'
+                    for p in mdiff["stale_ports"][:10]:
+                        diff_html += f'<li><code style="color:#8b949e">{p}</code></li>'
+                    diff_html += '</ul></div>'
+                diff_html += '</div>'
+                analysis_html += f'<details><summary>Matrix Diff Details</summary><div>{diff_html}</div></details>'
+
+            junit_failures = analysis.get("junit_failures", [])
+            if junit_failures:
+                test_list = "".join(
+                    f'<li><code>{f["name"][:120]}</code><br><small style="color:#8b949e">{f["message"][:200]}</small></li>'
+                    for f in junit_failures[:5]
+                )
+                more = f"<li><em>...and {len(junit_failures)-5} more</em></li>" if len(junit_failures) > 5 else ""
+                analysis_html += f'<details><summary>Failed Tests ({len(junit_failures)})</summary><div><ul style="font-size:13px;margin:8px 0">{test_list}{more}</ul></div></details>'
 
             if ai_summary:
                 analysis_html += f'<details><summary>AI Analysis</summary><div style="font-size:13px;color:#c9d1d9;margin:8px 0;white-space:pre-wrap">{ai_summary}</div></details>'
