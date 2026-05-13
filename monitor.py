@@ -364,6 +364,187 @@ def parse_matrix_diff(log_text: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Failure investigation & fix suggestion
+# ---------------------------------------------------------------------------
+
+def investigate_failure(job: dict, category: str, reason: str,
+                        matrix_diff: dict, junit_failures: list[dict],
+                        step_logs: dict[str, str],
+                        build_log: str) -> dict:
+    """Produce a structured investigation report with fix suggestions.
+
+    Returns a dict with: summary, root_cause, failed_tests, affected_files,
+    suggested_fix, severity, fix_type.
+    """
+    report: dict = {
+        "summary": "",
+        "root_cause": "",
+        "failed_tests": [],
+        "affected_files": [],
+        "suggested_fix": "",
+        "severity": "MEDIUM",
+        "fix_type": "",
+    }
+
+    analysis_text = "\n".join(step_logs.values()) if step_logs else build_log
+
+    for jf in junit_failures:
+        name = jf.get("name", "")
+        if "container test" not in name.lower() and "test phase" not in name.lower():
+            continue
+        _, step = _extract_step_info(name)
+        test_entry = {"step": step or name[:80], "message": ""}
+        msg = jf.get("message", "")
+
+        ginkgo_m = re.search(r"\[FAIL\].*?(\[It\]\s*.+?)(?:\n|$)", msg)
+        if ginkgo_m:
+            test_entry["message"] = ginkgo_m.group(1).strip()[:200]
+        else:
+            err_m = re.search(r"(?:Unexpected error|FAILED).*?:\s*(.+?)(?:\n|$)", msg)
+            if err_m:
+                test_entry["message"] = err_m.group(1).strip()[:200]
+            else:
+                test_entry["message"] = msg[:200].replace("\n", " ")
+
+        report["failed_tests"].append(test_entry)
+
+    if category == "matrix_mismatch" and matrix_diff.get("is_matrix_mismatch"):
+        report["severity"] = "HIGH"
+        report["fix_type"] = "matrix_update"
+
+        undoc = matrix_diff.get("undocumented_ports", [])
+        stale = matrix_diff.get("stale_ports", [])
+
+        job_name_lower = job["name"].lower()
+        platform = "aws"
+        if "sno" in job_name_lower or "single-node" in job_name_lower:
+            platform = "aws-sno"
+        elif "bm" in job_name_lower or "baremetal" in job_name_lower:
+            platform = "bm"
+        elif "none" in job_name_lower:
+            platform = "none-sno"
+
+        csv_files = [
+            f"docs/stable/unique/{platform}.csv",
+            f"docs/stable/raw/{platform}.csv",
+        ]
+        report["affected_files"] = csv_files
+
+        report["summary"] = (
+            f"The documented communication matrix ({platform}.csv) does not match "
+            f"the actual ports open on the cluster."
+        )
+
+        root_parts = []
+        if undoc:
+            port_details = []
+            for p in undoc:
+                fields = p.split(",")
+                if len(fields) >= 7:
+                    port_details.append(
+                        f"port {fields[2]} ({fields[1]}) in {fields[3]}/{fields[5]} "
+                        f"on {fields[7] if len(fields) > 7 else 'node'}"
+                    )
+                else:
+                    port_details.append(p)
+            root_parts.append(
+                f"New port(s) appeared on the cluster that are not in the documented matrix: "
+                + "; ".join(port_details)
+            )
+        if stale:
+            port_details = []
+            for p in stale:
+                fields = p.split(",")
+                if len(fields) >= 7:
+                    port_details.append(
+                        f"port {fields[2]} ({fields[1]}) in {fields[3]}/{fields[5]} "
+                        f"on {fields[7] if len(fields) > 7 else 'node'}"
+                    )
+                else:
+                    port_details.append(p)
+            root_parts.append(
+                f"Port(s) listed in the documented matrix are no longer open on the cluster: "
+                + "; ".join(port_details)
+            )
+        report["root_cause"] = ". ".join(root_parts)
+
+        fix_lines = []
+        fix_lines.append(f"Update the documented matrix CSV files in the commatrix repo:")
+        fix_lines.append("")
+        if undoc:
+            fix_lines.append("ADD these lines to the CSV (ports now in use):")
+            for p in undoc:
+                fix_lines.append(f"  {p}")
+            fix_lines.append("")
+        if stale:
+            fix_lines.append("REMOVE these lines from the CSV (ports no longer in use):")
+            for p in stale:
+                fix_lines.append(f"  {p}")
+            fix_lines.append("")
+        fix_lines.append(f"Files to update: {', '.join(csv_files)}")
+        report["suggested_fix"] = "\n".join(fix_lines)
+
+    elif category == "test_failure":
+        report["fix_type"] = "test_investigation"
+        report["summary"] = reason
+
+        ginkgo_failures = re.findall(
+            r"\[FAIL\]\s*(.+?)(?:\n|$)", analysis_text
+        )
+        error_messages = re.findall(
+            r"(?:Unexpected error|FAILED).*?:\s*(.+?)(?:\n|$)", analysis_text
+        )
+
+        if ginkgo_failures or error_messages:
+            report["root_cause"] = "; ".join(
+                (ginkgo_failures + error_messages)[:3]
+            )[:500]
+        else:
+            report["root_cause"] = reason
+
+        report["suggested_fix"] = (
+            "Investigate the failed test(s) listed above. "
+            "Check if this is a flake (retry the job) or a real regression."
+        )
+
+    elif category == "build_error":
+        report["severity"] = "HIGH"
+        report["fix_type"] = "build_fix"
+        report["summary"] = reason
+
+        compile_errs = re.findall(
+            r"(.*(?:cannot find|undefined|syntax error|build.*fail).*)",
+            analysis_text, re.IGNORECASE,
+        )
+        if compile_errs:
+            report["root_cause"] = "; ".join(
+                e.strip()[:150] for e in compile_errs[-3:]
+            )
+        report["suggested_fix"] = (
+            "Fix compilation errors. Check if a recent commit introduced the issue. "
+            "Run 'go build ./...' locally to reproduce."
+        )
+
+    elif category == "infra":
+        report["severity"] = "LOW"
+        report["fix_type"] = "infra"
+        report["summary"] = reason
+        report["root_cause"] = reason
+        report["suggested_fix"] = (
+            "Infrastructure issue — likely transient. Retry the job. "
+            "If recurring, check cluster provisioning and cloud quotas."
+        )
+
+    else:
+        report["fix_type"] = "unknown"
+        report["summary"] = reason
+        report["root_cause"] = reason
+        report["suggested_fix"] = "Manual investigation required. Check the Prow logs for details."
+
+    return report
+
+
+# ---------------------------------------------------------------------------
 # Trend tracking (pass/fail history over time)
 # ---------------------------------------------------------------------------
 
@@ -1042,6 +1223,50 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                 more = f"<li><em>...and {len(junit_failures)-5} more</em></li>" if len(junit_failures) > 5 else ""
                 analysis_html += f'<details><summary>Failed Tests ({len(junit_failures)})</summary><div><ul style="font-size:13px;margin:8px 0">{test_list}{more}</ul></div></details>'
 
+            inv = analysis.get("investigation", {})
+            if inv and inv.get("root_cause"):
+                sev = inv.get("severity", "MEDIUM")
+                sev_colors = {
+                    "CRITICAL": "#f85149", "HIGH": "#f0883e",
+                    "MEDIUM": "#d29922", "LOW": "#8b949e",
+                }
+                sev_color = sev_colors.get(sev, "#8b949e")
+
+                inv_html = f'<div style="font-size:13px;color:#c9d1d9">'
+                inv_html += f'<div style="margin-bottom:8px"><span style="background:{sev_color};color:white;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">Severity: {sev}</span></div>'
+
+                if inv.get("summary"):
+                    inv_html += f'<div style="margin-bottom:8px"><strong style="color:#58a6ff">Summary:</strong> {inv["summary"]}</div>'
+                if inv.get("root_cause"):
+                    inv_html += f'<div style="margin-bottom:8px"><strong style="color:#f0883e">Root Cause:</strong> {inv["root_cause"]}</div>'
+
+                if inv.get("failed_tests"):
+                    inv_html += '<div style="margin-bottom:8px"><strong style="color:#f85149">Failed Tests:</strong><ul style="margin:4px 0;padding-left:16px">'
+                    for t in inv["failed_tests"][:5]:
+                        inv_html += f'<li><code>{t["step"]}</code>'
+                        if t.get("message"):
+                            inv_html += f' — <span style="color:#8b949e">{t["message"]}</span>'
+                        inv_html += '</li>'
+                    inv_html += '</ul></div>'
+
+                if inv.get("affected_files"):
+                    inv_html += '<div style="margin-bottom:8px"><strong style="color:#d29922">Files to Update:</strong> '
+                    inv_html += ", ".join(f'<code>{f}</code>' for f in inv["affected_files"])
+                    inv_html += '</div>'
+
+                if inv.get("suggested_fix"):
+                    fix_escaped = inv["suggested_fix"].replace("\n", "<br>").replace("  ", "&nbsp;&nbsp;")
+                    inv_html += (
+                        f'<div style="margin-top:8px;padding:12px;background:#0d1117;'
+                        f'border:1px solid #238636;border-radius:8px">'
+                        f'<strong style="color:#3fb950">Suggested Fix:</strong><br>'
+                        f'<span style="color:#c9d1d9;font-size:12px">{fix_escaped}</span>'
+                        f'</div>'
+                    )
+
+                inv_html += '</div>'
+                analysis_html += f'<details><summary>Investigation Report</summary><div>{inv_html}</div></details>'
+
             if ai_summary:
                 analysis_html += f'<details><summary>AI Analysis</summary><div style="font-size:13px;color:#c9d1d9;margin:8px 0;white-space:pre-wrap">{ai_summary}</div></details>'
 
@@ -1199,6 +1424,16 @@ def main():
                 else:
                     log.warning("  AI analysis unavailable, using pattern classification only")
 
+        log.info("  Running investigation...")
+        investigation = investigate_failure(
+            job, category, reason, matrix_diff,
+            junit_failures, step_logs, build_log,
+        )
+        log.info("  Investigation: severity=%s, fix_type=%s",
+                 investigation["severity"], investigation["fix_type"])
+        if investigation["suggested_fix"]:
+            log.info("  Suggested fix: %s", investigation["suggested_fix"][:120])
+
         pr_url = ""
         if AUTO_FIX and category not in ("infra",):
             log.info("  Attempting auto-fix...")
@@ -1212,6 +1447,7 @@ def main():
             "ai_summary": ai_summary,
             "junit_failures": junit_failures,
             "matrix_diff": matrix_diff if matrix_diff.get("is_matrix_mismatch") else {},
+            "investigation": investigation,
             "pr_url": pr_url,
             "log_snippet": analysis_log[-500:] if analysis_log else "",
         }
