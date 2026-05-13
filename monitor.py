@@ -115,13 +115,39 @@ def filter_by_version(jobs: list[dict]) -> list[dict]:
 
 
 def get_latest_per_job(jobs: list[dict]) -> list[dict]:
-    """Keep only the most recent run for each unique job name."""
-    latest = {}
+    """For each unique job, keep the latest run AND the last completed run.
+
+    If the latest run is still pending/triggered, we also include the most
+    recent completed run so the user doesn't lose its analysis.
+    """
+    latest: dict[str, dict] = {}
+    last_completed: dict[str, dict] = {}
+
     for job in jobs:
         name = job["name"]
         if name not in latest or job["start_time"] > latest[name]["start_time"]:
             latest[name] = job
-    return sorted(latest.values(), key=lambda j: j["name"])
+
+        if job["state"] in ("success", "failure", "error", "aborted"):
+            if name not in last_completed or job["start_time"] > last_completed[name]["start_time"]:
+                last_completed[name] = job
+
+    result = []
+    seen_ids = set()
+    for name, job in latest.items():
+        result.append(job)
+        job_id = f"{job['name']}_{job['start_time']}"
+        seen_ids.add(job_id)
+
+        if job["state"] in ("pending", "triggered"):
+            completed = last_completed.get(name)
+            if completed:
+                comp_id = f"{completed['name']}_{completed['start_time']}"
+                if comp_id not in seen_ids:
+                    seen_ids.add(comp_id)
+                    result.append(completed)
+
+    return sorted(result, key=lambda j: (j["name"], j["start_time"]), reverse=False)
 
 
 def compute_duration(job: dict) -> str:
@@ -1182,10 +1208,17 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
     """Generate the HTML dashboard using template."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    total = len(jobs)
-    passed = sum(1 for j in jobs if j["state"] == "success")
-    failed = sum(1 for j in jobs if j["state"] in ("failure", "error"))
-    pending = sum(1 for j in jobs if j["state"] == "pending")
+    unique_for_stats: dict[str, dict] = {}
+    for j in jobs:
+        name = j["name"]
+        if name not in unique_for_stats or j["start_time"] > unique_for_stats[name]["start_time"]:
+            unique_for_stats[name] = j
+    stats_list = list(unique_for_stats.values())
+
+    total = len(stats_list)
+    passed = sum(1 for j in stats_list if j["state"] == "success")
+    failed = sum(1 for j in stats_list if j["state"] in ("failure", "error"))
+    pending = sum(1 for j in stats_list if j["state"] in ("pending", "triggered"))
     pass_rate = int(passed / max(passed + failed, 1) * 100)
     rate_color = "green" if pass_rate >= 80 else "yellow" if pass_rate >= 50 else "red"
 
@@ -1202,7 +1235,7 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
         version = extract_version(job["name"])
         duration = compute_duration(job)
         name_short = job["name"].replace("periodic-ci-openshift-release-main-nightly-", "")
-        url = job["url"]
+        url = job["url"] or f'{PROW_URL}/?type=periodic&job={job["name"]}'
 
         analysis = analyses.get(job["name"], {})
         category = analysis.get("category", "")
@@ -1498,8 +1531,15 @@ def main():
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+    unique_latest: dict[str, dict] = {}
+    for j in jobs:
+        name = j["name"]
+        if name not in unique_latest or j["start_time"] > unique_latest[name]["start_time"]:
+            unique_latest[name] = j
+    stats_jobs = list(unique_latest.values())
+
     history = load_history()
-    history = update_history(history, jobs)
+    history = update_history(history, stats_jobs)
     save_history(history)
     trend_html = generate_trend_html(history)
     log.info("Trend history updated (%d runs)", len(history.get("runs", [])))
