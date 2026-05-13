@@ -371,16 +371,17 @@ def investigate_failure(job: dict, category: str, reason: str,
                         matrix_diff: dict, junit_failures: list[dict],
                         step_logs: dict[str, str],
                         build_log: str) -> dict:
-    """Produce a structured investigation report with fix suggestions.
+    """Produce a structured investigation report from the actual logs.
 
-    Returns a dict with: summary, root_cause, failed_tests, affected_files,
-    suggested_fix, severity, fix_type.
+    Fully generic — extracts all information from the log output itself,
+    never assumes a specific repo structure or file layout.
     """
     report: dict = {
         "summary": "",
         "root_cause": "",
         "failed_tests": [],
-        "affected_files": [],
+        "source_files": [],
+        "error_output": [],
         "suggested_fix": "",
         "severity": "MEDIUM",
         "fix_type": "",
@@ -388,124 +389,134 @@ def investigate_failure(job: dict, category: str, reason: str,
 
     analysis_text = "\n".join(step_logs.values()) if step_logs else build_log
 
+    # --- Extract failed test details from JUnit ---
     for jf in junit_failures:
         name = jf.get("name", "")
         if "container test" not in name.lower() and "test phase" not in name.lower():
             continue
         _, step = _extract_step_info(name)
-        test_entry = {"step": step or name[:80], "message": ""}
         msg = jf.get("message", "")
 
+        test_msg = ""
         ginkgo_m = re.search(r"\[FAIL\].*?(\[It\]\s*.+?)(?:\n|$)", msg)
         if ginkgo_m:
-            test_entry["message"] = ginkgo_m.group(1).strip()[:200]
+            test_msg = ginkgo_m.group(1).strip()[:300]
         else:
             err_m = re.search(r"(?:Unexpected error|FAILED).*?:\s*(.+?)(?:\n|$)", msg)
             if err_m:
-                test_entry["message"] = err_m.group(1).strip()[:200]
+                test_msg = err_m.group(1).strip()[:300]
             else:
-                test_entry["message"] = msg[:200].replace("\n", " ")
+                test_msg = msg[:300].replace("\n", " ")
 
-        report["failed_tests"].append(test_entry)
+        report["failed_tests"].append({
+            "step": step or name[:80],
+            "message": test_msg,
+        })
+
+    # --- Extract source file references from logs ---
+    file_refs = re.findall(
+        r"([\w/._-]+\.(?:go|py|yaml|yml|json|sh|csv|xml)):(\d+)",
+        analysis_text,
+    )
+    seen_files = set()
+    for fpath, line_no in file_refs:
+        if fpath.startswith("/tmp/") or fpath.startswith("vendor/"):
+            base = fpath.split("/")[-1] if "/" in fpath else fpath
+            key = f"{base}:{line_no}"
+        else:
+            key = f"{fpath}:{line_no}"
+        if key not in seen_files:
+            seen_files.add(key)
+            report["source_files"].append({"file": fpath, "line": line_no})
+
+    # --- Extract error output lines from logs ---
+    error_lines = []
+    for line in analysis_text.splitlines():
+        stripped = line.strip()
+        if not stripped or len(stripped) < 10:
+            continue
+        is_error = bool(re.search(
+            r"\[FAIL\]|Unexpected error|FAILED|panic:|fatal:|"
+            r"Error:|level=error|level=warning.*(?:not used|not documented|mismatch|fail)",
+            stripped, re.IGNORECASE,
+        ))
+        if is_error:
+            clean = re.sub(r"\x1b\[[0-9;]*m", "", stripped)[:300]
+            if clean not in error_lines:
+                error_lines.append(clean)
+    report["error_output"] = error_lines[-10:]
+
+    # --- Category-specific analysis (all from the logs, nothing hardcoded) ---
 
     if category == "matrix_mismatch" and matrix_diff.get("is_matrix_mismatch"):
         report["severity"] = "HIGH"
-        report["fix_type"] = "matrix_update"
+        report["fix_type"] = "data_update"
 
         undoc = matrix_diff.get("undocumented_ports", [])
         stale = matrix_diff.get("stale_ports", [])
 
-        job_name_lower = job["name"].lower()
-        platform = "aws"
-        if "sno" in job_name_lower or "single-node" in job_name_lower:
-            platform = "aws-sno"
-        elif "bm" in job_name_lower or "baremetal" in job_name_lower:
-            platform = "bm"
-        elif "none" in job_name_lower:
-            platform = "none-sno"
-
-        csv_files = [
-            f"docs/stable/unique/{platform}.csv",
-            f"docs/stable/raw/{platform}.csv",
-        ]
-        report["affected_files"] = csv_files
-
         report["summary"] = (
-            f"The documented communication matrix ({platform}.csv) does not match "
-            f"the actual ports open on the cluster."
+            "Expected data does not match the actual state. "
+            f"{len(undoc)} item(s) found in practice but missing from docs, "
+            f"{len(stale)} item(s) documented but no longer present."
         )
 
         root_parts = []
         if undoc:
-            port_details = []
-            for p in undoc:
-                fields = p.split(",")
-                if len(fields) >= 7:
-                    port_details.append(
-                        f"port {fields[2]} ({fields[1]}) in {fields[3]}/{fields[5]} "
-                        f"on {fields[7] if len(fields) > 7 else 'node'}"
-                    )
-                else:
-                    port_details.append(p)
             root_parts.append(
-                f"New port(s) appeared on the cluster that are not in the documented matrix: "
-                + "; ".join(port_details)
+                "Items present but not documented: " + "; ".join(undoc[:5])
             )
         if stale:
-            port_details = []
-            for p in stale:
-                fields = p.split(",")
-                if len(fields) >= 7:
-                    port_details.append(
-                        f"port {fields[2]} ({fields[1]}) in {fields[3]}/{fields[5]} "
-                        f"on {fields[7] if len(fields) > 7 else 'node'}"
-                    )
-                else:
-                    port_details.append(p)
             root_parts.append(
-                f"Port(s) listed in the documented matrix are no longer open on the cluster: "
-                + "; ".join(port_details)
+                "Items documented but no longer present: " + "; ".join(stale[:5])
             )
         report["root_cause"] = ". ".join(root_parts)
 
-        fix_lines = []
-        fix_lines.append(f"Update the documented matrix CSV files in the commatrix repo:")
-        fix_lines.append("")
+        fix_lines = ["Update the documented/expected data to match reality:", ""]
         if undoc:
-            fix_lines.append("ADD these lines to the CSV (ports now in use):")
+            fix_lines.append("ADD (new items that appeared):")
             for p in undoc:
                 fix_lines.append(f"  {p}")
             fix_lines.append("")
         if stale:
-            fix_lines.append("REMOVE these lines from the CSV (ports no longer in use):")
+            fix_lines.append("REMOVE (stale items no longer present):")
             for p in stale:
                 fix_lines.append(f"  {p}")
-            fix_lines.append("")
-        fix_lines.append(f"Files to update: {', '.join(csv_files)}")
         report["suggested_fix"] = "\n".join(fix_lines)
 
     elif category == "test_failure":
         report["fix_type"] = "test_investigation"
         report["summary"] = reason
 
-        ginkgo_failures = re.findall(
-            r"\[FAIL\]\s*(.+?)(?:\n|$)", analysis_text
+        ginkgo_failures = re.findall(r"\[FAIL\]\s*(.+?)(?:\n|$)", analysis_text)
+        assertion_errors = re.findall(
+            r"(?:Unexpected error|Expected|Got|to equal|to match|assert).*?:\s*(.+?)(?:\n|$)",
+            analysis_text, re.IGNORECASE,
         )
-        error_messages = re.findall(
-            r"(?:Unexpected error|FAILED).*?:\s*(.+?)(?:\n|$)", analysis_text
-        )
-
-        if ginkgo_failures or error_messages:
+        all_errors = ginkgo_failures + assertion_errors
+        if all_errors:
             report["root_cause"] = "; ".join(
-                (ginkgo_failures + error_messages)[:3]
-            )[:500]
+                e.strip()[:200] for e in all_errors[:3]
+            )[:600]
         else:
             report["root_cause"] = reason
 
-        report["suggested_fix"] = (
-            "Investigate the failed test(s) listed above. "
-            "Check if this is a flake (retry the job) or a real regression."
+        fix_parts = []
+        if report["failed_tests"]:
+            fix_parts.append(
+                f"{len(report['failed_tests'])} test step(s) failed. "
+                "Check the error output below for details."
+            )
+        if report["source_files"]:
+            fix_parts.append(
+                "Source references found in logs: "
+                + ", ".join(f"{s['file']}:{s['line']}" for s in report["source_files"][:5])
+            )
+        fix_parts.append(
+            "Check if this is a flake (retry the job) or a real regression "
+            "from a recent commit."
         )
+        report["suggested_fix"] = "\n".join(fix_parts)
 
     elif category == "build_error":
         report["severity"] = "HIGH"
@@ -513,17 +524,25 @@ def investigate_failure(job: dict, category: str, reason: str,
         report["summary"] = reason
 
         compile_errs = re.findall(
-            r"(.*(?:cannot find|undefined|syntax error|build.*fail).*)",
+            r"(.*(?:cannot find|undefined|syntax error|build.*fail|"
+            r"import cycle|cannot load|no required module).*)",
             analysis_text, re.IGNORECASE,
         )
         if compile_errs:
             report["root_cause"] = "; ".join(
                 e.strip()[:150] for e in compile_errs[-3:]
             )
-        report["suggested_fix"] = (
-            "Fix compilation errors. Check if a recent commit introduced the issue. "
-            "Run 'go build ./...' locally to reproduce."
-        )
+
+        fix_parts = ["Fix the build/compilation errors:"]
+        if report["source_files"]:
+            fix_parts.append(
+                "Files with errors: "
+                + ", ".join(f"{s['file']}:{s['line']}" for s in report["source_files"][:5])
+            )
+        fix_parts.append("Reproduce locally with 'go build ./...' or 'make build'.")
+        if "go.mod" in analysis_text.lower() or "go.sum" in analysis_text.lower():
+            fix_parts.append("Try 'go mod tidy' if this is a dependency issue.")
+        report["suggested_fix"] = "\n".join(fix_parts)
 
     elif category == "infra":
         report["severity"] = "LOW"
@@ -531,15 +550,21 @@ def investigate_failure(job: dict, category: str, reason: str,
         report["summary"] = reason
         report["root_cause"] = reason
         report["suggested_fix"] = (
-            "Infrastructure issue — likely transient. Retry the job. "
-            "If recurring, check cluster provisioning and cloud quotas."
+            "Infrastructure issue — likely transient. Retry the job.\n"
+            "If this recurs across multiple runs, check:\n"
+            "  - Cloud quotas and limits\n"
+            "  - Cluster provisioning config\n"
+            "  - Network connectivity"
         )
 
     else:
         report["fix_type"] = "unknown"
         report["summary"] = reason
         report["root_cause"] = reason
-        report["suggested_fix"] = "Manual investigation required. Check the Prow logs for details."
+        report["suggested_fix"] = (
+            "Manual investigation required.\n"
+            "Check the full Prow logs and error output below for details."
+        )
 
     return report
 
@@ -1224,7 +1249,7 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                 analysis_html += f'<details><summary>Failed Tests ({len(junit_failures)})</summary><div><ul style="font-size:13px;margin:8px 0">{test_list}{more}</ul></div></details>'
 
             inv = analysis.get("investigation", {})
-            if inv and inv.get("root_cause"):
+            if inv and (inv.get("root_cause") or inv.get("error_output")):
                 sev = inv.get("severity", "MEDIUM")
                 sev_colors = {
                     "CRITICAL": "#f85149", "HIGH": "#f0883e",
@@ -1232,7 +1257,7 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                 }
                 sev_color = sev_colors.get(sev, "#8b949e")
 
-                inv_html = f'<div style="font-size:13px;color:#c9d1d9">'
+                inv_html = '<div style="font-size:13px;color:#c9d1d9">'
                 inv_html += f'<div style="margin-bottom:8px"><span style="background:{sev_color};color:white;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">Severity: {sev}</span></div>'
 
                 if inv.get("summary"):
@@ -1249,10 +1274,24 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                         inv_html += '</li>'
                     inv_html += '</ul></div>'
 
-                if inv.get("affected_files"):
-                    inv_html += '<div style="margin-bottom:8px"><strong style="color:#d29922">Files to Update:</strong> '
-                    inv_html += ", ".join(f'<code>{f}</code>' for f in inv["affected_files"])
+                if inv.get("source_files"):
+                    inv_html += '<div style="margin-bottom:8px"><strong style="color:#d29922">Source References:</strong> '
+                    inv_html += ", ".join(
+                        f'<code>{s["file"]}:{s["line"]}</code>' for s in inv["source_files"][:8]
+                    )
                     inv_html += '</div>'
+
+                if inv.get("error_output"):
+                    inv_html += (
+                        '<div style="margin-bottom:8px"><strong style="color:#f85149">'
+                        'Error Output:</strong>'
+                        '<pre style="background:#0d1117;border:1px solid #30363d;'
+                        'border-radius:6px;padding:10px;margin:4px 0;'
+                        'font-size:11px;color:#f0883e;overflow-x:auto;white-space:pre-wrap">'
+                    )
+                    for err in inv["error_output"]:
+                        inv_html += f'{err}\n'
+                    inv_html += '</pre></div>'
 
                 if inv.get("suggested_fix"):
                     fix_escaped = inv["suggested_fix"].replace("\n", "<br>").replace("  ", "&nbsp;&nbsp;")
