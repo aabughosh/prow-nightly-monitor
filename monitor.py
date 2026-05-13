@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -227,16 +228,139 @@ def _parse_junit_xml(xml_text: str) -> list[dict]:
             error = testcase.find("error")
             if failure is not None or error is not None:
                 elem = failure if failure is not None else error
+                msg_text = elem.get("message", "") or elem.text or ""
                 failures.append({
                     "name": testcase.get("name", "unknown"),
                     "classname": testcase.get("classname", ""),
                     "time": testcase.get("time", ""),
-                    "message": (elem.get("message", "") or elem.text or "")[:500],
+                    "message": msg_text[:4000],
                     "type": elem.get("type", ""),
                 })
     except ET.ParseError:
         pass
     return failures
+
+
+# ---------------------------------------------------------------------------
+# Step-specific log fetching (actual test output, not CI runner output)
+# ---------------------------------------------------------------------------
+
+def _extract_step_info(junit_name: str) -> tuple[str, str]:
+    """Extract workflow and step names from a JUnit test case name.
+
+    Example input:
+      "Run multi-stage test aws-ovn-network-flow-matrix -
+       aws-ovn-network-flow-matrix-network-flow-matrix-tests container test"
+    Returns: ("aws-ovn-network-flow-matrix", "network-flow-matrix-tests")
+    """
+    m = re.match(r"Run multi-stage test (\S+) - (\S+) container test", junit_name)
+    if not m:
+        return "", ""
+    workflow = m.group(1)
+    step_full = m.group(2)
+    prefix = workflow + "-"
+    step_short = step_full[len(prefix):] if step_full.startswith(prefix) else step_full
+    return workflow, step_short
+
+
+def fetch_failed_step_logs(job: dict, junit_failures: list[dict],
+                           max_lines: int = 500) -> dict[str, str]:
+    """Fetch the build-log.txt for each failed CI step identified in JUnit.
+
+    Returns a dict mapping step_short_name -> log_text.
+    """
+    url = job.get("url", "")
+    m = re.search(r"/logs/(.+)/(\d+)$", url)
+    if not m:
+        return {}
+
+    job_path, build_id = m.group(1), m.group(2)
+    step_logs: dict[str, str] = {}
+
+    for jf in junit_failures:
+        workflow, step_short = _extract_step_info(jf.get("name", ""))
+        if not workflow or not step_short:
+            continue
+        if step_short in step_logs:
+            continue
+
+        step_log_url = (
+            f"{GCS_BASE}/{job_path}/{build_id}/artifacts/"
+            f"{workflow}/{step_short}/build-log.txt"
+        )
+        try:
+            resp = requests.get(step_log_url, timeout=20)
+            if resp.status_code == 200:
+                lines = resp.text.splitlines()
+                tail = lines[-max_lines:] if len(lines) > max_lines else lines
+                step_logs[step_short] = "\n".join(tail)
+                log.info("  Fetched step log: %s (%d lines)", step_short, len(lines))
+        except Exception as exc:
+            log.debug("  Could not fetch step log %s: %s", step_short, exc)
+
+    return step_logs
+
+
+# ---------------------------------------------------------------------------
+# Matrix diff parsing (commatrix-specific)
+# ---------------------------------------------------------------------------
+
+def parse_matrix_diff(log_text: str) -> dict:
+    """Parse commatrix port differences from log output.
+
+    Detects lines like:
+      'the following ports are documented but are not used:\\n...'
+      'the following ports are used but are not documented:\\n...'
+
+    Returns dict with is_matrix_mismatch, undocumented_ports, stale_ports, summary.
+    """
+    result: dict = {
+        "is_matrix_mismatch": False,
+        "undocumented_ports": [],
+        "stale_ports": [],
+        "summary": "",
+    }
+
+    stale_match = re.search(
+        r"ports are documented but are not used:\s*\\n((?:[^\n\"]+\\n)*)",
+        log_text,
+    )
+    if not stale_match:
+        stale_match = re.search(
+            r"ports are documented but are not used:\s*\n((?:.*\n)*?)\s*(?:\"|$)",
+            log_text,
+        )
+    if stale_match:
+        raw = stale_match.group(1).replace("\\n", "\n").strip()
+        result["stale_ports"] = [
+            line.strip() for line in raw.splitlines() if line.strip()
+        ]
+
+    undoc_match = re.search(
+        r"ports are used but are not documented:\s*\\n((?:[^\n\"]+\\n)*)",
+        log_text,
+    )
+    if not undoc_match:
+        undoc_match = re.search(
+            r"ports are used but are not documented:\s*\n((?:.*\n)*?)\s*(?:\"|{|$)",
+            log_text,
+        )
+    if undoc_match:
+        raw = undoc_match.group(1).replace("\\n", "\n").strip()
+        result["undocumented_ports"] = [
+            line.strip() for line in raw.splitlines() if line.strip()
+        ]
+
+    if result["stale_ports"] or result["undocumented_ports"]:
+        result["is_matrix_mismatch"] = True
+        parts = []
+        if result["undocumented_ports"]:
+            parts.append(f"{len(result['undocumented_ports'])} port(s) used but not documented")
+        if result["stale_ports"]:
+            parts.append(f"{len(result['stale_ports'])} port(s) documented but no longer used")
+        result["summary"] = "; ".join(parts)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -374,32 +498,35 @@ INFRA_LAYER_PATTERNS = [
 
 
 def categorize_test_layer(log_text: str, job_name: str,
-                          junit_failures: list[dict] | None = None) -> tuple[str, str]:
+                          junit_failures: list[dict] | None = None,
+                          category: str = "") -> tuple[str, str]:
     """Auto-detect which test layer the failure is in.
 
-    Instead of hardcoded layers, it extracts the layer from:
-    1. JUnit classname/test name (most accurate)
-    2. [sig-xxx] tags in log lines
-    3. Step names in CI logs
-    4. Job name patterns
+    Priority: JUnit/test-specific data first, then sig tags, then job name.
+    Infra patterns are checked ONLY if nothing else matches, to avoid
+    mis-labelling test failures as "Cluster Health" due to phrases like
+    "must-gather" or "Node NotReady" that appear in normal CI cleanup output.
     """
-    for pattern, label in INFRA_LAYER_PATTERNS:
-        if re.search(pattern, log_text, re.IGNORECASE):
-            return label.lower().replace(" ", "_"), label
+    if category == "matrix_mismatch":
+        return "matrix_validation", "Matrix Validation"
 
     if junit_failures:
-        classnames = set()
+        test_steps = set()
         for f in junit_failures:
+            name = f.get("name", "")
+            _, step_short = _extract_step_info(name)
+            if step_short:
+                test_steps.add(step_short)
+            sig_match = re.search(r"\[sig-([^\]]+)\]", name)
+            if sig_match:
+                test_steps.add(f"sig-{sig_match.group(1)}")
             cn = f.get("classname", "")
             if cn:
                 parts = cn.split(".")
-                classnames.add(parts[0] if parts else cn)
-            name = f.get("name", "")
-            sig_match = re.search(r"\[sig-([^\]]+)\]", name)
-            if sig_match:
-                classnames.add(f"sig-{sig_match.group(1)}")
-        if classnames:
-            label = ", ".join(sorted(classnames))[:60]
+                test_steps.add(parts[0] if parts else cn)
+
+        if test_steps:
+            label = ", ".join(sorted(test_steps))[:60]
             return "test_suite", label
 
     sig_matches = re.findall(r"\[sig-([^\]]+)\]", log_text)
@@ -412,6 +539,10 @@ def categorize_test_layer(log_text: str, job_name: str,
     if step_match:
         label = step_match[-1][:50]
         return "ci_step", label
+
+    for pattern, label in INFRA_LAYER_PATTERNS:
+        if re.search(pattern, log_text, re.IGNORECASE):
+            return label.lower().replace(" ", "_"), label
 
     job_parts = job_name.split("-")
     keywords = [p for p in job_parts if p not in
@@ -477,19 +608,34 @@ TEST_PATTERNS = [
 ]
 
 
-def classify_failure(log_text: str) -> tuple[str, str]:
-    """Pattern-based classification with extracted details. Returns (category, reason)."""
-    for pattern, reason in INFRA_PATTERNS:
-        if re.search(pattern, log_text, re.IGNORECASE):
-            return "infra", reason
+def classify_failure(log_text: str,
+                     matrix_diff: dict | None = None) -> tuple[str, str]:
+    """Pattern-based classification with extracted details. Returns (category, reason).
+
+    Priority order: matrix mismatch > build error > test failure > infra > unknown.
+    Infra patterns are checked LAST because generic phrases like "Node NotReady"
+    often appear in normal test flow (e.g. commatrix nftables reboot test).
+    """
+    if matrix_diff and matrix_diff.get("is_matrix_mismatch"):
+        return "matrix_mismatch", f"Matrix mismatch: {matrix_diff['summary']}"
+
+    matrix_patterns = [
+        r"ports are (?:documented but are not used|used but are not documented)",
+        r"generated communication matrix should be equal to documented",
+        r"matrix.*(?:mismatch|not equal|differ)",
+        r"unexpected.*port|expected.*port.*missing",
+    ]
+    for pat in matrix_patterns:
+        if re.search(pat, log_text, re.IGNORECASE):
+            diff = parse_matrix_diff(log_text)
+            if diff["is_matrix_mismatch"]:
+                return "matrix_mismatch", f"Matrix mismatch: {diff['summary']}"
+            return "matrix_mismatch", "Communication matrix mismatch — ports changed"
 
     if re.search(r"go.*build.*fail|compile.*error|cannot find package", log_text, re.IGNORECASE):
         err_match = re.search(r"(.*(?:build|compile|cannot find).*)", log_text, re.IGNORECASE)
         detail = err_match.group(1).strip()[:150] if err_match else ""
         return "build_error", f"Build error: {detail}" if detail else "Build/compile error"
-
-    if re.search(r"matrix.*mismatch|unexpected.*port|expected.*port|matrix.*diff", log_text, re.IGNORECASE):
-        return "matrix_mismatch", "Communication matrix mismatch — ports changed"
 
     for pattern, _ in TEST_PATTERNS:
         match = re.search(pattern, log_text, re.IGNORECASE)
@@ -501,6 +647,10 @@ def classify_failure(log_text: str) -> tuple[str, str]:
         fail_lines = [l.strip() for l in log_text.splitlines() if "FAIL" in l and len(l.strip()) > 5]
         if fail_lines:
             return "test_failure", f"Test failed: {fail_lines[-1][:150]}"
+
+    for pattern, reason in INFRA_PATTERNS:
+        if re.search(pattern, log_text, re.IGNORECASE):
+            return "infra", reason
 
     error_lines = [l.strip() for l in log_text.splitlines()
                    if re.search(r"(?:error|fatal|panic):", l, re.IGNORECASE)
@@ -867,17 +1017,33 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
             layer_badge = get_layer_badge(analysis.get("layer", ""), analysis.get("layer_label", ""))
             analysis_html = f"{layer_badge} {cat_badge} {reason}"
 
+            mdiff = analysis.get("matrix_diff", {})
+            if mdiff.get("is_matrix_mismatch"):
+                diff_html = '<div style="font-size:13px;margin:8px 0">'
+                if mdiff.get("undocumented_ports"):
+                    diff_html += '<div style="margin-bottom:8px"><strong style="color:#f85149">Ports used but NOT documented (need to add):</strong><ul style="margin:4px 0;padding-left:16px">'
+                    for p in mdiff["undocumented_ports"][:10]:
+                        diff_html += f'<li><code style="color:#f0883e">{p}</code></li>'
+                    diff_html += '</ul></div>'
+                if mdiff.get("stale_ports"):
+                    diff_html += '<div><strong style="color:#d29922">Ports documented but no longer used (can remove):</strong><ul style="margin:4px 0;padding-left:16px">'
+                    for p in mdiff["stale_ports"][:10]:
+                        diff_html += f'<li><code style="color:#8b949e">{p}</code></li>'
+                    diff_html += '</ul></div>'
+                diff_html += '</div>'
+                analysis_html += f'<details><summary>Matrix Diff Details</summary><div>{diff_html}</div></details>'
+
             junit_failures = analysis.get("junit_failures", [])
             if junit_failures:
                 test_list = "".join(
-                    f'<li><code>{f["name"]}</code><br><small style="color:#666">{f["message"][:200]}</small></li>'
+                    f'<li><code>{f["name"][:120]}</code><br><small style="color:#8b949e">{f["message"][:200]}</small></li>'
                     for f in junit_failures[:5]
                 )
                 more = f"<li><em>...and {len(junit_failures)-5} more</em></li>" if len(junit_failures) > 5 else ""
-                analysis_html += f'<details><summary>Failed Tests ({len(junit_failures)})</summary><ul style="font-size:13px;margin:8px 0">{test_list}{more}</ul></details>'
+                analysis_html += f'<details><summary>Failed Tests ({len(junit_failures)})</summary><div><ul style="font-size:13px;margin:8px 0">{test_list}{more}</ul></div></details>'
 
             if ai_summary:
-                analysis_html += f'<details><summary>AI Analysis</summary><p style="font-size:13px;color:#333;margin:8px 0">{ai_summary}</p></details>'
+                analysis_html += f'<details><summary>AI Analysis</summary><div style="font-size:13px;color:#c9d1d9;margin:8px 0;white-space:pre-wrap">{ai_summary}</div></details>'
 
             pr_url_fix = analysis.get("pr_url", "")
             if pr_url_fix:
@@ -949,11 +1115,12 @@ def main():
 
     for job in failed_jobs:
         log.info("Fetching log for: %s", job["name"])
-        log_text = fetch_failure_log(job)
+        build_log = fetch_failure_log(job)
 
         log.info("  Fetching JUnit results...")
         junit_failures = fetch_junit_results(job)
 
+        step_logs: dict[str, str] = {}
         if junit_failures:
             log.info("  Found %d test failures in JUnit:", len(junit_failures))
             for jf in junit_failures[:5]:
@@ -961,54 +1128,72 @@ def main():
                 msg_preview = jf.get("message", "")[:100].replace("\n", " ")
                 log.info("    - %s: %s", test_name, msg_preview)
 
+            log.info("  Fetching step-specific logs...")
+            step_logs = fetch_failed_step_logs(job, junit_failures)
+
+        analysis_log = "\n".join(step_logs.values()) if step_logs else build_log
+
+        matrix_diff = parse_matrix_diff(analysis_log)
+        if not matrix_diff["is_matrix_mismatch"]:
+            for jf in junit_failures:
+                matrix_diff = parse_matrix_diff(jf.get("message", ""))
+                if matrix_diff["is_matrix_mismatch"]:
+                    break
+
+        if matrix_diff["is_matrix_mismatch"]:
+            log.info("  Matrix diff detected: %s", matrix_diff["summary"])
+            category = "matrix_mismatch"
+            reason = f"Matrix mismatch: {matrix_diff['summary']}"
+        elif junit_failures:
             real_test_failures = [
                 f for f in junit_failures
-                if "network-flow-matrix" in f.get("name", "").lower()
-                or "commatrix" in f.get("message", "").lower()
-                or "matrix" in f.get("message", "").lower()
-                or "validation" in f.get("message", "").lower()
-                or "e2e" in f.get("name", "").lower()
-                or "test" in f.get("name", "").lower()
+                if "container test" in f.get("name", "").lower()
             ]
+            if not real_test_failures:
+                real_test_failures = [
+                    f for f in junit_failures
+                    if "test" in f.get("name", "").lower()
+                ]
 
             if real_test_failures:
-                f0 = real_test_failures[0]
-                msg = f0.get("message", "")
-                ginkgo_match = re.search(r"\[FAIL\]\s*(.+?)(?:\n|$)", msg)
-                if ginkgo_match:
-                    fail_detail = ginkgo_match.group(1).strip()[:150]
-                else:
-                    fail_detail = f0.get("name", "")[:100]
-
-                category = "test_failure"
-                reason = f"Test failed: {fail_detail}"
-
-                if re.search(r"matrix.*equal|matrix.*match|matrix.*diff", msg, re.IGNORECASE):
-                    category = "matrix_mismatch"
-                    reason = f"Matrix mismatch: {fail_detail}"
+                category, reason = classify_failure(analysis_log, matrix_diff)
+                if category == "unknown":
+                    f0 = real_test_failures[0]
+                    ginkgo_match = re.search(
+                        r"\[FAIL\]\s*(.+?)(?:\n|$)", f0.get("message", "")
+                    )
+                    if ginkgo_match:
+                        fail_detail = ginkgo_match.group(1).strip()[:150]
+                    else:
+                        fail_detail = f0.get("name", "")[:100]
+                    category = "test_failure"
+                    reason = f"Test failed: {fail_detail}"
             else:
-                category, reason = classify_failure(log_text)
-                if junit_failures and category == "unknown":
+                category, reason = classify_failure(analysis_log, matrix_diff)
+                if category == "unknown" and junit_failures:
                     category = "test_failure"
                     reason = f"{len(junit_failures)} step(s) failed: {junit_failures[0]['name'][:60]}"
         else:
-            category, reason = classify_failure(log_text)
+            category, reason = classify_failure(analysis_log, matrix_diff)
 
-        layer_name, layer_label = categorize_test_layer(log_text, job["name"], junit_failures)
-        log.info("  Layer: %s (%s), Classification: %s — %s", layer_label, layer_name, category, reason[:80])
+        layer_name, layer_label = categorize_test_layer(
+            analysis_log, job["name"], junit_failures, category,
+        )
+        log.info("  Layer: %s (%s), Classification: %s — %s",
+                 layer_label, layer_name, category, reason[:80])
 
+        ai_log = analysis_log if analysis_log else build_log
         ai_summary = ""
-        if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY) and log_text and not log_text.startswith("("):
-            import time
+        if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY) and ai_log and not ai_log.startswith("("):
             log.info("  Running AI analysis (waiting 10s for rate limit)...")
             time.sleep(10)
-            ai_summary = ai_analyze_failure(job, log_text)
+            ai_summary = ai_analyze_failure(job, ai_log)
             if ai_summary:
                 log.info("  AI: %s", ai_summary[:200])
             else:
                 log.info("  AI failed, retrying in 30s...")
                 time.sleep(30)
-                ai_summary = ai_analyze_failure(job, log_text)
+                ai_summary = ai_analyze_failure(job, ai_log)
                 if ai_summary:
                     log.info("  AI (retry): %s", ai_summary[:200])
                 else:
@@ -1017,7 +1202,7 @@ def main():
         pr_url = ""
         if AUTO_FIX and category not in ("infra",):
             log.info("  Attempting auto-fix...")
-            pr_url = attempt_auto_fix(job, category, log_text, ai_summary)
+            pr_url = attempt_auto_fix(job, category, analysis_log, ai_summary)
 
         analyses[job["name"]] = {
             "category": category,
@@ -1026,8 +1211,9 @@ def main():
             "layer_label": layer_label,
             "ai_summary": ai_summary,
             "junit_failures": junit_failures,
+            "matrix_diff": matrix_diff if matrix_diff.get("is_matrix_mismatch") else {},
             "pr_url": pr_url,
-            "log_snippet": log_text[-500:] if log_text else "",
+            "log_snippet": analysis_log[-500:] if analysis_log else "",
         }
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
