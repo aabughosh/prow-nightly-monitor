@@ -1545,11 +1545,17 @@ def main():
     log.info("Trend history updated (%d runs)", len(history.get("runs", [])))
 
     html = generate_html(jobs, analyses, trend_html)
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    run_dir = OUTPUT_DIR / "runs" / today
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "index.html").write_text(html)
+    log.info("Run dashboard written to %s", run_dir / "index.html")
+
     html_path = OUTPUT_DIR / "index.html"
     html_path.write_text(html)
-    log.info("Dashboard written to %s", html_path)
+    log.info("Latest dashboard written to %s", html_path)
 
-    results_path = OUTPUT_DIR / "results.json"
     results = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "job_filter": JOB_FILTER,
@@ -1568,8 +1574,86 @@ def main():
             for j in jobs
         ],
     }
+    results_path = OUTPUT_DIR / "results.json"
     results_path.write_text(json.dumps(results, indent=2))
+    (run_dir / "results.json").write_text(json.dumps(results, indent=2))
     log.info("Results JSON written to %s", results_path)
+
+    _generate_runs_index(OUTPUT_DIR)
+
+
+def _generate_runs_index(output_dir: Path) -> None:
+    """Generate an index page listing all archived runs."""
+    runs_dir = output_dir / "runs"
+    if not runs_dir.exists():
+        return
+
+    run_dates = sorted(
+        [d.name for d in runs_dir.iterdir() if d.is_dir() and d.name[0:2] == "20"],
+        reverse=True,
+    )
+
+    rows = ""
+    for date in run_dates:
+        run_results = runs_dir / date / "results.json"
+        summary = ""
+        if run_results.exists():
+            try:
+                data = json.loads(run_results.read_text())
+                total = data.get("total_jobs", 0)
+                passed = data.get("passed", 0)
+                failed = data.get("failed", 0)
+                summary = (
+                    f'<span class="green">{passed} passed</span> / '
+                    f'<span class="red">{failed} failed</span> / '
+                    f'{total} total'
+                )
+            except Exception:
+                pass
+        rows += (
+            f'<tr>'
+            f'<td><a href="runs/{date}/">{date}</a></td>'
+            f'<td>{summary or "—"}</td>'
+            f'</tr>\n'
+        )
+
+    index_html = f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prow Monitor — Run History</title>
+<style>
+  body {{ font-family: 'Inter', -apple-system, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; }}
+  .header {{ background: linear-gradient(135deg, #1a1e2e 0%, #2d1b4e 100%); padding: 24px 32px; border-bottom: 1px solid #30363d; }}
+  .header h1 {{ font-size: 22px; color: #f0f6fc; }}
+  .header .meta {{ color: #8b949e; font-size: 13px; margin-top: 6px; }}
+  .container {{ max-width: 800px; margin: 0 auto; padding: 24px 32px; }}
+  table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: #161b22; border-radius: 12px; overflow: hidden; border: 1px solid #30363d; }}
+  th {{ background: #1c2128; color: #8b949e; padding: 12px 16px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }}
+  td {{ padding: 12px 16px; border-bottom: 1px solid #21262d; font-size: 14px; }}
+  a {{ color: #58a6ff; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+  .green {{ color: #3fb950; }}
+  .red {{ color: #f85149; }}
+  .nav {{ margin-bottom: 20px; }}
+  .nav a {{ background: #21262d; padding: 6px 14px; border-radius: 20px; border: 1px solid #30363d; font-size: 13px; }}
+</style>
+</head><body>
+<div class="header">
+  <h1>Prow Nightly Monitor — Run History</h1>
+  <div class="meta">{len(run_dates)} archived run(s)</div>
+</div>
+<div class="container">
+  <div class="nav"><a href="./">← Latest Dashboard</a></div>
+  <table>
+    <thead><tr><th>Date</th><th>Summary</th></tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+</div>
+</body></html>"""
+
+    (output_dir / "history.html").write_text(index_html)
+    log.info("Runs index written to %s", output_dir / "history.html")
 
     print(f"\n{'='*60}")
     print(f"Prow Nightly Monitor — {JOB_FILTER}")

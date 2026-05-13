@@ -28,6 +28,21 @@ jobs:
         with:
           go-version: "1.25"
 
+      - name: Restore previous runs from Pages
+        run: |
+          mkdir -p ./public/runs
+          curl -sL "https://aabughosh.github.io/prow-nightly-monitor/history.json" -o ./public/history.json 2>/dev/null || true
+          # Fetch the runs index to discover archived dates
+          curl -sL "https://aabughosh.github.io/prow-nightly-monitor/history.html" -o /tmp/history.html 2>/dev/null || true
+          if [ -f /tmp/history.html ]; then
+            for date in $(grep -oP 'runs/\K[0-9-]+(?=/)' /tmp/history.html | sort -u); do
+              mkdir -p "./public/runs/$date"
+              curl -sL "https://aabughosh.github.io/prow-nightly-monitor/runs/$date/index.html" -o "./public/runs/$date/index.html" 2>/dev/null || true
+              curl -sL "https://aabughosh.github.io/prow-nightly-monitor/runs/$date/results.json" -o "./public/runs/$date/results.json" 2>/dev/null || true
+            done
+          fi
+          echo "Restored runs: $(ls ./public/runs/ 2>/dev/null | wc -l)"
+
       - name: Run monitor
         env:
           JOB_FILTER: ${{ vars.JOB_FILTER || 'network-flow-matrix' }}
