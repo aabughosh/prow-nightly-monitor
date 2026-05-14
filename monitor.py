@@ -1655,22 +1655,6 @@ def _generate_runs_index(output_dir: Path) -> None:
     (output_dir / "history.html").write_text(index_html)
     log.info("Runs index written to %s", output_dir / "history.html")
 
-    print(f"\n{'='*60}")
-    print(f"Prow Nightly Monitor — {JOB_FILTER}")
-    print(f"{'='*60}")
-    for j in jobs:
-        emoji = STATE_EMOJI.get(j["state"], "?")
-        version = extract_version(j["name"])
-        duration = compute_duration(j)
-        analysis = analyses.get(j["name"], {})
-        reason = analysis.get("reason", "")
-        line = f"  {emoji} [{version}] {j['name'][:60]} ({duration})"
-        if reason:
-            line += f" — {reason}"
-        print(line)
-    print(f"{'='*60}")
-    print(f"Dashboard: {html_path.resolve()}")
-
 
 if __name__ == "__main__":
     main()
