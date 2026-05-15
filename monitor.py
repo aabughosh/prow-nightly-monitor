@@ -390,6 +390,119 @@ def parse_matrix_diff(log_text: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Parse actual test failures from logs (Ginkgo, Go test, generic)
+# ---------------------------------------------------------------------------
+
+def parse_test_failures_from_log(log_text: str) -> list[dict]:
+    """Extract individual test failure names and messages from step logs.
+
+    Parses Ginkgo [FAIL] blocks, Go 'FAIL' markers, assertion errors,
+    and summarized failures to find what actually failed.
+    """
+    failures: list[dict] = []
+    seen = set()
+
+    ginkgo_blocks = re.finditer(
+        r"\[FAIL\]\s*(.+?)(?:\n|$)"
+        r"(.*?)(?=\n\s*\[FAIL\]|\nRan \d+ of|\n-{10,}|\Z)",
+        log_text, re.DOTALL,
+    )
+    for m in ginkgo_blocks:
+        name = re.sub(r"\x1b\[[0-9;]*m", "", m.group(1)).strip()[:200]
+        body = re.sub(r"\x1b\[[0-9;]*m", "", m.group(2)).strip()
+        msg = ""
+        err_m = re.search(r"(?:Unexpected error|Expected|Failure|Error).*?:\s*(.+?)(?:\n\n|\n\s*In \[)", body, re.DOTALL)
+        if err_m:
+            msg = err_m.group(1).strip().replace("\n", " ")[:300]
+        elif body:
+            msg = body[:200].replace("\n", " ")
+        key = name[:80]
+        if key and key not in seen:
+            seen.add(key)
+            failures.append({"name": name, "message": msg})
+
+    summary_m = re.findall(
+        r"Summarizing \d+ Failure.*?\n(.*?)(?=\nRan \d+ of|\Z)",
+        log_text, re.DOTALL,
+    )
+    for block in summary_m:
+        for line in block.splitlines():
+            clean = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+            fail_m = re.match(r"\[FAIL\]\s*(.+)", clean)
+            if fail_m:
+                name = fail_m.group(1).strip()[:200]
+                key = name[:80]
+                if key not in seen:
+                    seen.add(key)
+                    failures.append({"name": name, "message": ""})
+
+    go_fails = re.findall(r"--- FAIL:\s+(\S+)\s+\(([^)]+)\)", log_text)
+    for test_name, duration in go_fails:
+        key = test_name
+        if key not in seen:
+            seen.add(key)
+            failures.append({"name": test_name, "message": f"duration: {duration}"})
+
+    if not failures:
+        error_lines = re.findall(
+            r"(?:FAILED|FAIL!|Error:|panic:)\s*(.+?)(?:\n|$)",
+            log_text,
+        )
+        for err in error_lines[:5]:
+            clean = re.sub(r"\x1b\[[0-9;]*m", "", err).strip()[:200]
+            if len(clean) > 15 and clean not in seen:
+                seen.add(clean)
+                failures.append({"name": clean, "message": ""})
+
+    return failures[:20]
+
+
+def fetch_step_junit(job: dict, workflow: str, step: str) -> list[dict]:
+    """Try to fetch JUnit XML from inside a step's artifacts subdirectory."""
+    url = job.get("url", "")
+    m = re.search(r"/logs/(.+)/(\d+)$", url)
+    if not m:
+        return []
+    job_path, build_id = m.group(1), m.group(2)
+
+    junit_paths = [
+        f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{workflow}/{step}/artifacts/junit/junit.xml",
+        f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{workflow}/{step}/artifacts/junit/e2e.xml",
+    ]
+    for junit_url in junit_paths:
+        try:
+            resp = requests.get(junit_url, timeout=10)
+            if resp.status_code == 200 and ("<?xml" in resp.text[:200] or "<test" in resp.text[:200]):
+                results = _parse_junit_xml(resp.text)
+                if results:
+                    return results
+        except Exception:
+            pass
+
+    artifacts_url = f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{workflow}/{step}/artifacts/"
+    try:
+        resp = requests.get(artifacts_url, timeout=10)
+        if resp.status_code == 200:
+            xml_files = re.findall(r'href="[^"]*?(junit[^"]*\.xml)"', resp.text)
+            if not xml_files:
+                xml_files = re.findall(r'href="[^"]*?([^/"]+\.xml)"', resp.text)
+            for xf in xml_files[:3]:
+                xf_url = f"{artifacts_url}{xf}" if not xf.startswith("http") else xf
+                try:
+                    xresp = requests.get(xf_url, timeout=10)
+                    if xresp.status_code == 200:
+                        results = _parse_junit_xml(xresp.text)
+                        if results:
+                            return results
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    return []
+
+
+# ---------------------------------------------------------------------------
 # Failure investigation & fix suggestion
 # ---------------------------------------------------------------------------
 
@@ -415,29 +528,54 @@ def investigate_failure(job: dict, category: str, reason: str,
 
     analysis_text = "\n".join(step_logs.values()) if step_logs else build_log
 
-    # --- Extract failed test details from JUnit ---
-    for jf in junit_failures:
-        name = jf.get("name", "")
-        if "container test" not in name.lower() and "test phase" not in name.lower():
-            continue
-        _, step = _extract_step_info(name)
-        msg = jf.get("message", "")
+    # --- Extract actual test failures from step logs ---
+    for step_name, step_log in step_logs.items():
+        parsed = parse_test_failures_from_log(step_log)
+        for tf in parsed:
+            report["failed_tests"].append({
+                "step": step_name,
+                "name": tf["name"],
+                "message": tf["message"],
+            })
 
-        test_msg = ""
-        ginkgo_m = re.search(r"\[FAIL\].*?(\[It\]\s*.+?)(?:\n|$)", msg)
-        if ginkgo_m:
-            test_msg = ginkgo_m.group(1).strip()[:300]
-        else:
-            err_m = re.search(r"(?:Unexpected error|FAILED).*?:\s*(.+?)(?:\n|$)", msg)
-            if err_m:
-                test_msg = err_m.group(1).strip()[:300]
+    # --- If no failures found in step logs, try step-level JUnit XMLs ---
+    if not report["failed_tests"]:
+        for jf in junit_failures:
+            jf_name = jf.get("name", "")
+            workflow, step = _extract_step_info(jf_name)
+            if workflow and step:
+                step_junits = fetch_step_junit(job, workflow, step)
+                for sj in step_junits:
+                    report["failed_tests"].append({
+                        "step": step,
+                        "name": sj.get("name", "unknown")[:200],
+                        "message": sj.get("message", "")[:300],
+                    })
+
+    # --- Last resort: parse JUnit failure messages ---
+    if not report["failed_tests"]:
+        for jf in junit_failures:
+            jf_name = jf.get("name", "")
+            if "container test" not in jf_name.lower() and "test phase" not in jf_name.lower():
+                continue
+            _, step = _extract_step_info(jf_name)
+            msg = jf.get("message", "")
+            parsed = parse_test_failures_from_log(msg)
+            if parsed:
+                for tf in parsed:
+                    report["failed_tests"].append({
+                        "step": step or jf_name[:60],
+                        "name": tf["name"],
+                        "message": tf["message"],
+                    })
             else:
-                test_msg = msg[:300].replace("\n", " ")
-
-        report["failed_tests"].append({
-            "step": step or name[:80],
-            "message": test_msg,
-        })
+                clean_msg = re.sub(r"\x1b\[[0-9;]*m", "", msg)
+                err_m = re.search(r"(?:Unexpected error|FAILED|Error:)\s*(.+?)(?:\n\n|\Z)", clean_msg, re.DOTALL)
+                report["failed_tests"].append({
+                    "step": step or jf_name[:60],
+                    "name": step or "unknown",
+                    "message": (err_m.group(1).strip()[:300] if err_m else clean_msg[:200]).replace("\n", " "),
+                })
 
     # --- Extract source file references from logs ---
     file_refs = re.findall(
@@ -512,30 +650,39 @@ def investigate_failure(job: dict, category: str, reason: str,
 
     elif category == "test_failure":
         report["fix_type"] = "test_investigation"
-        report["summary"] = reason
 
-        ginkgo_failures = re.findall(r"\[FAIL\]\s*(.+?)(?:\n|$)", analysis_text)
-        assertion_errors = re.findall(
-            r"(?:Unexpected error|Expected|Got|to equal|to match|assert).*?:\s*(.+?)(?:\n|$)",
-            analysis_text, re.IGNORECASE,
-        )
-        all_errors = ginkgo_failures + assertion_errors
-        if all_errors:
-            report["root_cause"] = "; ".join(
-                e.strip()[:200] for e in all_errors[:3]
-            )[:600]
+        if report["failed_tests"]:
+            test_names = [t.get("name", t.get("step", "?")) for t in report["failed_tests"][:3]]
+            report["summary"] = f"{len(report['failed_tests'])} test(s) failed: {'; '.join(test_names)}"
+
+            root_parts = []
+            for t in report["failed_tests"][:3]:
+                name = t.get("name", "")
+                msg = t.get("message", "")
+                if msg:
+                    root_parts.append(f"{name}: {msg}"[:200])
+                elif name:
+                    root_parts.append(name[:200])
+            report["root_cause"] = "; ".join(root_parts)[:600] if root_parts else reason
         else:
+            report["summary"] = reason
             report["root_cause"] = reason
 
         fix_parts = []
         if report["failed_tests"]:
             fix_parts.append(
-                f"{len(report['failed_tests'])} test step(s) failed. "
-                "Check the error output below for details."
+                f"{len(report['failed_tests'])} test(s) failed:"
             )
+            for t in report["failed_tests"][:5]:
+                name = t.get("name", t.get("step", "?"))
+                msg = t.get("message", "")
+                fix_parts.append(f"  - {name}")
+                if msg:
+                    fix_parts.append(f"    {msg[:150]}")
+            fix_parts.append("")
         if report["source_files"]:
             fix_parts.append(
-                "Source references found in logs: "
+                "Source references: "
                 + ", ".join(f"{s['file']}:{s['line']}" for s in report["source_files"][:5])
             )
         fix_parts.append(
@@ -1290,10 +1437,16 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
 
                 if inv.get("failed_tests"):
                     inv_html += '<div style="margin-bottom:8px"><strong style="color:#f85149">Failed Tests:</strong><ul style="margin:4px 0;padding-left:16px">'
-                    for t in inv["failed_tests"][:5]:
-                        inv_html += f'<li><code>{t["step"]}</code>'
-                        if t.get("message"):
-                            inv_html += f' — <span style="color:#8b949e">{t["message"]}</span>'
+                    for t in inv["failed_tests"][:10]:
+                        test_name = t.get("name", t.get("step", "unknown"))
+                        step_label = t.get("step", "")
+                        msg = t.get("message", "")
+                        inv_html += f'<li>'
+                        if step_label:
+                            inv_html += f'<span style="color:#8b949e;font-size:11px">[{step_label}]</span> '
+                        inv_html += f'<code style="color:#f0883e">{test_name}</code>'
+                        if msg:
+                            inv_html += f'<br><span style="color:#8b949e;font-size:12px;margin-left:16px">{msg}</span>'
                         inv_html += '</li>'
                     inv_html += '</ul></div>'
 
