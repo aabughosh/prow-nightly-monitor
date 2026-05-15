@@ -1640,19 +1640,12 @@ def main():
         ai_log = analysis_log if analysis_log else build_log
         ai_summary = ""
         if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY) and ai_log and not ai_log.startswith("("):
-            log.info("  Running AI analysis (waiting 10s for rate limit)...")
-            time.sleep(10)
+            log.info("  Running AI analysis...")
             ai_summary = ai_analyze_failure(job, ai_log)
             if ai_summary:
                 log.info("  AI: %s", ai_summary[:200])
             else:
-                log.info("  AI failed, retrying in 30s...")
-                time.sleep(30)
-                ai_summary = ai_analyze_failure(job, ai_log)
-                if ai_summary:
-                    log.info("  AI (retry): %s", ai_summary[:200])
-                else:
-                    log.warning("  AI analysis unavailable, using pattern classification only")
+                log.info("  AI unavailable (rate limited or error), skipping")
 
         log.info("  Running investigation...")
         investigation = investigate_failure(
