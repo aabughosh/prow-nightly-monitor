@@ -1356,7 +1356,7 @@ Log (last portion):
 # Ollama local AI fallback
 # ---------------------------------------------------------------------------
 
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
 
 
 def _ollama_analyze(job: dict, log_text: str) -> str:
@@ -1378,7 +1378,7 @@ def _ollama_analyze(job: dict, log_text: str) -> str:
                 "stream": False,
                 "options": {"temperature": 0.2, "num_predict": 500},
             },
-            timeout=120,
+            timeout=180,
         )
         if resp.status_code == 200:
             data = resp.json()
