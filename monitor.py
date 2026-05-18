@@ -1858,19 +1858,21 @@ def main():
 
         ai_log = analysis_log if analysis_log else build_log
         ai_summary = ""
-        if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY or HF_API_KEY or GROQ_API_KEY) and ai_log and not ai_log.startswith("("):
-            log.info("  Running AI analysis...")
-            time.sleep(5)
-            ai_summary = ai_analyze_failure(job, ai_log)
-            if ai_summary:
-                log.info("  AI: %s", ai_summary[:200])
-            else:
-                log.info("  Primary AI unavailable, trying Ollama fallback...")
+        if ai_log and not ai_log.startswith("("):
+            provider, _, _ = _get_ai_provider()
+            if provider:
+                log.info("  Running AI analysis (%s)...", provider)
+                time.sleep(5)
+                ai_summary = ai_analyze_failure(job, ai_log)
+                if ai_summary:
+                    log.info("  AI: %s", ai_summary[:200])
+            if not ai_summary:
+                log.info("  Trying Ollama fallback...")
                 ai_summary = _ollama_analyze(job, ai_log)
                 if ai_summary:
                     log.info("  Ollama: %s", ai_summary[:200])
                 else:
-                    log.info("  AI analysis unavailable")
+                    log.info("  No AI analysis available")
 
         log.info("  Running investigation...")
         investigation = investigate_failure(
