@@ -1180,11 +1180,11 @@ def _get_ai_provider() -> tuple[str, str, str]:
     if AI_PROVIDER == "gemini" and GEMINI_API_KEY:
         return "gemini", GEMINI_API_KEY, AI_MODEL or "gemini-2.0-flash"
     if AI_PROVIDER == "huggingface" and HF_API_KEY:
-        return "huggingface", HF_API_KEY, AI_MODEL or "meta-llama/Llama-3.1-8B-Instruct"
+        return "huggingface", HF_API_KEY, AI_MODEL or "meta-llama/Meta-Llama-3.1-70B-Instruct"
     if ANTHROPIC_API_KEY:
         return "claude", ANTHROPIC_API_KEY, AI_MODEL or "claude-sonnet-4-20250514"
     if HF_API_KEY:
-        return "huggingface", HF_API_KEY, AI_MODEL or "meta-llama/Llama-3.1-8B-Instruct"
+        return "huggingface", HF_API_KEY, AI_MODEL or "meta-llama/Meta-Llama-3.1-70B-Instruct"
     if OPENAI_API_KEY:
         return "openai", OPENAI_API_KEY, AI_MODEL or "gpt-4o-mini"
     if GEMINI_API_KEY:
@@ -1278,7 +1278,7 @@ Log (last portion):
                 return ""
         elif provider == "huggingface":
             resp = requests.post(
-                "https://router.huggingface.co/novita/v3/openai/chat/completions",
+                "https://router.huggingface.co/sambanova/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
