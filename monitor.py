@@ -1860,6 +1860,7 @@ def main():
         ai_summary = ""
         if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY or HF_API_KEY or GROQ_API_KEY) and ai_log and not ai_log.startswith("("):
             log.info("  Running AI analysis...")
+            time.sleep(5)
             ai_summary = ai_analyze_failure(job, ai_log)
             if ai_summary:
                 log.info("  AI: %s", ai_summary[:200])
