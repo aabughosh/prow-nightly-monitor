@@ -1278,7 +1278,7 @@ Log (last portion):
                 return ""
         elif provider == "huggingface":
             resp = requests.post(
-                f"https://api-inference.huggingface.co/v1/chat/completions",
+                "https://router.huggingface.co/hf-inference/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
