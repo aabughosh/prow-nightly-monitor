@@ -1203,13 +1203,51 @@ def _get_ai_provider() -> tuple[str, str, str]:
     return "", "", ""
 
 
+def _extract_failure_context(log_text: str) -> str:
+    """Extract just the failure-relevant parts from a CI log.
+
+    Prioritizes Ginkgo summary, [FAIL] blocks, and error lines
+    instead of sending the entire log to AI.
+    """
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", log_text)
+    parts = []
+
+    summary_m = re.search(
+        r"(Summarizing \d+ Failure.*?)(?=\nRan \d+ of|\Z)",
+        clean, re.DOTALL,
+    )
+    if summary_m:
+        parts.append(summary_m.group(1).strip()[:1000])
+
+    for m in re.finditer(r"(\[FAIL(?:ED)?\].+?)(?=\n-{10,}|\n\[FAIL|\Z)", clean, re.DOTALL):
+        block = m.group(1).strip()[:500]
+        if block not in "\n".join(parts):
+            parts.append(block)
+
+    for m in re.finditer(
+        r"((?:ports are (?:documented but are not used|used but are not documented|"
+        r"not used)|ports are used but don.t have an endpointslice).*?)(?=\n\s*\[|\n\s*•|\Z)",
+        clean, re.DOTALL,
+    ):
+        parts.append(m.group(1).strip()[:500])
+
+    result_m = re.search(r"((?:FAIL!|Ran \d+ of \d+ Specs).*?$)", clean, re.MULTILINE)
+    if result_m:
+        parts.append(result_m.group(1).strip()[:200])
+
+    if parts:
+        return "\n---\n".join(parts)[:4000]
+
+    return clean[-4000:] if len(clean) > 4000 else clean
+
+
 def ai_analyze_failure(job: dict, log_text: str) -> str:
     """Use an LLM (Claude or OpenAI) to analyze the failure log."""
     provider, api_key, model = _get_ai_provider()
     if not provider:
         return ""
 
-    log_truncated = log_text[-8000:] if len(log_text) > 8000 else log_text
+    log_truncated = _extract_failure_context(log_text)
 
     prompt = f"""You are a senior CI failure analyst for OpenShift. Analyze this failed CI job and provide a detailed, structured investigation report.
 
@@ -1368,7 +1406,9 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
 def _ollama_analyze(job: dict, log_text: str) -> str:
     """Fallback: use local Ollama for AI analysis when API providers fail."""
     try:
-        log_truncated = log_text[-2000:] if len(log_text) > 2000 else log_text
+        log_truncated = _extract_failure_context(log_text)
+        if len(log_truncated) > 2000:
+            log_truncated = log_truncated[:2000]
 
         prompt = (
             f"Analyze this CI failure for job {job['name']}. "
