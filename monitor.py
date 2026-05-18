@@ -1251,12 +1251,16 @@ def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
 
 def _fetch_artifacts_context(job: dict, category: str,
                              matrix_diff: dict,
-                             step_logs: dict[str, str]) -> str:
-    """Fetch targeted artifacts based on failure type for deeper AI analysis."""
+                             step_logs: dict[str, str]) -> dict:
+    """Fetch targeted artifacts based on failure type for deeper investigation.
+
+    Returns dict with: ss_findings, stale_info, junit_findings, text_summary.
+    """
+    result: dict = {"ss_findings": [], "stale_info": [], "junit_findings": [], "text_summary": ""}
     url = job.get("url", "")
     m = re.search(r"/logs/(.+)/(\d+)$", url)
     if not m:
-        return ""
+        return result
     job_path, build_id = m.group(1), m.group(2)
 
     parts = []
@@ -1264,22 +1268,38 @@ def _fetch_artifacts_context(job: dict, category: str,
     if category == "matrix_mismatch":
         no_ep = matrix_diff.get("no_endpointslice_ports", [])
         if no_ep:
-            workflow_dirs = re.findall(
-                r"([\w-]+-network-flow-matrix[\w-]*)",
-                " ".join(step_logs.keys()) + " " + job.get("name", ""),
-            )
-            for wf_guess in set(workflow_dirs):
-                ss_url = f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_guess}/network-flow-matrix-tests/artifacts/raw-ss-tcp"
+            job_name = job.get("name", "")
+            name_short = job_name.replace("periodic-ci-openshift-release-main-nightly-", "")
+            wf_parts = name_short.split("-")
+            ver_idx = next((i for i, p in enumerate(wf_parts) if re.match(r"\d+\.\d+", p)), -1)
+            wf_name = "-".join(wf_parts[ver_idx + 1:]) if ver_idx >= 0 else name_short
+
+            ss_paths = [
+                f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/network-flow-matrix-tests/artifacts/raw-ss-tcp",
+                f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/network-flow-matrix-tests/artifacts/commatrix/raw-ss-tcp",
+            ]
+            for step in step_logs:
+                if "network-flow-matrix" in step:
+                    ss_paths.insert(0, f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/{step}/artifacts/raw-ss-tcp")
+
+            for ss_url in ss_paths:
                 try:
                     resp = requests.get(ss_url, timeout=10)
                     if resp.status_code == 200:
+                        log.info("  Fetched ss output from artifacts")
                         for port_entry in no_ep:
                             port_fields = port_entry.split(",")
                             if len(port_fields) >= 3:
                                 port_num = port_fields[2]
                                 for line in resp.text.splitlines():
                                     if f":{port_num}" in line:
-                                        parts.append(f"ss output for port {port_num}: {line.strip()}")
+                                        clean_line = line.strip()
+                                        result["ss_findings"].append({
+                                            "port": port_num,
+                                            "entry": port_entry,
+                                            "ss_line": clean_line,
+                                        })
+                                        parts.append(f"ss output for port {port_num}: {clean_line}")
                         break
                 except Exception:
                     pass
@@ -1289,35 +1309,10 @@ def _fetch_artifacts_context(job: dict, category: str,
             parts.append(f"Stale ports (in matrix but not on nodes): {len(stale)} entries")
             for p in stale[:3]:
                 parts.append(f"  {p}")
+                result["stale_info"].append(p)
 
-    for step_name in step_logs:
-        if "gather-extra" in step_name or "must-gather" in step_name:
-            continue
-        wf_m = re.search(r"^([\w-]+?)(?:-network-flow-matrix|-e2e-)", job.get("name", ""))
-        if not wf_m:
-            continue
-        for junit_dir in [
-            f"{GCS_BASE}/{job_path}/{build_id}/artifacts/",
-        ]:
-            try:
-                resp = requests.get(junit_dir, timeout=8)
-                if resp.status_code == 200:
-                    xml_links = re.findall(r'href="[^"]*?(junit[^"]*\.xml)"', resp.text)
-                    for xf in xml_links[:2]:
-                        xf_url = f"{junit_dir}{xf}" if not xf.startswith("http") else xf
-                        try:
-                            xresp = requests.get(xf_url, timeout=8)
-                            if xresp.status_code == 200 and "<failure" in xresp.text:
-                                failures = _parse_junit_xml(xresp.text)
-                                for f in failures[:3]:
-                                    parts.append(f"JUnit: {f['name'][:100]} — {f['message'][:150]}")
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-        break
-
-    return "\n".join(parts)[:1500] if parts else ""
+    result["text_summary"] = "\n".join(parts)[:1500] if parts else ""
+    return result
 
 
 def _extract_failure_context(log_text: str) -> str:
@@ -1378,11 +1373,12 @@ def ai_analyze_failure(job: dict, log_text: str,
             log.info("  Fetched test source code for AI context")
             extra_context += f"\n\n**Test Source Code:**\n{source_code}"
 
+    artifacts_data = {}
     if category and matrix_diff and step_logs:
-        artifacts = _fetch_artifacts_context(job, category, matrix_diff or {}, step_logs or {})
-        if artifacts:
+        artifacts_data = _fetch_artifacts_context(job, category, matrix_diff or {}, step_logs or {})
+        if artifacts_data.get("text_summary"):
             log.info("  Fetched artifacts context for AI")
-            extra_context += f"\n\n**Artifacts:**\n{artifacts}"
+            extra_context += f"\n\n**Artifacts:**\n{artifacts_data['text_summary']}"
 
     source_section = extra_context if extra_context else ""
 
@@ -1558,9 +1554,9 @@ def _ollama_analyze(job: dict, log_text: str,
             if source_code:
                 extra += f"\n\nTest source:\n{source_code[:600]}"
         if category and matrix_diff and step_logs:
-            artifacts = _fetch_artifacts_context(job, category, matrix_diff or {}, step_logs or {})
-            if artifacts:
-                extra += f"\n\nArtifacts:\n{artifacts[:400]}"
+            artifacts_data = _fetch_artifacts_context(job, category, matrix_diff or {}, step_logs or {})
+            if artifacts_data.get("text_summary"):
+                extra += f"\n\nArtifacts:\n{artifacts_data['text_summary'][:400]}"
         source_hint = extra
 
         prompt = (
@@ -1907,18 +1903,43 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                 detail_buttons.append(f'<details><summary>Investigation</summary><div>{inv_html}</div></details>')
 
             mdiff = analysis.get("matrix_diff", {})
+            art = analysis.get("artifacts", {})
+            ss_findings = art.get("ss_findings", []) if art else []
+
             if mdiff.get("is_matrix_mismatch"):
                 diff_html = ''
                 for key, label, color in [
                     ("undocumented_ports", "Add", "#f85149"),
                     ("stale_ports", "Remove", "#d29922"),
-                    ("no_endpointslice_ports", "Investigate", "#da3633"),
                 ]:
                     ports = mdiff.get(key, [])
                     if ports:
                         diff_html += f'<strong style="color:{color}">{label}:</strong><br>'
                         for p in ports[:10]:
                             diff_html += f'<code>{p}</code><br>'
+
+                no_ep = mdiff.get("no_endpointslice_ports", [])
+                if no_ep:
+                    diff_html += '<strong style="color:#da3633">Investigate (no EndpointSlice):</strong><br>'
+                    for p in no_ep[:10]:
+                        port_fields = p.split(",")
+                        port_num = port_fields[2] if len(port_fields) >= 3 else "?"
+                        diff_html += f'<code style="color:#f85149">{p}</code><br>'
+                        ss_match = next((s for s in ss_findings if s["port"] == port_num), None)
+                        if ss_match:
+                            diff_html += (
+                                f'<div style="margin:4px 0 8px 12px;padding:6px 10px;background:#161b22;'
+                                f'border-left:3px solid #da3633;border-radius:4px;font-size:11px">'
+                                f'<strong style="color:#58a6ff">ss output:</strong> '
+                                f'<code style="color:#c9d1d9">{ss_match["ss_line"]}</code>'
+                                f'</div>'
+                            )
+                        else:
+                            diff_html += (
+                                f'<div style="margin:2px 0 6px 12px;font-size:11px;color:#8b949e">'
+                                f'(ss output not found for port {port_num})</div>'
+                            )
+
                 detail_buttons.append(f'<details><summary>Matrix Diff</summary><div>{diff_html}</div></details>')
 
             if ai_summary:
@@ -2073,6 +2094,15 @@ def main():
         if investigation["suggested_fix"]:
             log.info("  Suggested fix: %s", investigation["suggested_fix"][:120])
 
+        artifacts_data = {}
+        if category == "matrix_mismatch" and matrix_diff.get("no_endpointslice_ports"):
+            log.info("  Fetching artifacts for port investigation...")
+            artifacts_data = _fetch_artifacts_context(job, category, matrix_diff, step_logs)
+            if artifacts_data.get("ss_findings"):
+                log.info("  Found ss data for %d port(s)", len(artifacts_data["ss_findings"]))
+                for sf in artifacts_data["ss_findings"]:
+                    log.info("    Port %s: %s", sf["port"], sf["ss_line"][:100])
+
         ai_log = analysis_log if analysis_log else build_log
         ai_summary = ""
         if ai_log and not ai_log.startswith("("):
@@ -2109,6 +2139,7 @@ def main():
             "junit_failures": junit_failures,
             "matrix_diff": matrix_diff if matrix_diff.get("is_matrix_mismatch") else {},
             "investigation": investigation,
+            "artifacts": artifacts_data,
             "pr_url": pr_url,
             "log_snippet": analysis_log[-500:] if analysis_log else "",
         }
