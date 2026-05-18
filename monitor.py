@@ -1183,12 +1183,12 @@ def _get_ai_provider() -> tuple[str, str, str]:
         return "huggingface", HF_API_KEY, AI_MODEL or "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
     if ANTHROPIC_API_KEY:
         return "claude", ANTHROPIC_API_KEY, AI_MODEL or "claude-sonnet-4-20250514"
+    if HF_API_KEY:
+        return "huggingface", HF_API_KEY, AI_MODEL or "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
     if OPENAI_API_KEY:
         return "openai", OPENAI_API_KEY, AI_MODEL or "gpt-4o-mini"
     if GEMINI_API_KEY:
         return "gemini", GEMINI_API_KEY, AI_MODEL or "gemini-2.0-flash"
-    if HF_API_KEY:
-        return "huggingface", HF_API_KEY, AI_MODEL or "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
     return "", "", ""
 
 
