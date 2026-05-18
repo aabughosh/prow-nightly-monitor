@@ -1362,18 +1362,17 @@ Log (last portion):
 # Ollama local AI fallback
 # ---------------------------------------------------------------------------
 
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
 
 
 def _ollama_analyze(job: dict, log_text: str) -> str:
     """Fallback: use local Ollama for AI analysis when API providers fail."""
     try:
-        log_truncated = log_text[-4000:] if len(log_text) > 4000 else log_text
+        log_truncated = log_text[-2000:] if len(log_text) > 2000 else log_text
 
         prompt = (
-            f"Analyze this CI failure log for job {job['name']}. "
-            f"List: 1) Failed test names 2) Error messages 3) Root cause 4) Is this infra or code bug?\n\n"
-            f"{log_truncated}"
+            f"Analyze this CI failure for job {job['name']}. "
+            f"What failed and why? Be brief.\n\n{log_truncated}"
         )
 
         resp = requests.post(
@@ -1382,9 +1381,9 @@ def _ollama_analyze(job: dict, log_text: str) -> str:
                 "model": OLLAMA_MODEL,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
-                "options": {"temperature": 0.2, "num_predict": 500},
+                "options": {"temperature": 0.2, "num_predict": 300},
             },
-            timeout=180,
+            timeout=90,
         )
         if resp.status_code == 200:
             data = resp.json()
