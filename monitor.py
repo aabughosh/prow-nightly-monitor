@@ -1616,9 +1616,154 @@ STATE_COLOR = {
 }
 
 
+def _render_failure_card(job: dict, analysis: dict) -> str:
+    """Render a single failure as a Grafana-style card."""
+    version = extract_version(job["name"])
+    duration = compute_duration(job)
+    name_short = job["name"].replace("periodic-ci-openshift-release-main-nightly-", "")
+    url = job["url"] or f'{PROW_URL}/?type=periodic&job={job["name"]}'
+    started = job["start_time"][:16] if job.get("start_time") else ""
+
+    category = analysis.get("category", "unknown")
+    inv = analysis.get("investigation", {})
+    sev = inv.get("severity", "MEDIUM")
+    ai_summary = analysis.get("ai_summary", "")
+
+    cat_badge = {
+        "infra": '<span class="badge badge-infra">INFRA</span>',
+        "test_failure": '<span class="badge badge-test">TEST FAILURE</span>',
+        "build_error": '<span class="badge badge-build">BUILD ERROR</span>',
+        "matrix_mismatch": '<span class="badge badge-matrix">MATRIX MISMATCH</span>',
+        "error": '<span class="badge badge-error">ERROR</span>',
+        "unknown": '<span class="badge badge-unknown">UNKNOWN</span>',
+    }.get(category, "")
+
+    sev_class = f"sev-{sev.lower()}" if sev else "sev-medium"
+    cat_css = f"cat-{category}" if category == "matrix_mismatch" else f"cat-{category}"
+
+    card = f'<div class="failure-card {cat_css}" data-version="{version}" data-category="{category}">'
+
+    card += (
+        f'<div class="card-header">'
+        f'<div class="card-badges">'
+        f'<span class="version-badge">{version}</span> '
+        f'{cat_badge} '
+        f'<span class="badge badge-sev {sev_class}">{sev}</span>'
+        f'</div>'
+        f'<div class="card-meta">'
+        f'<span>{duration}</span>'
+        f'<span>{started}</span>'
+        f'<a href="{url}" target="_blank">Prow</a>'
+        f'</div>'
+        f'</div>'
+    )
+
+    card += f'<div class="card-title"><a href="{url}" target="_blank">{name_short}</a></div>'
+
+    card += '<div class="card-body">'
+
+    failed_tests = inv.get("failed_tests", [])
+    if failed_tests:
+        for t in failed_tests[:3]:
+            test_name = t.get("name", t.get("step", "unknown"))
+            test_file = t.get("test_file", "")
+            msg = t.get("message", "")
+            card += '<div class="failed-test-block">'
+            card += f'<div class="failed-test-name">{test_name}</div>'
+            if test_file:
+                card += f'<div class="failed-test-file">{test_file}</div>'
+            if msg:
+                card += f'<div class="failed-test-msg">{msg}</div>'
+            card += '</div>'
+
+    if inv.get("suggested_fix"):
+        fix_text = inv["suggested_fix"]
+        card += (
+            f'<div class="fix-box">'
+            f'<div class="fix-box-title">Suggested Fix</div>'
+            f'<div class="fix-box-content">{fix_text}</div>'
+            f'</div>'
+        )
+
+    card += '</div>'
+
+    card += '<div class="card-footer">'
+
+    if inv and (inv.get("root_cause") or inv.get("error_output")):
+        inv_html = ''
+        if inv.get("root_cause"):
+            inv_html += f'<div style="margin-bottom:8px"><strong style="color:#f0883e">Root Cause:</strong> {inv["root_cause"]}</div>'
+        if inv.get("source_files"):
+            inv_html += '<div style="margin-bottom:8px"><strong style="color:#d29922">Source:</strong> '
+            inv_html += ", ".join(f'<code>{s["file"]}:{s["line"]}</code>' for s in inv["source_files"][:5])
+            inv_html += '</div>'
+        if inv.get("error_output"):
+            inv_html += '<pre style="background:#0d1117;border:1px solid #21262d;border-radius:4px;padding:8px;font-size:11px;color:#f0883e;white-space:pre-wrap;max-height:200px;overflow-y:auto">'
+            for err in inv["error_output"][:8]:
+                inv_html += f'{err}\n'
+            inv_html += '</pre>'
+        card += f'<details><summary>Investigation</summary><div>{inv_html}</div></details>'
+
+    mdiff = analysis.get("matrix_diff", {})
+    if mdiff.get("is_matrix_mismatch"):
+        diff_html = ''
+        if mdiff.get("undocumented_ports"):
+            diff_html += '<div style="margin-bottom:6px"><strong style="color:#f85149">Add:</strong></div>'
+            for p in mdiff["undocumented_ports"][:10]:
+                diff_html += f'<code style="display:block;margin:2px 0;color:#f0883e">{p}</code>'
+        if mdiff.get("stale_ports"):
+            diff_html += '<div style="margin:6px 0"><strong style="color:#d29922">Remove:</strong></div>'
+            for p in mdiff["stale_ports"][:10]:
+                diff_html += f'<code style="display:block;margin:2px 0;color:#8b949e">{p}</code>'
+        if mdiff.get("no_endpointslice_ports"):
+            diff_html += '<div style="margin:6px 0"><strong style="color:#da3633">Investigate:</strong></div>'
+            for p in mdiff["no_endpointslice_ports"][:10]:
+                diff_html += f'<code style="display:block;margin:2px 0;color:#f85149">{p}</code>'
+        card += f'<details><summary>Matrix Diff</summary><div>{diff_html}</div></details>'
+
+    if ai_summary:
+        card += f'<details><summary>AI Analysis</summary><div style="white-space:pre-wrap;line-height:1.5">{ai_summary}</div></details>'
+
+    pr_url_fix = analysis.get("pr_url", "")
+    if pr_url_fix:
+        card += f'<a href="{pr_url_fix}" target="_blank" style="font-size:11px;padding:4px 10px;background:#238636;color:white;border-radius:6px;text-decoration:none">PR Created</a>'
+
+    card += '</div></div>'
+    return card
+
+
+def _render_passed_row(job: dict) -> str:
+    """Render a passed job as a compact row."""
+    version = extract_version(job["name"])
+    duration = compute_duration(job)
+    name_short = job["name"].replace("periodic-ci-openshift-release-main-nightly-", "")
+    url = job["url"] or f'{PROW_URL}/?type=periodic&job={job["name"]}'
+    return (
+        f'<div class="passed-row" data-version="{version}">'
+        f'<span class="version-badge">{version}</span>'
+        f'<span class="job-name"><a href="{url}" target="_blank">{name_short}</a></span>'
+        f'<span class="duration">{duration}</span>'
+        f'</div>'
+    )
+
+
+def _render_pending_row(job: dict) -> str:
+    """Render a pending job as a compact row."""
+    version = extract_version(job["name"])
+    name_short = job["name"].replace("periodic-ci-openshift-release-main-nightly-", "")
+    url = job["url"] or f'{PROW_URL}/?type=periodic&job={job["name"]}'
+    return (
+        f'<div class="passed-row pending-row" data-version="{version}">'
+        f'<span class="version-badge">{version}</span>'
+        f'<span class="job-name"><a href="{url}" target="_blank">{name_short}</a></span>'
+        f'<span class="duration" style="color:#58a6ff">running...</span>'
+        f'</div>'
+    )
+
+
 def generate_html(jobs: list[dict], analyses: dict[str, dict],
                    trend_html: str = "") -> str:
-    """Generate the HTML dashboard using template."""
+    """Generate the HTML dashboard using the Grafana-style template."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     unique_for_stats: dict[str, dict] = {}
@@ -1640,153 +1785,79 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
 
     versions = sorted(set(extract_version(j["name"]) for j in jobs if extract_version(j["name"])))
 
-    rows = []
+    cat_counts: dict[str, int] = {}
+    for j in jobs:
+        if j["state"] in ("failure", "error"):
+            a = analyses.get(j["name"], {})
+            cat = a.get("category", "unknown")
+            cat_counts[cat] = cat_counts.get(cat, 0) + 1
+
+    cat_labels = {
+        "matrix_mismatch": "Matrix Mismatch",
+        "test_failure": "Test Failure",
+        "infra": "Infra",
+        "build_error": "Build Error",
+        "error": "Error",
+        "unknown": "Unknown",
+    }
+    cat_css_map = {
+        "matrix_mismatch": "matrix",
+        "test_failure": "test",
+        "infra": "infra",
+        "build_error": "build",
+        "error": "unknown",
+        "unknown": "unknown",
+    }
+
+    category_cards = '<div class="categories">'
+    for cat, count in sorted(cat_counts.items(), key=lambda x: -x[1]):
+        css_class = cat_css_map.get(cat, "unknown")
+        label = cat_labels.get(cat, cat)
+        category_cards += (
+            f'<div class="cat-card {css_class}" onclick="filterCategory(\'{cat}\')">'
+            f'<div class="cat-count">{count}</div>'
+            f'<div class="cat-name">{label}</div>'
+            f'</div>'
+        )
+    if cat_counts:
+        category_cards += (
+            f'<div class="cat-card" onclick="filterCategory(\'\')" style="border-left:4px solid #58a6ff">'
+            f'<div class="cat-count" style="color:#58a6ff">{sum(cat_counts.values())}</div>'
+            f'<div class="cat-name">All Failures</div>'
+            f'</div>'
+        )
+    category_cards += '</div>'
+
+    failure_cards = []
+    passed_rows = []
+    pending_rows = []
+
     for job in jobs:
         state = job["state"]
-        emoji = STATE_EMOJI.get(state, "❓")
-        color = STATE_COLOR.get(state, "#ffffff")
-        version = extract_version(job["name"])
-        duration = compute_duration(job)
-        name_short = job["name"].replace("periodic-ci-openshift-release-main-nightly-", "")
-        url = job["url"] or f'{PROW_URL}/?type=periodic&job={job["name"]}'
-
-        analysis = analyses.get(job["name"], {})
-        category = analysis.get("category", "")
-        reason = analysis.get("reason", "")
-        ai_summary = analysis.get("ai_summary", "")
-
-        analysis_html = ""
         if state in ("failure", "error"):
-            cat_badge = {
-                "infra": '<span class="badge badge-infra">INFRA</span>',
-                "test_failure": '<span class="badge badge-test">TEST FAILURE</span>',
-                "build_error": '<span class="badge badge-build">BUILD ERROR</span>',
-                "matrix_mismatch": '<span class="badge badge-matrix">MATRIX MISMATCH</span>',
-                "error": '<span class="badge badge-error">ERROR</span>',
-                "unknown": '<span class="badge badge-unknown">UNKNOWN</span>',
-            }.get(category, "")
+            analysis = analyses.get(job["name"], {})
+            failure_cards.append(_render_failure_card(job, analysis))
+        elif state == "success":
+            passed_rows.append(_render_passed_row(job))
+        else:
+            pending_rows.append(_render_pending_row(job))
 
-            layer_badge = get_layer_badge(analysis.get("layer", ""), analysis.get("layer_label", ""))
-            inv = analysis.get("investigation", {})
-            sev = inv.get("severity", "")
-            sev_colors = {
-                "CRITICAL": "#f85149", "HIGH": "#f0883e",
-                "MEDIUM": "#d29922", "LOW": "#8b949e",
-            }
-            sev_badge = ""
-            if sev:
-                sev_color = sev_colors.get(sev, "#8b949e")
-                sev_badge = (
-                    f'<span style="background:{sev_color};color:white;'
-                    f'padding:2px 8px;border-radius:4px;font-size:11px;'
-                    f'font-weight:600;margin-left:6px">{sev}</span>'
-                )
+    passed_section = ""
+    if passed_rows:
+        passed_section = (
+            f'<details class="passed-section">'
+            f'<summary>Passed Jobs <span class="count">{len(passed_rows)}</span></summary>'
+            f'<div class="passed-list">{"".join(passed_rows)}</div>'
+            f'</details>'
+        )
 
-            analysis_html = f"{layer_badge} {cat_badge} {sev_badge}"
-            analysis_html += f'<div style="margin-top:4px;color:#c9d1d9;font-size:13px">{reason}</div>'
-
-            if inv.get("suggested_fix"):
-                fix_escaped = inv["suggested_fix"].replace("\n", "<br>").replace("  ", "&nbsp;&nbsp;")
-                analysis_html += (
-                    f'<div style="margin-top:8px;padding:10px 12px;background:#0d1117;'
-                    f'border:1px solid #238636;border-radius:8px;font-size:12px">'
-                    f'<strong style="color:#3fb950">Suggested Fix:</strong><br>'
-                    f'<span style="color:#c9d1d9">{fix_escaped}</span>'
-                    f'</div>'
-                )
-
-            if inv and (inv.get("root_cause") or inv.get("error_output")):
-                inv_html = '<div style="font-size:13px;color:#c9d1d9">'
-
-                if inv.get("root_cause"):
-                    inv_html += f'<div style="margin-bottom:8px"><strong style="color:#f0883e">Root Cause:</strong> {inv["root_cause"]}</div>'
-
-                if inv.get("failed_tests"):
-                    inv_html += '<div style="margin-bottom:8px"><strong style="color:#f85149">Failed Tests:</strong><ul style="margin:4px 0;padding-left:16px">'
-                    for t in inv["failed_tests"][:10]:
-                        test_name = t.get("name", t.get("step", "unknown"))
-                        step_label = t.get("step", "")
-                        msg = t.get("message", "")
-                        test_file = t.get("test_file", "")
-                        inv_html += '<li>'
-                        if step_label:
-                            inv_html += f'<span style="color:#8b949e;font-size:11px">[{step_label}]</span> '
-                        inv_html += f'<code style="color:#f0883e">{test_name}</code>'
-                        if test_file:
-                            inv_html += f' <span style="color:#58a6ff;font-size:11px">({test_file})</span>'
-                        if msg:
-                            inv_html += f'<br><span style="color:#c9d1d9;font-size:12px;margin-left:16px">{msg}</span>'
-                        inv_html += '</li>'
-                    inv_html += '</ul></div>'
-
-                if inv.get("source_files"):
-                    inv_html += '<div style="margin-bottom:8px"><strong style="color:#d29922">Source References:</strong> '
-                    inv_html += ", ".join(
-                        f'<code>{s["file"]}:{s["line"]}</code>' for s in inv["source_files"][:8]
-                    )
-                    inv_html += '</div>'
-
-                if inv.get("error_output"):
-                    inv_html += (
-                        '<div style="margin-bottom:8px"><strong style="color:#f85149">'
-                        'Error Output:</strong>'
-                        '<pre style="background:#0d1117;border:1px solid #30363d;'
-                        'border-radius:6px;padding:10px;margin:4px 0;'
-                        'font-size:11px;color:#f0883e;overflow-x:auto;white-space:pre-wrap">'
-                    )
-                    for err in inv["error_output"]:
-                        inv_html += f'{err}\n'
-                    inv_html += '</pre></div>'
-
-                inv_html += '</div>'
-                analysis_html += f'<details><summary>Full Investigation Details</summary><div>{inv_html}</div></details>'
-
-            mdiff = analysis.get("matrix_diff", {})
-            if mdiff.get("is_matrix_mismatch"):
-                diff_html = '<div style="font-size:13px;margin:8px 0">'
-                if mdiff.get("undocumented_ports"):
-                    diff_html += '<div style="margin-bottom:8px"><strong style="color:#f85149">Ports used but NOT documented (need to add):</strong><ul style="margin:4px 0;padding-left:16px">'
-                    for p in mdiff["undocumented_ports"][:10]:
-                        diff_html += f'<li><code style="color:#f0883e">{p}</code></li>'
-                    diff_html += '</ul></div>'
-                if mdiff.get("stale_ports"):
-                    diff_html += '<div style="margin-bottom:8px"><strong style="color:#d29922">Ports in matrix but not in use:</strong><ul style="margin:4px 0;padding-left:16px">'
-                    for p in mdiff["stale_ports"][:10]:
-                        diff_html += f'<li><code style="color:#8b949e">{p}</code></li>'
-                    diff_html += '</ul></div>'
-                if mdiff.get("no_endpointslice_ports"):
-                    diff_html += '<div style="margin-bottom:8px"><strong style="color:#da3633">Ports open but missing EndpointSlice:</strong><ul style="margin:4px 0;padding-left:16px">'
-                    for p in mdiff["no_endpointslice_ports"][:10]:
-                        diff_html += f'<li><code style="color:#f85149">{p}</code></li>'
-                    diff_html += '</ul></div>'
-                diff_html += '</div>'
-                analysis_html += f'<details><summary>Matrix Diff Details</summary><div>{diff_html}</div></details>'
-
-            junit_failures = analysis.get("junit_failures", [])
-            if junit_failures:
-                test_list = "".join(
-                    f'<li><code>{f["name"][:120]}</code><br><small style="color:#8b949e">{f["message"][:200]}</small></li>'
-                    for f in junit_failures[:5]
-                )
-                more = f"<li><em>...and {len(junit_failures)-5} more</em></li>" if len(junit_failures) > 5 else ""
-                analysis_html += f'<details><summary>Failed Tests ({len(junit_failures)})</summary><div><ul style="font-size:13px;margin:8px 0">{test_list}{more}</ul></div></details>'
-
-            if ai_summary:
-                analysis_html += f'<details><summary>AI Analysis</summary><div style="font-size:13px;color:#c9d1d9;margin:8px 0;white-space:pre-wrap">{ai_summary}</div></details>'
-
-            pr_url_fix = analysis.get("pr_url", "")
-            if pr_url_fix:
-                analysis_html += f'<div style="margin-top:4px"><span class="badge badge-fix">AUTO-FIX</span> <a href="{pr_url_fix}" target="_blank">PR Created</a></div>'
-
-        rows.append(
-            f'<tr data-state="{state}">'
-            f'<td>{emoji} {state}</td>'
-            f'<td><span class="version-badge">{version}</span></td>'
-            f'<td><a href="{url}" target="_blank" title="{job["name"]}">{name_short}</a></td>'
-            f'<td class="duration">{duration}</td>'
-            f'<td>{analysis_html}</td>'
-            f'<td class="duration">{job["start_time"][:16] if job["start_time"] else ""}</td>'
-            f'</tr>'
+    pending_section = ""
+    if pending_rows:
+        pending_section = (
+            f'<details class="pending-section" open>'
+            f'<summary>Running / Pending <span class="count">{len(pending_rows)}</span></summary>'
+            f'<div class="passed-list">{"".join(pending_rows)}</div>'
+            f'</details>'
         )
 
     version_buttons = " ".join(
@@ -1799,7 +1870,7 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
         html = template_path.read_text()
     else:
         log.warning("template.html not found, using basic output")
-        html = "<html><body><h1>Prow Monitor</h1>{{TABLE_ROWS}}</body></html>"
+        html = "<html><body><h1>Prow Monitor</h1>{{FAILURE_CARDS}}</body></html>"
 
     replacements = {
         "{{JOB_FILTER}}": JOB_FILTER,
@@ -1812,8 +1883,11 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
         "{{PASS_RATE}}": str(pass_rate),
         "{{RATE_COLOR}}": rate_color,
         "{{TREND_HTML}}": trend_html,
+        "{{CATEGORY_CARDS}}": category_cards,
         "{{VERSION_BUTTONS}}": version_buttons,
-        "{{TABLE_ROWS}}": "\n".join(rows),
+        "{{FAILURE_CARDS}}": "\n".join(failure_cards),
+        "{{PASSED_SECTION}}": passed_section,
+        "{{PENDING_SECTION}}": pending_section,
         "{{PROW_URL}}": PROW_URL,
     }
     for key, value in replacements.items():

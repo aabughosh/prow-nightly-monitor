@@ -6,41 +6,94 @@
 <title>Prow Nightly Monitor — {{JOB_FILTER}}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; }
-  .header { background: linear-gradient(135deg, #1a1e2e 0%, #2d1b4e 100%); padding: 24px 32px; border-bottom: 1px solid #30363d; }
-  .header h1 { font-size: 22px; font-weight: 600; color: #f0f6fc; }
-  .header h1 code { background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 6px; font-size: 18px; }
-  .header .meta { color: #8b949e; font-size: 13px; margin-top: 6px; }
-  .container { max-width: 1400px; margin: 0 auto; padding: 24px 32px; }
-  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
-  .stat { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; text-align: center; }
-  .stat-num { font-size: 36px; font-weight: 700; }
-  .stat-label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e1e4e8; min-height: 100vh; }
+
+  .header { background: linear-gradient(135deg, #161b22 0%, #1a1e2e 50%, #2d1b4e 100%); padding: 20px 32px; border-bottom: 1px solid #30363d; }
+  .header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; }
+  .header h1 code { background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 6px; font-size: 16px; }
+  .header .meta { color: #8b949e; font-size: 12px; margin-top: 4px; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px 32px; }
+
+  /* Stats row */
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; text-align: center; }
+  .stat-num { font-size: 32px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
   .green { color: #3fb950; }
   .red { color: #f85149; }
   .blue { color: #58a6ff; }
   .yellow { color: #d29922; }
-  .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 16px; background: #161b22; border-radius: 12px; border: 1px solid #30363d; }
-  .filter-label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
-  .filter-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+
+  /* Category breakdown */
+  .categories { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .cat-card { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; background: #161b22; border: 1px solid #30363d; cursor: pointer; transition: all 0.2s; min-width: 140px; }
+  .cat-card:hover { border-color: #58a6ff; transform: translateY(-1px); }
+  .cat-card .cat-count { font-size: 24px; font-weight: 700; }
+  .cat-card .cat-name { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; }
+  .cat-card.matrix { border-left: 4px solid #f0883e; }
+  .cat-card.matrix .cat-count { color: #f0883e; }
+  .cat-card.test { border-left: 4px solid #f85149; }
+  .cat-card.test .cat-count { color: #f85149; }
+  .cat-card.infra { border-left: 4px solid #d29922; }
+  .cat-card.infra .cat-count { color: #d29922; }
+  .cat-card.build { border-left: 4px solid #da3633; }
+  .cat-card.build .cat-count { color: #da3633; }
+  .cat-card.unknown { border-left: 4px solid #484f58; }
+  .cat-card.unknown .cat-count { color: #8b949e; }
+
+  /* Filters */
+  .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 12px 16px; background: #161b22; border-radius: 10px; border: 1px solid #30363d; }
+  .filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+  .filter-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 5px 12px; border-radius: 16px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
   .filter-btn:hover { background: #30363d; border-color: #58a6ff; }
   .filter-btn.active { background: #388bfd26; border-color: #58a6ff; color: #58a6ff; }
-  .filter-sep { width: 1px; height: 24px; background: #30363d; margin: 0 8px; }
-  table { width: 100%; border-collapse: separate; border-spacing: 0; background: #161b22; border-radius: 12px; overflow: hidden; border: 1px solid #30363d; }
-  th { background: #1c2128; color: #8b949e; padding: 12px 16px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; border-bottom: 1px solid #30363d; }
-  td { padding: 12px 16px; border-bottom: 1px solid #21262d; font-size: 14px; vertical-align: top; }
-  tr:hover { background: #1c2128; }
-  a { color: #58a6ff; text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  details { margin-top: 6px; }
-  summary { cursor: pointer; color: #58a6ff; font-size: 12px; padding: 4px 0; }
-  details[open] summary { margin-bottom: 6px; }
-  details > div { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px; font-size: 13px; color: #c9d1d9; margin-top: 4px; }
-  details ul { list-style: none; padding: 0; }
-  details li { padding: 8px 0; border-bottom: 1px solid #21262d; }
-  details li:last-child { border-bottom: none; }
-  code { background: #21262d; padding: 1px 6px; border-radius: 4px; font-size: 12px; color: #f0883e; }
-  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; color: white; }
+  .filter-sep { width: 1px; height: 20px; background: #30363d; margin: 0 6px; }
+
+  /* Section headers */
+  .section-header { font-size: 14px; font-weight: 600; color: #f0f6fc; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .section-header .count { background: #21262d; color: #8b949e; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+
+  /* Failure cards */
+  .failure-cards { display: flex; flex-direction: column; gap: 12px; margin-bottom: 28px; }
+  .failure-card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; transition: border-color 0.2s; }
+  .failure-card:hover { border-color: #484f58; }
+  .failure-card.cat-matrix { border-left: 4px solid #f0883e; }
+  .failure-card.cat-test_failure { border-left: 4px solid #f85149; }
+  .failure-card.cat-infra { border-left: 4px solid #d29922; }
+  .failure-card.cat-build_error { border-left: 4px solid #da3633; }
+  .failure-card.cat-error { border-left: 4px solid #8b949e; }
+  .failure-card.cat-unknown { border-left: 4px solid #484f58; }
+
+  .card-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #21262d; flex-wrap: wrap; gap: 8px; }
+  .card-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .card-meta { display: flex; align-items: center; gap: 12px; font-size: 12px; color: #8b949e; }
+  .card-meta a { color: #58a6ff; font-size: 12px; padding: 3px 10px; border: 1px solid #30363d; border-radius: 6px; text-decoration: none; }
+  .card-meta a:hover { border-color: #58a6ff; background: #388bfd15; }
+
+  .card-title { padding: 8px 16px 0; font-size: 13px; color: #c9d1d9; }
+  .card-title a { color: #c9d1d9; }
+  .card-title a:hover { color: #58a6ff; }
+
+  .card-body { padding: 12px 16px; }
+
+  .failed-test-block { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; }
+  .failed-test-name { font-size: 13px; color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; }
+  .failed-test-file { font-size: 11px; color: #58a6ff; margin-top: 2px; }
+  .failed-test-msg { font-size: 12px; color: #8b949e; margin-top: 4px; line-height: 1.4; }
+
+  .fix-box { background: #0d1117; border: 1px solid #238636; border-radius: 8px; padding: 10px 14px; margin-top: 10px; }
+  .fix-box-title { font-size: 11px; font-weight: 600; color: #3fb950; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .fix-box-content { font-size: 12px; color: #c9d1d9; font-family: 'SF Mono', 'Fira Code', monospace; line-height: 1.5; white-space: pre-wrap; }
+
+  .card-footer { padding: 8px 16px 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .card-footer details { margin: 0; }
+  .card-footer summary { cursor: pointer; color: #58a6ff; font-size: 11px; padding: 4px 10px; background: #21262d; border: 1px solid #30363d; border-radius: 6px; transition: all 0.2s; }
+  .card-footer summary:hover { border-color: #58a6ff; background: #388bfd15; }
+  .card-footer details > div { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px; font-size: 12px; color: #c9d1d9; margin-top: 6px; max-height: 400px; overflow-y: auto; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: white; }
   .badge-infra { background: #d29922; }
   .badge-test { background: #f85149; }
   .badge-build { background: #da3633; }
@@ -48,20 +101,50 @@
   .badge-error { background: #8b949e; }
   .badge-unknown { background: #484f58; }
   .badge-fix { background: #3fb950; }
-  .version-badge { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 6px; }
-  .trend-card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-bottom: 24px; }
-  .trend-card h2 { font-size: 16px; color: #f0f6fc; margin-bottom: 16px; }
-  .trend-bars { display: flex; align-items: flex-end; gap: 4px; height: 100px; }
-  .trend-bar { flex: 1; min-width: 30px; text-align: center; }
-  .trend-date { font-size: 10px; color: #484f58; margin-top: 4px; }
-  .trend-dots { margin: 4px 0; font-size: 0; }
-  .trend-dots span { font-size: 16px; margin: 0 1px; }
-  .footer { margin-top: 32px; padding: 20px; text-align: center; color: #484f58; font-size: 12px; border-top: 1px solid #21262d; }
+  .badge-sev { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .sev-critical { background: #f85149; color: white; }
+  .sev-high { background: #f0883e; color: white; }
+  .sev-medium { background: #d29922; color: white; }
+  .sev-low { background: #8b949e; color: white; }
+  .version-badge { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 5px; }
+
+  /* Passed jobs */
+  .passed-section { margin-bottom: 28px; }
+  .passed-section > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: #f0f6fc; padding: 12px 16px; background: #161b22; border: 1px solid #30363d; border-radius: 10px; list-style: none; display: flex; align-items: center; gap: 8px; }
+  .passed-section > summary::-webkit-details-marker { display: none; }
+  .passed-section > summary::before { content: '\25B6'; font-size: 10px; color: #8b949e; transition: transform 0.2s; }
+  .passed-section[open] > summary::before { transform: rotate(90deg); }
+  .passed-section > summary .count { background: #238636; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .passed-list { padding: 8px 0; }
+  .passed-row { display: flex; align-items: center; gap: 12px; padding: 6px 16px; font-size: 13px; border-bottom: 1px solid #21262d; }
+  .passed-row:last-child { border-bottom: none; }
+  .passed-row:hover { background: #1c2128; }
+  .passed-row .job-name { flex: 1; }
+  .passed-row .job-name a { color: #c9d1d9; text-decoration: none; }
+  .passed-row .job-name a:hover { color: #58a6ff; }
+  .passed-row .duration { color: #8b949e; font-size: 12px; min-width: 50px; text-align: right; }
+
+  /* Pending jobs */
+  .pending-section { margin-bottom: 28px; }
+  .pending-section > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: #f0f6fc; padding: 12px 16px; background: #161b22; border: 1px solid #30363d; border-radius: 10px; list-style: none; display: flex; align-items: center; gap: 8px; }
+  .pending-section > summary::-webkit-details-marker { display: none; }
+  .pending-section > summary::before { content: '\25B6'; font-size: 10px; color: #8b949e; transition: transform 0.2s; }
+  .pending-section[open] > summary::before { transform: rotate(90deg); }
+  .pending-section > summary .count { background: #58a6ff; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+
+  code { background: #21262d; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .footer { margin-top: 32px; padding: 16px; text-align: center; color: #484f58; font-size: 11px; border-top: 1px solid #21262d; }
   .footer a { color: #58a6ff; }
+
   @media (max-width: 768px) {
     .stats { grid-template-columns: repeat(3, 1fr); }
-    .container { padding: 16px; }
-    .header { padding: 16px; }
+    .categories { flex-direction: column; }
+    .container { padding: 12px; }
+    .header { padding: 12px; }
+    .card-header { flex-direction: column; }
   }
 </style>
 </head>
@@ -69,7 +152,7 @@
 
 <div class="header">
   <h1>Prow Nightly Monitor — <code>{{JOB_FILTER}}</code></h1>
-  <div class="meta">Last updated: {{NOW}} &nbsp;|&nbsp; AI: {{AI_STATUS}}</div>
+  <div class="meta">Last updated: {{NOW}} | AI: {{AI_STATUS}} | <a href="history.html" style="color:#8b949e">Run History</a></div>
 </div>
 
 <div class="container">
@@ -81,6 +164,8 @@
   <div class="stat"><div class="stat-num blue">{{PENDING}}</div><div class="stat-label">Pending</div></div>
   <div class="stat"><div class="stat-num {{RATE_COLOR}}">{{PASS_RATE}}%</div><div class="stat-label">Pass Rate</div></div>
 </div>
+
+{{CATEGORY_CARDS}}
 
 {{TREND_HTML}}
 
@@ -96,25 +181,18 @@
   <button class="filter-btn" onclick="filterState('pending', this)">Running</button>
 </div>
 
-<table id="jobsTable">
-<thead>
-<tr>
-  <th>Status</th>
-  <th>Version</th>
-  <th>Job</th>
-  <th>Duration</th>
-  <th>Analysis</th>
-  <th>Started</th>
-</tr>
-</thead>
-<tbody>
-{{TABLE_ROWS}}
-</tbody>
-</table>
+<div class="section-header">Failed Jobs <span class="count">{{FAILED}}</span></div>
+<div class="failure-cards" id="failureCards">
+{{FAILURE_CARDS}}
+</div>
+
+{{PASSED_SECTION}}
+
+{{PENDING_SECTION}}
 
 <div class="footer">
-  <a href="https://github.com/aabughosh/prow-nightly-monitor">prow-nightly-monitor</a> &nbsp;|&nbsp;
-  Data from <a href="{{PROW_URL}}/?type=periodic&job=*{{JOB_FILTER}}*">Prow</a> &nbsp;|&nbsp;
+  <a href="https://github.com/aabughosh/prow-nightly-monitor">prow-nightly-monitor</a> |
+  Data from <a href="{{PROW_URL}}/?type=periodic&job=*{{JOB_FILTER}}*">Prow</a> |
   <a href="history.html">Run History</a>
 </div>
 
@@ -122,9 +200,11 @@
 
 <script>
 function filterVersion(v, btn) {
-  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
-    const version = row.cells[1].textContent.trim();
-    row.style.display = (!v || version === v) ? '' : 'none';
+  document.querySelectorAll('.failure-card').forEach(el => {
+    el.style.display = (!v || el.dataset.version === v) ? '' : 'none';
+  });
+  document.querySelectorAll('.passed-row, .pending-row').forEach(el => {
+    el.style.display = (!v || el.dataset.version === v) ? '' : 'none';
   });
   if (btn) {
     btn.closest('.filters').querySelectorAll('.filter-btn').forEach(b => {
@@ -135,9 +215,12 @@ function filterVersion(v, btn) {
   }
 }
 function filterState(s, btn) {
-  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
-    const state = row.dataset.state || '';
-    row.style.display = (!s || state === s) ? '' : 'none';
+  document.querySelector('.failure-cards').style.display = (!s || s === 'failure') ? '' : 'none';
+  document.querySelectorAll('.passed-section').forEach(el => {
+    el.style.display = (!s || s === 'success') ? '' : 'none';
+  });
+  document.querySelectorAll('.pending-section').forEach(el => {
+    el.style.display = (!s || s === 'pending') ? '' : 'none';
   });
   if (btn) {
     btn.closest('.filters').querySelectorAll('.filter-btn').forEach(b => {
@@ -146,6 +229,11 @@ function filterState(s, btn) {
     });
     btn.classList.add('active');
   }
+}
+function filterCategory(cat) {
+  document.querySelectorAll('.failure-card').forEach(el => {
+    el.style.display = (!cat || el.dataset.category === cat) ? '' : 'none';
+  });
 }
 </script>
 </body>
