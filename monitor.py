@@ -414,65 +414,132 @@ def parse_matrix_diff(log_text: str) -> dict:
 def parse_test_failures_from_log(log_text: str) -> list[dict]:
     """Extract individual test failure names and messages from step logs.
 
-    Parses Ginkgo [FAIL] blocks, Go 'FAIL' markers, assertion errors,
-    and summarized failures to find what actually failed.
+    Priority order:
+    1. Ginkgo "Summarizing N Failures" section (most reliable, always at end)
+    2. Ginkgo [FAIL] blocks with error details
+    3. Go test --- FAIL markers
+    4. Generic error lines (last resort)
+
+    For each failure, extracts: name, message, test_file, test_line.
     """
+    clean_text = re.sub(r"\x1b\[[0-9;]*m", "", log_text)
     failures: list[dict] = []
     seen = set()
 
-    ginkgo_blocks = re.finditer(
-        r"\[FAIL\]\s*(.+?)(?:\n|$)"
-        r"(.*?)(?=\n\s*\[FAIL\]|\nRan \d+ of|\n-{10,}|\Z)",
-        log_text, re.DOTALL,
-    )
-    for m in ginkgo_blocks:
-        name = re.sub(r"\x1b\[[0-9;]*m", "", m.group(1)).strip()[:200]
-        body = re.sub(r"\x1b\[[0-9;]*m", "", m.group(2)).strip()
-        msg = ""
-        err_m = re.search(r"(?:Unexpected error|Expected|Failure|Error).*?:\s*(.+?)(?:\n\n|\n\s*In \[)", body, re.DOTALL)
-        if err_m:
-            msg = err_m.group(1).strip().replace("\n", " ")[:300]
-        elif body:
-            msg = body[:200].replace("\n", " ")
-        key = name[:80]
-        if key and key not in seen:
-            seen.add(key)
-            failures.append({"name": name, "message": msg})
-
-    summary_m = re.findall(
+    # --- Priority 1: Ginkgo summary section (most reliable) ---
+    # Look at the LAST part of the log for "Summarizing N Failures"
+    summary_sections = re.findall(
         r"Summarizing \d+ Failure.*?\n(.*?)(?=\nRan \d+ of|\Z)",
-        log_text, re.DOTALL,
+        clean_text, re.DOTALL,
     )
-    for block in summary_m:
+    for block in summary_sections:
+        current_name = ""
+        current_file = ""
         for line in block.splitlines():
-            clean = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-            fail_m = re.match(r"\[FAIL\]\s*(.+)", clean)
+            stripped = line.strip()
+            fail_m = re.match(r"\[FAIL\]\s*(.+)", stripped)
             if fail_m:
-                name = fail_m.group(1).strip()[:200]
-                key = name[:80]
+                current_name = fail_m.group(1).strip()[:200]
+            file_m = re.match(r"([\w/._-]+_test\.go):(\d+)", stripped)
+            if file_m:
+                current_file = f"{file_m.group(1)}:{file_m.group(2)}"
+            if current_name:
+                key = current_name[:80]
                 if key not in seen:
                     seen.add(key)
-                    failures.append({"name": name, "message": ""})
+                    failures.append({
+                        "name": current_name,
+                        "message": "",
+                        "test_file": current_file,
+                    })
+                current_name = ""
+                current_file = ""
 
-    go_fails = re.findall(r"--- FAIL:\s+(\S+)\s+\(([^)]+)\)", log_text)
+    # --- Priority 2: Ginkgo [FAIL] blocks with error details ---
+    fail_blocks = re.split(r"(?=\[FAIL(?:ED)?\])", clean_text)
+    for block in fail_blocks:
+        if not block.startswith("[FAIL"):
+            continue
+
+        name_m = re.match(r"\[FAIL(?:ED)?\]\s*(.+?)(?:\n|$)", block)
+        if not name_m:
+            continue
+        name = name_m.group(1).strip()[:200]
+        key = name[:80]
+        if key in seen:
+            existing = next((f for f in failures if f["name"][:80] == key), None)
+            if existing and not existing.get("message"):
+                msg = _extract_failure_message(block)
+                if msg:
+                    existing["message"] = msg
+                tf = _extract_test_file(block)
+                if tf and not existing.get("test_file"):
+                    existing["test_file"] = tf
+            continue
+
+        seen.add(key)
+        failures.append({
+            "name": name,
+            "message": _extract_failure_message(block),
+            "test_file": _extract_test_file(block),
+        })
+
+    # --- Priority 3: Go test failures ---
+    go_fails = re.findall(r"--- FAIL:\s+(\S+)\s+\(([^)]+)\)", clean_text)
     for test_name, duration in go_fails:
-        key = test_name
-        if key not in seen:
-            seen.add(key)
-            failures.append({"name": test_name, "message": f"duration: {duration}"})
+        if test_name not in seen:
+            seen.add(test_name)
+            failures.append({
+                "name": test_name,
+                "message": f"Failed in {duration}",
+                "test_file": "",
+            })
 
+    # --- Priority 4: Generic errors (only if nothing else found) ---
     if not failures:
-        error_lines = re.findall(
-            r"(?:FAILED|FAIL!|Error:|panic:)\s*(.+?)(?:\n|$)",
-            log_text,
-        )
-        for err in error_lines[:5]:
-            clean = re.sub(r"\x1b\[[0-9;]*m", "", err).strip()[:200]
-            if len(clean) > 15 and clean not in seen:
-                seen.add(clean)
-                failures.append({"name": clean, "message": ""})
+        for pat in [
+            r"(?:FAILED|FAIL!)\s*[—-]*\s*(.+?)(?:\n|$)",
+            r"(?:Error:|panic:)\s*(.+?)(?:\n|$)",
+        ]:
+            for m in re.finditer(pat, clean_text):
+                err = m.group(1).strip()[:200]
+                if len(err) > 15 and err not in seen:
+                    seen.add(err)
+                    failures.append({"name": err, "message": "", "test_file": ""})
+                    if len(failures) >= 5:
+                        break
+            if failures:
+                break
 
     return failures[:20]
+
+
+def _extract_failure_message(block: str) -> str:
+    """Extract the actual error/assertion message from a Ginkgo [FAIL] block."""
+    patterns = [
+        r"(?:Unexpected error|FAILED).*?:\s*\n?\s*(.+?)(?:\n\s*\n|\n\s*In \[|\n\s*occurred)",
+        r"(?:Expected|Got|to equal|to match|to be)\s*(.+?)(?:\n\s*\n|\Z)",
+        r"the following ports (?:are used but (?:are not documented|don.t have)|are (?:documented but are not used|not used)).*?:\s*\n?\s*(.+?)(?:\n\s*\n|\Z)",
+        r"(?:error|Error):\s*(.+?)(?:\n\s*\n|\Z)",
+    ]
+    for pat in patterns:
+        m = re.search(pat, block, re.DOTALL)
+        if m:
+            msg = m.group(1).strip().replace("\n", " ")[:300]
+            if len(msg) > 10:
+                return msg
+    return ""
+
+
+def _extract_test_file(block: str) -> str:
+    """Extract the test file path and line number from a Ginkgo block."""
+    m = re.search(r"([\w/._-]+_test\.go):(\d+)", block)
+    if m:
+        return f"{m.group(1)}:{m.group(2)}"
+    m = re.search(r"In \[It\] at:\s*([\w/._-]+\.go):(\d+)", block)
+    if m:
+        return f"{m.group(1)}:{m.group(2)}"
+    return ""
 
 
 def fetch_step_junit(job: dict, workflow: str, step: str) -> list[dict]:
@@ -1048,6 +1115,19 @@ def classify_failure(log_text: str,
                 return "matrix_mismatch", f"Matrix mismatch: {diff['summary']}"
             return "matrix_mismatch", "Communication matrix mismatch — ports changed"
 
+    parsed_failures = parse_test_failures_from_log(log_text)
+    if parsed_failures:
+        first = parsed_failures[0]
+        name = first.get("name", "")
+        msg = first.get("message", "")
+        test_file = first.get("test_file", "")
+        detail = name
+        if msg:
+            detail += f": {msg}"
+        if test_file:
+            detail += f" ({test_file})"
+        return "test_failure", f"Test failed: {detail[:250]}"
+
     if re.search(r"go.*build.*fail|compile.*error|cannot find package", log_text, re.IGNORECASE):
         err_match = re.search(r"(.*(?:build|compile|cannot find).*)", log_text, re.IGNORECASE)
         detail = err_match.group(1).strip()[:150] if err_match else ""
@@ -1478,12 +1558,15 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                         test_name = t.get("name", t.get("step", "unknown"))
                         step_label = t.get("step", "")
                         msg = t.get("message", "")
-                        inv_html += f'<li>'
+                        test_file = t.get("test_file", "")
+                        inv_html += '<li>'
                         if step_label:
                             inv_html += f'<span style="color:#8b949e;font-size:11px">[{step_label}]</span> '
                         inv_html += f'<code style="color:#f0883e">{test_name}</code>'
+                        if test_file:
+                            inv_html += f' <span style="color:#58a6ff;font-size:11px">({test_file})</span>'
                         if msg:
-                            inv_html += f'<br><span style="color:#8b949e;font-size:12px;margin-left:16px">{msg}</span>'
+                            inv_html += f'<br><span style="color:#c9d1d9;font-size:12px;margin-left:16px">{msg}</span>'
                         inv_html += '</li>'
                     inv_html += '</ul></div>'
 
