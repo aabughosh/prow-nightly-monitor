@@ -1560,14 +1560,20 @@ def _ollama_analyze(job: dict, log_text: str,
         source_hint = extra
 
         prompt = (
-            f"You are a CI failure analyst for OpenShift. Analyze this failure.\n"
+            f"You are a senior CI failure analyst for OpenShift. Analyze this failure.\n"
             f"Job: {job['name']}\n\n"
+            f"Context: This is an OpenShift CI nightly job. Common failures include:\n"
+            f"- Matrix mismatch: documented ports don't match actual open ports (from ss command)\n"
+            f"- Missing EndpointSlice: a port is open (ss shows it) but no Kubernetes EndpointSlice exists. "
+            f"CRI-O uses ephemeral ports that need static entries.\n"
+            f"- Cluster setup failure: bare metal provisioning (ofcir) or telco5g cluster setup failed\n"
+            f"- Upgrade failures: node not ready after upgrade\n\n"
             f"Respond in this EXACT format:\n\n"
-            f"**Failed Tests:**\n- <test name>\n\n"
-            f"**Failure Messages:**\n- \"<quote the exact error>\"\n\n"
-            f"**Root Cause:**\n- <explain specifically why it failed>\n\n"
+            f"**Failed Tests:**\n- <exact test name from the log>\n\n"
+            f"**Failure Messages:**\n- \"<quote the exact error message>\"\n\n"
+            f"**Root Cause:**\n- <explain specifically WHY it failed, not just what happened>\n\n"
             f"**Classification:**\n- INFRA / TEST_FAILURE / MATRIX_MISMATCH / BUILD_ERROR\n\n"
-            f"**Recommended Action:**\n- <specific steps to fix>\n\n"
+            f"**Recommended Action:**\n- <specific steps to fix, e.g. 'add static entry for CRI-O port' or 'retry - infra issue'>\n\n"
             f"**Severity:** CRITICAL / HIGH / MEDIUM / LOW\n\n"
             f"Log:\n{log_truncated}{source_hint}"
         )
