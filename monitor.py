@@ -334,56 +334,74 @@ def fetch_failed_step_logs(job: dict, junit_failures: list[dict],
 def parse_matrix_diff(log_text: str) -> dict:
     """Parse commatrix port differences from log output.
 
-    Detects lines like:
-      'the following ports are documented but are not used:\\n...'
-      'the following ports are used but are not documented:\\n...'
+    Detects all variants of port mismatch messages:
+      'ports are documented but are not used'
+      'ports are used but are not documented'
+      'ports are not used'  (shorter form)
+      'ports are used but don't have an endpointslice'
 
-    Returns dict with is_matrix_mismatch, undocumented_ports, stale_ports, summary.
+    Returns dict with is_matrix_mismatch, undocumented_ports, stale_ports,
+    no_endpointslice_ports, summary.
     """
     result: dict = {
         "is_matrix_mismatch": False,
         "undocumented_ports": [],
         "stale_ports": [],
+        "no_endpointslice_ports": [],
         "summary": "",
     }
 
-    stale_match = re.search(
-        r"ports are documented but are not used:\s*\\n((?:[^\n\"]+\\n)*)",
-        log_text,
-    )
-    if not stale_match:
-        stale_match = re.search(
-            r"ports are documented but are not used:\s*\n((?:.*\n)*?)\s*(?:\"|$)",
-            log_text,
-        )
-    if stale_match:
-        raw = stale_match.group(1).replace("\\n", "\n").strip()
-        result["stale_ports"] = [
-            line.strip() for line in raw.splitlines() if line.strip()
-        ]
+    def _extract_ports(pattern: str) -> list[str]:
+        """Try both escaped-newline and real-newline variants."""
+        m = re.search(pattern + r"\s*\\n((?:[^\n\"]+\\n)*)", log_text)
+        if not m:
+            m = re.search(pattern + r"\s*\n((?:.*\n)*?)\s*(?:\"|{|\[|$)", log_text)
+        if not m:
+            m = re.search(pattern + r"\s*\n\s*((?:\S+,\S+.*\n?)*)", log_text)
+        if m:
+            raw = m.group(1).replace("\\n", "\n").strip()
+            return [l.strip() for l in raw.splitlines() if l.strip() and "," in l]
+        return []
 
-    undoc_match = re.search(
-        r"ports are used but are not documented:\s*\\n((?:[^\n\"]+\\n)*)",
-        log_text,
-    )
-    if not undoc_match:
-        undoc_match = re.search(
-            r"ports are used but are not documented:\s*\n((?:.*\n)*?)\s*(?:\"|{|$)",
-            log_text,
-        )
-    if undoc_match:
-        raw = undoc_match.group(1).replace("\\n", "\n").strip()
-        result["undocumented_ports"] = [
-            line.strip() for line in raw.splitlines() if line.strip()
-        ]
+    stale_patterns = [
+        r"ports are documented but are not used:",
+        r"the following ports are not used:",
+    ]
+    for pat in stale_patterns:
+        ports = _extract_ports(pat)
+        if ports:
+            result["stale_ports"].extend(ports)
 
-    if result["stale_ports"] or result["undocumented_ports"]:
+    undoc_patterns = [
+        r"ports are used but are not documented:",
+    ]
+    for pat in undoc_patterns:
+        ports = _extract_ports(pat)
+        if ports:
+            result["undocumented_ports"].extend(ports)
+
+    no_ep_patterns = [
+        r"ports are used but don.t have an endpointslice:",
+    ]
+    for pat in no_ep_patterns:
+        ports = _extract_ports(pat)
+        if ports:
+            result["no_endpointslice_ports"].extend(ports)
+
+    has_mismatch = (
+        result["stale_ports"]
+        or result["undocumented_ports"]
+        or result["no_endpointslice_ports"]
+    )
+    if has_mismatch:
         result["is_matrix_mismatch"] = True
         parts = []
         if result["undocumented_ports"]:
             parts.append(f"{len(result['undocumented_ports'])} port(s) used but not documented")
         if result["stale_ports"]:
-            parts.append(f"{len(result['stale_ports'])} port(s) documented but no longer used")
+            parts.append(f"{len(result['stale_ports'])} port(s) in matrix but not in use")
+        if result["no_endpointslice_ports"]:
+            parts.append(f"{len(result['no_endpointslice_ports'])} port(s) open but missing endpointslice")
         result["summary"] = "; ".join(parts)
 
     return result
@@ -618,34 +636,50 @@ def investigate_failure(job: dict, category: str, reason: str,
 
         undoc = matrix_diff.get("undocumented_ports", [])
         stale = matrix_diff.get("stale_ports", [])
+        no_ep = matrix_diff.get("no_endpointslice_ports", [])
 
-        report["summary"] = (
-            "Expected data does not match the actual state. "
-            f"{len(undoc)} item(s) found in practice but missing from docs, "
-            f"{len(stale)} item(s) documented but no longer present."
-        )
+        parts = []
+        if undoc:
+            parts.append(f"{len(undoc)} port(s) used but not documented")
+        if stale:
+            parts.append(f"{len(stale)} port(s) in matrix but not in use")
+        if no_ep:
+            parts.append(f"{len(no_ep)} port(s) open but missing EndpointSlice")
+        report["summary"] = ". ".join(parts)
 
         root_parts = []
         if undoc:
             root_parts.append(
-                "Items present but not documented: " + "; ".join(undoc[:5])
+                "Ports used but not documented: " + "; ".join(undoc[:5])
             )
         if stale:
             root_parts.append(
-                "Items documented but no longer present: " + "; ".join(stale[:5])
+                "Ports in matrix but not open on nodes: " + "; ".join(stale[:5])
+            )
+        if no_ep:
+            root_parts.append(
+                "Ports open on nodes but have no EndpointSlice: " + "; ".join(no_ep[:5])
             )
         report["root_cause"] = ". ".join(root_parts)
 
-        fix_lines = ["Update the documented/expected data to match reality:", ""]
+        fix_lines = ["Update the matrix or investigate the port discrepancies:", ""]
         if undoc:
-            fix_lines.append("ADD (new items that appeared):")
+            fix_lines.append("ADD to documented matrix (ports now in use):")
             for p in undoc:
                 fix_lines.append(f"  {p}")
             fix_lines.append("")
         if stale:
-            fix_lines.append("REMOVE (stale items no longer present):")
+            fix_lines.append("REMOVE from matrix (ports no longer in use):")
             for p in stale:
                 fix_lines.append(f"  {p}")
+            fix_lines.append("")
+        if no_ep:
+            fix_lines.append("INVESTIGATE — ports open on node but no EndpointSlice found:")
+            for p in no_ep:
+                fix_lines.append(f"  {p}")
+            fix_lines.append("These may be new services that need EndpointSlice resources,")
+            fix_lines.append("or ephemeral ports (like CRI-O) that should be added to static entries.")
+            fix_lines.append("")
         report["suggested_fix"] = "\n".join(fix_lines)
 
     elif category == "test_failure":
@@ -1000,7 +1034,10 @@ def classify_failure(log_text: str,
 
     matrix_patterns = [
         r"ports are (?:documented but are not used|used but are not documented)",
+        r"the following ports are not used:",
+        r"ports are used but don.t have an endpointslice",
         r"generated communication matrix should be equal to documented",
+        r"communication matrix ports match the node.s open ports",
         r"matrix.*(?:mismatch|not equal|differ)",
         r"unexpected.*port|expected.*port.*missing",
     ]
@@ -1481,9 +1518,14 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                         diff_html += f'<li><code style="color:#f0883e">{p}</code></li>'
                     diff_html += '</ul></div>'
                 if mdiff.get("stale_ports"):
-                    diff_html += '<div><strong style="color:#d29922">Ports documented but no longer used (can remove):</strong><ul style="margin:4px 0;padding-left:16px">'
+                    diff_html += '<div style="margin-bottom:8px"><strong style="color:#d29922">Ports in matrix but not in use:</strong><ul style="margin:4px 0;padding-left:16px">'
                     for p in mdiff["stale_ports"][:10]:
                         diff_html += f'<li><code style="color:#8b949e">{p}</code></li>'
+                    diff_html += '</ul></div>'
+                if mdiff.get("no_endpointslice_ports"):
+                    diff_html += '<div style="margin-bottom:8px"><strong style="color:#da3633">Ports open but missing EndpointSlice:</strong><ul style="margin:4px 0;padding-left:16px">'
+                    for p in mdiff["no_endpointslice_ports"][:10]:
+                        diff_html += f'<li><code style="color:#f85149">{p}</code></li>'
                     diff_html += '</ul></div>'
                 diff_html += '</div>'
                 analysis_html += f'<details><summary>Matrix Diff Details</summary><div>{diff_html}</div></details>'
