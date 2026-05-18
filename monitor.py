@@ -1183,11 +1183,11 @@ def _get_ai_provider() -> tuple[str, str, str]:
     if AI_PROVIDER == "huggingface" and HF_API_KEY:
         return "huggingface", HF_API_KEY, AI_MODEL or "meta-llama/Meta-Llama-3.1-70B-Instruct"
     if AI_PROVIDER == "groq" and GROQ_API_KEY:
-        return "groq", GROQ_API_KEY, AI_MODEL or "llama-3.1-70b-versatile"
+        return "groq", GROQ_API_KEY, AI_MODEL or "llama-3.3-70b-versatile"
     if ANTHROPIC_API_KEY:
         return "claude", ANTHROPIC_API_KEY, AI_MODEL or "claude-sonnet-4-20250514"
     if GROQ_API_KEY:
-        return "groq", GROQ_API_KEY, AI_MODEL or "llama-3.1-70b-versatile"
+        return "groq", GROQ_API_KEY, AI_MODEL or "llama-3.3-70b-versatile"
     if HF_API_KEY:
         return "huggingface", HF_API_KEY, AI_MODEL or "meta-llama/Meta-Llama-3.1-70B-Instruct"
     if OPENAI_API_KEY:
