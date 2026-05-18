@@ -1400,7 +1400,7 @@ Log (last portion):
 # Ollama local AI fallback
 # ---------------------------------------------------------------------------
 
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:1.5b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 
 
 def _ollama_analyze(job: dict, log_text: str) -> str:
@@ -1411,8 +1411,15 @@ def _ollama_analyze(job: dict, log_text: str) -> str:
             log_truncated = log_truncated[:1500]
 
         prompt = (
-            f"Analyze this CI failure briefly. Job: {job['name']}.\n"
-            f"List: 1) Failed tests 2) Error messages 3) Root cause\n\n{log_truncated}"
+            f"You are a CI failure analyst for OpenShift. Analyze this failure deeply.\n"
+            f"Job: {job['name']}\n\n"
+            f"Think step by step:\n"
+            f"1) What specific test failed? Give the exact test name.\n"
+            f"2) What is the error message? Quote it exactly.\n"
+            f"3) WHY did it fail? Think about what the test is checking.\n"
+            f"4) Is this a code bug, config issue, or infrastructure problem?\n"
+            f"5) What specific action would fix it?\n\n"
+            f"Log:\n{log_truncated}"
         )
 
         resp = None
@@ -1424,7 +1431,7 @@ def _ollama_analyze(job: dict, log_text: str) -> str:
                         "model": OLLAMA_MODEL,
                         "messages": [{"role": "user", "content": prompt}],
                         "stream": False,
-                        "options": {"temperature": 0.2, "num_predict": 200},
+                        "options": {"temperature": 0.2, "num_predict": 400},
                     },
                     timeout=90,
                 )
