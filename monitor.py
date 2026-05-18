@@ -44,6 +44,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 HF_API_KEY = os.environ.get("HF_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "auto")
 AI_MODEL = os.environ.get("AI_MODEL", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -1181,8 +1182,12 @@ def _get_ai_provider() -> tuple[str, str, str]:
         return "gemini", GEMINI_API_KEY, AI_MODEL or "gemini-2.0-flash"
     if AI_PROVIDER == "huggingface" and HF_API_KEY:
         return "huggingface", HF_API_KEY, AI_MODEL or "meta-llama/Meta-Llama-3.1-70B-Instruct"
+    if AI_PROVIDER == "groq" and GROQ_API_KEY:
+        return "groq", GROQ_API_KEY, AI_MODEL or "llama-3.1-70b-versatile"
     if ANTHROPIC_API_KEY:
         return "claude", ANTHROPIC_API_KEY, AI_MODEL or "claude-sonnet-4-20250514"
+    if GROQ_API_KEY:
+        return "groq", GROQ_API_KEY, AI_MODEL or "llama-3.1-70b-versatile"
     if HF_API_KEY:
         return "huggingface", HF_API_KEY, AI_MODEL or "meta-llama/Meta-Llama-3.1-70B-Instruct"
     if OPENAI_API_KEY:
@@ -1275,6 +1280,27 @@ Log (last portion):
                 return ""
             else:
                 log.warning("Gemini analysis failed: HTTP %d — %s", resp.status_code, resp.text[:200])
+                return ""
+        elif provider == "groq":
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 800,
+                    "temperature": 0.2,
+                },
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data["choices"][0]["message"]["content"].strip()
+            else:
+                log.warning("Groq analysis failed: HTTP %d — %s", resp.status_code, resp.text[:200])
                 return ""
         elif provider == "huggingface":
             resp = requests.post(
@@ -1793,7 +1819,7 @@ def main():
 
         ai_log = analysis_log if analysis_log else build_log
         ai_summary = ""
-        if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY or HF_API_KEY) and ai_log and not ai_log.startswith("("):
+        if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY or HF_API_KEY or GROQ_API_KEY) and ai_log and not ai_log.startswith("("):
             log.info("  Running AI analysis...")
             ai_summary = ai_analyze_failure(job, ai_log)
             if ai_summary:
