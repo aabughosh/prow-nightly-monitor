@@ -45,6 +45,8 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 HF_API_KEY = os.environ.get("HF_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "auto")
 AI_MODEL = os.environ.get("AI_MODEL", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -1190,10 +1192,18 @@ def _get_ai_provider() -> tuple[str, str, str]:
         return "huggingface", HF_API_KEY, AI_MODEL or "meta-llama/Meta-Llama-3.1-70B-Instruct"
     if AI_PROVIDER == "groq" and GROQ_API_KEY:
         return "groq", GROQ_API_KEY, AI_MODEL or "llama-3.3-70b-versatile"
+    if AI_PROVIDER == "cerebras" and CEREBRAS_API_KEY:
+        return "cerebras", CEREBRAS_API_KEY, AI_MODEL or "llama-3.3-70b"
+    if AI_PROVIDER == "deepseek" and DEEPSEEK_API_KEY:
+        return "deepseek", DEEPSEEK_API_KEY, AI_MODEL or "deepseek-chat"
     if ANTHROPIC_API_KEY:
         return "claude", ANTHROPIC_API_KEY, AI_MODEL or "claude-sonnet-4-20250514"
     if GROQ_API_KEY:
         return "groq", GROQ_API_KEY, AI_MODEL or "llama-3.3-70b-versatile"
+    if CEREBRAS_API_KEY:
+        return "cerebras", CEREBRAS_API_KEY, AI_MODEL or "llama-3.3-70b"
+    if DEEPSEEK_API_KEY:
+        return "deepseek", DEEPSEEK_API_KEY, AI_MODEL or "deepseek-chat"
     if HF_API_KEY:
         return "huggingface", HF_API_KEY, AI_MODEL or "meta-llama/Meta-Llama-3.1-70B-Instruct"
     if OPENAI_API_KEY:
@@ -1459,9 +1469,14 @@ Log (last portion):
             else:
                 log.warning("Gemini analysis failed: HTTP %d — %s", resp.status_code, resp.text[:200])
                 return ""
-        elif provider == "groq":
+        elif provider in ("groq", "cerebras", "deepseek"):
+            api_urls = {
+                "groq": "https://api.groq.com/openai/v1/chat/completions",
+                "cerebras": "https://api.cerebras.ai/v1/chat/completions",
+                "deepseek": "https://api.deepseek.com/chat/completions",
+            }
             resp = requests.post(
-                "https://api.groq.com/openai/v1/chat/completions",
+                api_urls[provider],
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
@@ -1478,7 +1493,7 @@ Log (last portion):
                 data = resp.json()
                 return data["choices"][0]["message"]["content"].strip()
             else:
-                log.warning("Groq analysis failed: HTTP %d — %s", resp.status_code, resp.text[:200])
+                log.warning("%s analysis failed: HTTP %d — %s", provider, resp.status_code, resp.text[:200])
                 return ""
         elif provider == "huggingface":
             resp = requests.post(
@@ -2121,6 +2136,39 @@ def main():
                 )
                 if ai_summary:
                     log.info("  AI: %s", ai_summary[:200])
+            if not ai_summary:
+                fb_context = _extract_failure_context(ai_log)
+                fb_prompt = (
+                    f"You are a senior CI failure analyst for OpenShift. "
+                    f"Analyze this failure for job {job['name']}.\n\n"
+                    f"Respond with: **Failed Tests**, **Failure Messages**, "
+                    f"**Root Cause**, **Classification**, **Recommended Action**, **Severity**\n\n"
+                    f"Log:\n{fb_context}"
+                )
+                for fallback_name, fallback_key, fallback_model, fallback_url in [
+                    ("cerebras", CEREBRAS_API_KEY, "llama-3.3-70b", "https://api.cerebras.ai/v1/chat/completions"),
+                    ("deepseek", DEEPSEEK_API_KEY, "deepseek-chat", "https://api.deepseek.com/chat/completions"),
+                ]:
+                    if not fallback_key or fallback_name == provider:
+                        continue
+                    log.info("  Trying %s fallback...", fallback_name)
+                    try:
+                        fb_resp = requests.post(
+                            fallback_url,
+                            headers={"Authorization": f"Bearer {fallback_key}", "Content-Type": "application/json"},
+                            json={"model": fallback_model, "messages": [{"role": "user", "content": fb_prompt}], "max_tokens": 800, "temperature": 0.2},
+                            timeout=60,
+                        )
+                        if fb_resp.status_code == 200:
+                            ai_summary = fb_resp.json()["choices"][0]["message"]["content"].strip()
+                            if ai_summary:
+                                log.info("  %s: %s", fallback_name, ai_summary[:200])
+                                break
+                        else:
+                            log.warning("  %s failed: HTTP %d", fallback_name, fb_resp.status_code)
+                    except Exception as e:
+                        log.warning("  %s error: %s", fallback_name, e)
+
             if not ai_summary:
                 log.info("  Trying Ollama fallback...")
                 ai_summary = _ollama_analyze(
