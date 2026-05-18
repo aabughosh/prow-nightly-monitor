@@ -1249,6 +1249,77 @@ def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
     return "\n\n".join(source_parts)[:2000] if source_parts else ""
 
 
+def _fetch_artifacts_context(job: dict, category: str,
+                             matrix_diff: dict,
+                             step_logs: dict[str, str]) -> str:
+    """Fetch targeted artifacts based on failure type for deeper AI analysis."""
+    url = job.get("url", "")
+    m = re.search(r"/logs/(.+)/(\d+)$", url)
+    if not m:
+        return ""
+    job_path, build_id = m.group(1), m.group(2)
+
+    parts = []
+
+    if category == "matrix_mismatch":
+        no_ep = matrix_diff.get("no_endpointslice_ports", [])
+        if no_ep:
+            workflow_dirs = re.findall(
+                r"([\w-]+-network-flow-matrix[\w-]*)",
+                " ".join(step_logs.keys()) + " " + job.get("name", ""),
+            )
+            for wf_guess in set(workflow_dirs):
+                ss_url = f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_guess}/network-flow-matrix-tests/artifacts/raw-ss-tcp"
+                try:
+                    resp = requests.get(ss_url, timeout=10)
+                    if resp.status_code == 200:
+                        for port_entry in no_ep:
+                            port_fields = port_entry.split(",")
+                            if len(port_fields) >= 3:
+                                port_num = port_fields[2]
+                                for line in resp.text.splitlines():
+                                    if f":{port_num}" in line:
+                                        parts.append(f"ss output for port {port_num}: {line.strip()}")
+                        break
+                except Exception:
+                    pass
+
+        stale = matrix_diff.get("stale_ports", [])
+        if stale:
+            parts.append(f"Stale ports (in matrix but not on nodes): {len(stale)} entries")
+            for p in stale[:3]:
+                parts.append(f"  {p}")
+
+    for step_name in step_logs:
+        if "gather-extra" in step_name or "must-gather" in step_name:
+            continue
+        wf_m = re.search(r"^([\w-]+?)(?:-network-flow-matrix|-e2e-)", job.get("name", ""))
+        if not wf_m:
+            continue
+        for junit_dir in [
+            f"{GCS_BASE}/{job_path}/{build_id}/artifacts/",
+        ]:
+            try:
+                resp = requests.get(junit_dir, timeout=8)
+                if resp.status_code == 200:
+                    xml_links = re.findall(r'href="[^"]*?(junit[^"]*\.xml)"', resp.text)
+                    for xf in xml_links[:2]:
+                        xf_url = f"{junit_dir}{xf}" if not xf.startswith("http") else xf
+                        try:
+                            xresp = requests.get(xf_url, timeout=8)
+                            if xresp.status_code == 200 and "<failure" in xresp.text:
+                                failures = _parse_junit_xml(xresp.text)
+                                for f in failures[:3]:
+                                    parts.append(f"JUnit: {f['name'][:100]} — {f['message'][:150]}")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        break
+
+    return "\n".join(parts)[:1500] if parts else ""
+
+
 def _extract_failure_context(log_text: str) -> str:
     """Extract just the failure-relevant parts from a CI log.
 
@@ -1288,27 +1359,32 @@ def _extract_failure_context(log_text: str) -> str:
 
 
 def ai_analyze_failure(job: dict, log_text: str,
-                       investigation: dict | None = None) -> str:
-    """Use an LLM to analyze the failure log, optionally with test source code."""
+                       investigation: dict | None = None,
+                       category: str = "",
+                       matrix_diff: dict | None = None,
+                       step_logs: dict[str, str] | None = None) -> str:
+    """Use an LLM to analyze the failure log with test source and artifacts."""
     provider, api_key, model = _get_ai_provider()
     if not provider:
         return ""
 
     log_truncated = _extract_failure_context(log_text)
 
-    source_code = ""
+    extra_context = ""
+
     if investigation and investigation.get("source_files"):
         source_code = _fetch_test_source(job, investigation["source_files"])
         if source_code:
             log.info("  Fetched test source code for AI context")
+            extra_context += f"\n\n**Test Source Code:**\n{source_code}"
 
-    source_section = ""
-    if source_code:
-        source_section = f"""
+    if category and matrix_diff and step_logs:
+        artifacts = _fetch_artifacts_context(job, category, matrix_diff or {}, step_logs or {})
+        if artifacts:
+            log.info("  Fetched artifacts context for AI")
+            extra_context += f"\n\n**Artifacts:**\n{artifacts}"
 
-**Test Source Code** (from the repo — read this to understand what the test checks):
-{source_code}
-"""
+    source_section = extra_context if extra_context else ""
 
     prompt = f"""You are a senior CI failure analyst for OpenShift. Analyze this failed CI job and provide a detailed, structured investigation report.
 
@@ -1466,20 +1542,26 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 
 
 def _ollama_analyze(job: dict, log_text: str,
-                    investigation: dict | None = None) -> str:
+                    investigation: dict | None = None,
+                    category: str = "",
+                    matrix_diff: dict | None = None,
+                    step_logs: dict[str, str] | None = None) -> str:
     """Fallback: use local Ollama for AI analysis when API providers fail."""
     try:
         log_truncated = _extract_failure_context(log_text)
         if len(log_truncated) > 1500:
             log_truncated = log_truncated[:1500]
 
-        source_code = ""
+        extra = ""
         if investigation and investigation.get("source_files"):
             source_code = _fetch_test_source(job, investigation["source_files"])
-
-        source_hint = ""
-        if source_code:
-            source_hint = f"\n\nTest source code:\n{source_code[:800]}\n"
+            if source_code:
+                extra += f"\n\nTest source:\n{source_code[:600]}"
+        if category and matrix_diff and step_logs:
+            artifacts = _fetch_artifacts_context(job, category, matrix_diff or {}, step_logs or {})
+            if artifacts:
+                extra += f"\n\nArtifacts:\n{artifacts[:400]}"
+        source_hint = extra
 
         prompt = (
             f"You are a CI failure analyst for OpenShift. Analyze this failure deeply.\n"
@@ -1997,12 +2079,16 @@ def main():
             if provider:
                 log.info("  Running AI analysis (%s)...", provider)
                 time.sleep(5)
-                ai_summary = ai_analyze_failure(job, ai_log, investigation)
+                ai_summary = ai_analyze_failure(
+                    job, ai_log, investigation, category, matrix_diff, step_logs,
+                )
                 if ai_summary:
                     log.info("  AI: %s", ai_summary[:200])
             if not ai_summary:
                 log.info("  Trying Ollama fallback...")
-                ai_summary = _ollama_analyze(job, ai_log, investigation)
+                ai_summary = _ollama_analyze(
+                    job, ai_log, investigation, category, matrix_diff, step_logs,
+                )
                 if ai_summary:
                     log.info("  Ollama: %s", ai_summary[:200])
                 else:
