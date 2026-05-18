@@ -958,7 +958,13 @@ def generate_trend_html(history: dict) -> str:
       <div style="display:flex;align-items:flex-end;gap:4px;margin-bottom:24px;padding:12px;background:#0d1117;border-radius:8px">
         {bars_html}
       </div>
-      <h3 style="font-size:14px;color:#8b949e;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px">Pass/Fail by Version</h3>
+      <h3 style="font-size:14px;color:#8b949e;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Daily Status by Version</h3>
+      <div style="display:flex;gap:16px;margin-bottom:12px;font-size:11px;color:#8b949e">
+        <span><span style="display:inline-block;width:10px;height:10px;background:#3fb950;border-radius:50%;margin-right:4px"></span>All passed</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#f85149;border-radius:50%;margin-right:4px"></span>Has failures</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin-right:4px"></span>No data</span>
+        <span style="color:#484f58">← Each dot = one day (newest on right)</span>
+      </div>
       {version_trends}
     </div>"""
 
