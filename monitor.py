@@ -1203,6 +1203,52 @@ def _get_ai_provider() -> tuple[str, str, str]:
     return "", "", ""
 
 
+def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
+    """Fetch relevant test source code from GitHub for the failed test.
+
+    Looks at the test file references from the logs (e.g., validation_test.go:161)
+    and fetches the relevant function from the repo.
+    """
+    repo_url = _guess_repo_from_job(job.get("name", ""))
+    if not repo_url:
+        return ""
+
+    repo_slug = repo_url.replace("https://github.com/", "")
+    source_parts = []
+
+    for tf in test_files[:2]:
+        filepath = tf.get("file", "")
+        if not filepath or "_test.go" not in filepath:
+            continue
+
+        base = filepath.split("/")[-1] if "/" in filepath else filepath
+        search_paths = [
+            f"test/e2e/{base}",
+            f"test/{base}",
+            base,
+        ]
+
+        for sp in search_paths:
+            try:
+                raw_url = f"https://raw.githubusercontent.com/{repo_slug}/main/{sp}"
+                resp = requests.get(raw_url, timeout=10)
+                if resp.status_code == 200:
+                    lines = resp.text.splitlines()
+                    line_no = int(tf.get("line", 0))
+                    if line_no > 0:
+                        start = max(0, line_no - 20)
+                        end = min(len(lines), line_no + 30)
+                        snippet = "\n".join(lines[start:end])
+                    else:
+                        snippet = "\n".join(lines[:80])
+                    source_parts.append(f"--- {sp} (lines {start+1}-{end}) ---\n{snippet}")
+                    break
+            except Exception:
+                continue
+
+    return "\n\n".join(source_parts)[:2000] if source_parts else ""
+
+
 def _extract_failure_context(log_text: str) -> str:
     """Extract just the failure-relevant parts from a CI log.
 
@@ -1241,18 +1287,34 @@ def _extract_failure_context(log_text: str) -> str:
     return clean[-4000:] if len(clean) > 4000 else clean
 
 
-def ai_analyze_failure(job: dict, log_text: str) -> str:
-    """Use an LLM (Claude or OpenAI) to analyze the failure log."""
+def ai_analyze_failure(job: dict, log_text: str,
+                       investigation: dict | None = None) -> str:
+    """Use an LLM to analyze the failure log, optionally with test source code."""
     provider, api_key, model = _get_ai_provider()
     if not provider:
         return ""
 
     log_truncated = _extract_failure_context(log_text)
 
+    source_code = ""
+    if investigation and investigation.get("source_files"):
+        source_code = _fetch_test_source(job, investigation["source_files"])
+        if source_code:
+            log.info("  Fetched test source code for AI context")
+
+    source_section = ""
+    if source_code:
+        source_section = f"""
+
+**Test Source Code** (from the repo — read this to understand what the test checks):
+{source_code}
+"""
+
     prompt = f"""You are a senior CI failure analyst for OpenShift. Analyze this failed CI job and provide a detailed, structured investigation report.
 
 Job: {job['name']}
 State: {job['state']}
+{source_section}
 
 Provide your analysis in this exact format:
 
@@ -1403,12 +1465,21 @@ Log (last portion):
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
 
 
-def _ollama_analyze(job: dict, log_text: str) -> str:
+def _ollama_analyze(job: dict, log_text: str,
+                    investigation: dict | None = None) -> str:
     """Fallback: use local Ollama for AI analysis when API providers fail."""
     try:
         log_truncated = _extract_failure_context(log_text)
         if len(log_truncated) > 1500:
             log_truncated = log_truncated[:1500]
+
+        source_code = ""
+        if investigation and investigation.get("source_files"):
+            source_code = _fetch_test_source(job, investigation["source_files"])
+
+        source_hint = ""
+        if source_code:
+            source_hint = f"\n\nTest source code:\n{source_code[:800]}\n"
 
         prompt = (
             f"You are a CI failure analyst for OpenShift. Analyze this failure deeply.\n"
@@ -1416,10 +1487,10 @@ def _ollama_analyze(job: dict, log_text: str) -> str:
             f"Think step by step:\n"
             f"1) What specific test failed? Give the exact test name.\n"
             f"2) What is the error message? Quote it exactly.\n"
-            f"3) WHY did it fail? Think about what the test is checking.\n"
+            f"3) WHY did it fail? Read the test code to understand what it checks.\n"
             f"4) Is this a code bug, config issue, or infrastructure problem?\n"
             f"5) What specific action would fix it?\n\n"
-            f"Log:\n{log_truncated}"
+            f"Log:\n{log_truncated}{source_hint}"
         )
 
         resp = None
@@ -1909,24 +1980,6 @@ def main():
         log.info("  Layer: %s (%s), Classification: %s — %s",
                  layer_label, layer_name, category, reason[:80])
 
-        ai_log = analysis_log if analysis_log else build_log
-        ai_summary = ""
-        if ai_log and not ai_log.startswith("("):
-            provider, _, _ = _get_ai_provider()
-            if provider:
-                log.info("  Running AI analysis (%s)...", provider)
-                time.sleep(5)
-                ai_summary = ai_analyze_failure(job, ai_log)
-                if ai_summary:
-                    log.info("  AI: %s", ai_summary[:200])
-            if not ai_summary:
-                log.info("  Trying Ollama fallback...")
-                ai_summary = _ollama_analyze(job, ai_log)
-                if ai_summary:
-                    log.info("  Ollama: %s", ai_summary[:200])
-                else:
-                    log.info("  No AI analysis available")
-
         log.info("  Running investigation...")
         investigation = investigate_failure(
             job, category, reason, matrix_diff,
@@ -1936,6 +1989,24 @@ def main():
                  investigation["severity"], investigation["fix_type"])
         if investigation["suggested_fix"]:
             log.info("  Suggested fix: %s", investigation["suggested_fix"][:120])
+
+        ai_log = analysis_log if analysis_log else build_log
+        ai_summary = ""
+        if ai_log and not ai_log.startswith("("):
+            provider, _, _ = _get_ai_provider()
+            if provider:
+                log.info("  Running AI analysis (%s)...", provider)
+                time.sleep(5)
+                ai_summary = ai_analyze_failure(job, ai_log, investigation)
+                if ai_summary:
+                    log.info("  AI: %s", ai_summary[:200])
+            if not ai_summary:
+                log.info("  Trying Ollama fallback...")
+                ai_summary = _ollama_analyze(job, ai_log, investigation)
+                if ai_summary:
+                    log.info("  Ollama: %s", ai_summary[:200])
+                else:
+                    log.info("  No AI analysis available")
 
         pr_url = ""
         if AUTO_FIX and category not in ("infra",):
