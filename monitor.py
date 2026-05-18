@@ -1564,14 +1564,15 @@ def _ollama_analyze(job: dict, log_text: str,
         source_hint = extra
 
         prompt = (
-            f"You are a CI failure analyst for OpenShift. Analyze this failure deeply.\n"
+            f"You are a CI failure analyst for OpenShift. Analyze this failure.\n"
             f"Job: {job['name']}\n\n"
-            f"Think step by step:\n"
-            f"1) What specific test failed? Give the exact test name.\n"
-            f"2) What is the error message? Quote it exactly.\n"
-            f"3) WHY did it fail? Read the test code to understand what it checks.\n"
-            f"4) Is this a code bug, config issue, or infrastructure problem?\n"
-            f"5) What specific action would fix it?\n\n"
+            f"Respond in this EXACT format:\n\n"
+            f"**Failed Tests:**\n- <test name>\n\n"
+            f"**Failure Messages:**\n- \"<quote the exact error>\"\n\n"
+            f"**Root Cause:**\n- <explain specifically why it failed>\n\n"
+            f"**Classification:**\n- INFRA / TEST_FAILURE / MATRIX_MISMATCH / BUILD_ERROR\n\n"
+            f"**Recommended Action:**\n- <specific steps to fix>\n\n"
+            f"**Severity:** CRITICAL / HIGH / MEDIUM / LOW\n\n"
             f"Log:\n{log_truncated}{source_hint}"
         )
 
@@ -1584,7 +1585,7 @@ def _ollama_analyze(job: dict, log_text: str,
                         "model": OLLAMA_MODEL,
                         "messages": [{"role": "user", "content": prompt}],
                         "stream": False,
-                        "options": {"temperature": 0.2, "num_predict": 400},
+                        "options": {"temperature": 0.2, "num_predict": 600},
                     },
                     timeout=90,
                 )
