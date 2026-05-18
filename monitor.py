@@ -1407,14 +1407,15 @@ def _ollama_analyze(job: dict, log_text: str) -> str:
     """Fallback: use local Ollama for AI analysis when API providers fail."""
     try:
         log_truncated = _extract_failure_context(log_text)
-        if len(log_truncated) > 2000:
-            log_truncated = log_truncated[:2000]
+        if len(log_truncated) > 1500:
+            log_truncated = log_truncated[:1500]
 
         prompt = (
-            f"Analyze this CI failure for job {job['name']}. "
-            f"What failed and why? List failed tests, error messages, root cause. Be brief.\n\n{log_truncated}"
+            f"Analyze this CI failure briefly. Job: {job['name']}.\n"
+            f"List: 1) Failed tests 2) Error messages 3) Root cause\n\n{log_truncated}"
         )
 
+        resp = None
         for attempt in range(2):
             try:
                 resp = requests.post(
@@ -1423,26 +1424,24 @@ def _ollama_analyze(job: dict, log_text: str) -> str:
                         "model": OLLAMA_MODEL,
                         "messages": [{"role": "user", "content": prompt}],
                         "stream": False,
-                        "options": {"temperature": 0.2, "num_predict": 250},
+                        "options": {"temperature": 0.2, "num_predict": 200},
                     },
-                    timeout=120,
+                    timeout=90,
                 )
                 break
             except requests.exceptions.Timeout:
-                if attempt == 0:
-                    log.debug("Ollama timeout, retrying with shorter log...")
-                    log_truncated = log_text[-1000:] if len(log_text) > 1000 else log_text
-                    prompt = f"What failed in this CI log? Be very brief.\n\n{log_truncated}"
-                else:
-                    return ""
-        if resp.status_code == 200:
+                log.warning("  Ollama timeout (attempt %d), retrying shorter...", attempt + 1)
+                log_truncated = log_text[-500:] if len(log_text) > 500 else log_text
+                prompt = f"What failed? Be very brief.\n\n{log_truncated}"
+
+        if resp and resp.status_code == 200:
             data = resp.json()
             return data.get("message", {}).get("content", "").strip()
-        else:
-            log.debug("Ollama failed: HTTP %d", resp.status_code)
-            return ""
+        elif resp:
+            log.warning("  Ollama HTTP %d", resp.status_code)
+        return ""
     except Exception as e:
-        log.debug("Ollama not available: %s", e)
+        log.warning("  Ollama error: %s", e)
         return ""
 
 
