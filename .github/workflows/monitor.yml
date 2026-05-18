@@ -43,6 +43,10 @@ jobs:
           fi
           echo "Restored runs: $(ls ./public/runs/ 2>/dev/null | wc -l)"
 
+      - name: Set run date
+        id: date
+        run: echo "today=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
       - name: Run monitor
         env:
           JOB_FILTER: ${{ vars.JOB_FILTER || 'network-flow-matrix' }}
@@ -64,12 +68,15 @@ jobs:
         with:
           path: ./public
 
+    outputs:
+      run_date: ${{ steps.date.outputs.today }}
+
   deploy:
     needs: monitor
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: https://aabughosh.github.io/prow-nightly-monitor/runs/${{ needs.monitor.outputs.run_date }}/
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
