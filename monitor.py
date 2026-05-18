@@ -1353,6 +1353,45 @@ Log (last portion):
 
 
 # ---------------------------------------------------------------------------
+# Ollama local AI fallback
+# ---------------------------------------------------------------------------
+
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
+
+
+def _ollama_analyze(job: dict, log_text: str) -> str:
+    """Fallback: use local Ollama for AI analysis when API providers fail."""
+    try:
+        log_truncated = log_text[-4000:] if len(log_text) > 4000 else log_text
+
+        prompt = (
+            f"Analyze this CI failure log for job {job['name']}. "
+            f"List: 1) Failed test names 2) Error messages 3) Root cause 4) Is this infra or code bug?\n\n"
+            f"{log_truncated}"
+        )
+
+        resp = requests.post(
+            "http://localhost:11434/api/chat",
+            json={
+                "model": OLLAMA_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0.2, "num_predict": 500},
+            },
+            timeout=120,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("message", {}).get("content", "").strip()
+        else:
+            log.debug("Ollama failed: HTTP %d", resp.status_code)
+            return ""
+    except Exception as e:
+        log.debug("Ollama not available: %s", e)
+        return ""
+
+
+# ---------------------------------------------------------------------------
 # Auto-fix PR creation
 # ---------------------------------------------------------------------------
 
@@ -1825,7 +1864,12 @@ def main():
             if ai_summary:
                 log.info("  AI: %s", ai_summary[:200])
             else:
-                log.info("  AI unavailable (rate limited or error), skipping")
+                log.info("  Primary AI unavailable, trying Ollama fallback...")
+                ai_summary = _ollama_analyze(job, ai_log)
+                if ai_summary:
+                    log.info("  Ollama: %s", ai_summary[:200])
+                else:
+                    log.info("  AI analysis unavailable")
 
         log.info("  Running investigation...")
         investigation = investigate_failure(
