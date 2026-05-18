@@ -43,6 +43,7 @@ MIN_VERSION = os.environ.get("MIN_VERSION", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+HF_API_KEY = os.environ.get("HF_API_KEY", "")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "auto")
 AI_MODEL = os.environ.get("AI_MODEL", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -1178,12 +1179,16 @@ def _get_ai_provider() -> tuple[str, str, str]:
         return "openai", OPENAI_API_KEY, AI_MODEL or "gpt-4o-mini"
     if AI_PROVIDER == "gemini" and GEMINI_API_KEY:
         return "gemini", GEMINI_API_KEY, AI_MODEL or "gemini-2.0-flash"
+    if AI_PROVIDER == "huggingface" and HF_API_KEY:
+        return "huggingface", HF_API_KEY, AI_MODEL or "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
     if ANTHROPIC_API_KEY:
         return "claude", ANTHROPIC_API_KEY, AI_MODEL or "claude-sonnet-4-20250514"
-    if GEMINI_API_KEY:
-        return "gemini", GEMINI_API_KEY, AI_MODEL or "gemini-2.0-flash"
     if OPENAI_API_KEY:
         return "openai", OPENAI_API_KEY, AI_MODEL or "gpt-4o-mini"
+    if GEMINI_API_KEY:
+        return "gemini", GEMINI_API_KEY, AI_MODEL or "gemini-2.0-flash"
+    if HF_API_KEY:
+        return "huggingface", HF_API_KEY, AI_MODEL or "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
     return "", "", ""
 
 
@@ -1270,6 +1275,30 @@ Log (last portion):
                 return ""
             else:
                 log.warning("Gemini analysis failed: HTTP %d — %s", resp.status_code, resp.text[:200])
+                return ""
+        elif provider == "huggingface":
+            resp = requests.post(
+                f"https://router.huggingface.co/hf-inference/models/{model}/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 800,
+                    "temperature": 0.2,
+                },
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                choices = data.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "").strip()
+                return ""
+            else:
+                log.warning("HuggingFace analysis failed: HTTP %d — %s", resp.status_code, resp.text[:200])
                 return ""
         else:
             resp = requests.post(
@@ -1764,7 +1793,7 @@ def main():
 
         ai_log = analysis_log if analysis_log else build_log
         ai_summary = ""
-        if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY) and ai_log and not ai_log.startswith("("):
+        if (OPENAI_API_KEY or ANTHROPIC_API_KEY or GEMINI_API_KEY or HF_API_KEY) and ai_log and not ai_log.startswith("("):
             log.info("  Running AI analysis...")
             ai_summary = ai_analyze_failure(job, ai_log)
             if ai_summary:
