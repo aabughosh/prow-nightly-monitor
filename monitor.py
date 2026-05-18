@@ -1372,19 +1372,29 @@ def _ollama_analyze(job: dict, log_text: str) -> str:
 
         prompt = (
             f"Analyze this CI failure for job {job['name']}. "
-            f"What failed and why? Be brief.\n\n{log_truncated}"
+            f"What failed and why? List failed tests, error messages, root cause. Be brief.\n\n{log_truncated}"
         )
 
-        resp = requests.post(
-            "http://localhost:11434/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "options": {"temperature": 0.2, "num_predict": 300},
-            },
-            timeout=90,
-        )
+        for attempt in range(2):
+            try:
+                resp = requests.post(
+                    "http://localhost:11434/api/chat",
+                    json={
+                        "model": OLLAMA_MODEL,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "stream": False,
+                        "options": {"temperature": 0.2, "num_predict": 250},
+                    },
+                    timeout=120,
+                )
+                break
+            except requests.exceptions.Timeout:
+                if attempt == 0:
+                    log.debug("Ollama timeout, retrying with shorter log...")
+                    log_truncated = log_text[-1000:] if len(log_text) > 1000 else log_text
+                    prompt = f"What failed in this CI log? Be very brief.\n\n{log_truncated}"
+                else:
+                    return ""
         if resp.status_code == 200:
             data = resp.json()
             return data.get("message", {}).get("content", "").strip()
