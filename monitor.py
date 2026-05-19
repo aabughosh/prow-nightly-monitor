@@ -464,11 +464,15 @@ def parse_test_failures_from_log(log_text: str) -> list[dict]:
     for block in fail_blocks:
         if not block.startswith("[FAIL"):
             continue
+        if "level=warning" in block[:200] and "[FAIL]" not in block[:50]:
+            continue
 
         name_m = re.match(r"\[FAIL(?:ED)?\]\s*(.+?)(?:\n|$)", block)
         if not name_m:
             continue
         name = name_m.group(1).strip()[:200]
+        if re.match(r"^(?:in \[It\]|[\d.]+ seconds|\s*$)", name):
+            continue
         key = name[:80]
         if key in seen:
             existing = next((f for f in failures if f["name"][:80] == key), None)
@@ -1562,16 +1566,21 @@ State: {job['state']}
 
 IMPORTANT: Be detailed and specific. Do NOT give one-sentence answers.
 Use the test source code and artifacts provided to understand what the test checks.
+NOTE: Distinguish between FAILURES ([FAILED] assertions) and WARNINGS (level=warning).
+List warnings separately — they provide context but are NOT the cause of the failure.
 
 Provide your analysis in this EXACT format (be thorough for each section):
 
 **Failed Tests:**
-- List each test that failed with its FULL name
+- List ONLY actual [FAILED] tests with their FULL name
 - Include the test file and line number if available
 
 **Failure Messages:**
-- Quote the EXACT error messages from the logs
-- Include all relevant error lines, not just one
+- Quote the EXACT [FAILED] error messages from the logs
+
+**Warnings (not failures):**
+- List any level=warning messages that appeared during the test
+- These provide context but did NOT cause the failure
 
 **Root Cause:**
 - Explain specifically WHY this failed, not just WHAT happened
@@ -1736,13 +1745,13 @@ def _ollama_analyze(job: dict, log_text: str,
         prompt = (
             f"You are a senior CI failure analyst. Analyze this failure.\n"
             f"Job: {job['name']}\n\n"
-            f"Be detailed. Use the log, test source, ss output, and artifacts to understand WHY it failed.\n"
-            f"If a port has no EndpointSlice, check what range it's in (32768-60999 = OS ephemeral, changes on reboot).\n\n"
-            f"Respond in this EXACT format:\n\n"
-            f"**Failed Tests:**\n- <test name from the log>\n\n"
-            f"**Failure Messages:**\n- \"<exact error>\"\n\n"
-            f"**Root Cause:**\n- <WHY it failed, not just what happened>\n\n"
-            f"**Classification:**\n- INFRA / TEST_FAILURE / MATRIX_MISMATCH / BUILD_ERROR\n\n"
+            f"Be detailed. Use the data to understand WHY it failed.\n"
+            f"Distinguish [FAILED] (real failures) from level=warning (informational).\n\n"
+            f"Respond in this format:\n\n"
+            f"**Failed Tests:**\n- <ONLY actual [FAILED] tests>\n\n"
+            f"**Failure Messages:**\n- \"<exact [FAILED] error>\"\n\n"
+            f"**Warnings:**\n- <level=warning messages, these are context not failures>\n\n"
+            f"**Root Cause:**\n- <WHY it failed>\n\n"
             f"**Recommended Action:**\n- <specific fix>\n\n"
             f"**Severity:** CRITICAL / HIGH / MEDIUM / LOW\n\n"
             f"Log:\n{log_truncated}{source_hint}"
