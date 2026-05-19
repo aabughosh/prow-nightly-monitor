@@ -1589,8 +1589,7 @@ Provide your analysis in this EXACT format (be thorough for each section):
 
 **Severity:** CRITICAL / HIGH / MEDIUM / LOW
 
-Log:
-{log_truncated}
+{source_section}
 """
 
     try:
