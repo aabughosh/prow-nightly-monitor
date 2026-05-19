@@ -592,6 +592,62 @@ def fetch_step_junit(job: dict, workflow: str, step: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Port range intelligence
+# ---------------------------------------------------------------------------
+
+def classify_port(port_entry: str) -> dict:
+    """Classify a port based on its number and process ownership.
+
+    The commatrix e2e tests do NOT skip Linux ephemeral ports.
+    CRI-O uses a random ephemeral port that changes every reboot,
+    so it always fails validation. It needs a static entry.
+    """
+    fields = port_entry.split(",")
+    port_num = int(fields[2]) if len(fields) >= 3 and fields[2].isdigit() else 0
+    process = fields[5] if len(fields) >= 6 else ""
+    process_lower = process.lower()
+
+    if "crio" in process_lower or "cri-o" in process_lower:
+        return {
+            "range": "ephemeral",
+            "desc": f"CRI-O runtime health endpoint (port {port_num} is random, changes every reboot)",
+            "action": "Add CRI-O as a static entry in the commatrix repo. This test will ALWAYS fail on CRI-O because the port is OS-assigned and changes on reboot. It has no EndpointSlice because CRI-O is not a Kubernetes service.",
+        }
+    elif 32768 <= port_num <= 60999:
+        return {
+            "range": "ephemeral",
+            "desc": f"Linux ephemeral port range (32768-60999), process: {process or 'unknown'}",
+            "action": f"Port {port_num} is in the OS ephemeral range. Check if {process or 'the process'} always uses a random port. If yes, add as static entry. If it uses a fixed port, add to documented matrix.",
+        }
+    elif 30000 <= port_num <= 32767:
+        return {
+            "range": "nodeport",
+            "desc": "Kubernetes NodePort range (30000-32767)",
+            "action": "This is a NodePort — check if a Service is exposing this port. May be dynamic.",
+        }
+    elif port_num <= 1023:
+        return {
+            "range": "well_known",
+            "desc": f"Well-known port ({process or 'unknown'})",
+            "action": f"Port {port_num} is a standard system port. It should have an EndpointSlice if it's a Kubernetes service. Investigate why it's missing.",
+        }
+    else:
+        return {
+            "range": "registered",
+            "desc": f"Registered port ({process or 'unknown'})",
+            "action": f"Check if {process or 'this service'} is new in this OCP version. If so, add to documented matrix.",
+        }
+
+
+def _load_knowledge() -> str:
+    """Load the knowledge base file for AI context."""
+    kb_path = Path(__file__).parent / "knowledge.md"
+    if kb_path.exists():
+        return kb_path.read_text()[:2000]
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # Failure investigation & fix suggestion
 # ---------------------------------------------------------------------------
 
@@ -747,9 +803,10 @@ def investigate_failure(job: dict, category: str, reason: str,
         if no_ep:
             fix_lines.append("INVESTIGATE — ports open on node but no EndpointSlice found:")
             for p in no_ep:
+                port_info = classify_port(p)
                 fix_lines.append(f"  {p}")
-            fix_lines.append("These may be new services that need EndpointSlice resources,")
-            fix_lines.append("or ephemeral ports (like CRI-O) that should be added to static entries.")
+                fix_lines.append(f"    Range: {port_info['desc']}")
+                fix_lines.append(f"    Action: {port_info['action']}")
             fix_lines.append("")
         report["suggested_fix"] = "\n".join(fix_lines)
 
@@ -1432,6 +1489,10 @@ def ai_analyze_failure(job: dict, log_text: str,
             log.info("  Fetched artifacts context for AI")
             extra_context += f"\n\n**Artifacts:**\n{artifacts_data['text_summary']}"
 
+    knowledge = _load_knowledge()
+    if knowledge:
+        extra_context += f"\n\n**Domain Knowledge:**\n{knowledge}"
+
     source_section = extra_context if extra_context else ""
 
     prompt = f"""You are a senior CI failure analyst for OpenShift. Analyze this failed CI job thoroughly.
@@ -1623,6 +1684,9 @@ def _ollama_analyze(job: dict, log_text: str,
             artifacts_data = _fetch_artifacts_context(job, category, matrix_diff or {}, step_logs or {})
             if artifacts_data.get("text_summary"):
                 extra += f"\n\nArtifacts:\n{artifacts_data['text_summary'][:400]}"
+        knowledge = _load_knowledge()
+        if knowledge:
+            extra += f"\n\nDomain knowledge:\n{knowledge[:800]}"
         source_hint = extra
 
         prompt = (
