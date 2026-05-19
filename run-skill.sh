@@ -75,6 +75,17 @@ Be thorough. Check every artifact. Read every log. This is your investigation." 
 if [ -f "$OUTPUT" ]; then
   echo "$(date): Dashboard generated, opening..." >> "$LOG_FILE"
   open "$OUTPUT"
+
+  # Push to GitHub so it's available at https://aabughosh.github.io/prow-nightly-monitor/claude-dashboard.html
+  echo "$(date): Pushing to GitHub..." >> "$LOG_FILE"
+  cd "$REPO_DIR"
+  git add public/claude-dashboard.html >> "$LOG_FILE" 2>&1
+  git commit -m "daily: Claude investigation $(date +%Y-%m-%d)" >> "$LOG_FILE" 2>&1
+  git push origin main >> "$LOG_FILE" 2>&1
+
+  # Trigger GitHub Action to deploy to Pages
+  /opt/homebrew/bin/gh workflow run monitor.yml --repo aabughosh/prow-nightly-monitor >> "$LOG_FILE" 2>&1
+  echo "$(date): Deployed to GitHub Pages" >> "$LOG_FILE"
 else
   echo "$(date): Dashboard not generated" >> "$LOG_FILE"
 fi
