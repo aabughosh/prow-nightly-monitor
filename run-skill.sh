@@ -13,37 +13,23 @@ LOG_FILE="$REPO_DIR/skill-run.log"
 echo "$(date): === Starting daily run ===" >> "$LOG_FILE"
 cd "$REPO_DIR" || exit 1
 
-# Step 1: Fetch FRESH data from Prow
+# Step 1: Fetch FRESH data from Prow (NO AI — Claude does that)
 echo "$(date): Fetching fresh Prow data..." >> "$LOG_FILE"
 export JOB_FILTER="network-flow-matrix"
 export MIN_VERSION="4.21"
 export OUTPUT_DIR="$REPO_DIR/public"
+export GROQ_API_KEY=""
+export CEREBRAS_API_KEY=""
+export OPENAI_API_KEY=""
+export GEMINI_API_KEY=""
+export HF_API_KEY=""
+export DEEPSEEK_API_KEY=""
 python3 monitor.py >> "$LOG_FILE" 2>&1
-echo "$(date): Fresh results.json generated" >> "$LOG_FILE"
+echo "$(date): Fresh results.json generated (data only, no AI)" >> "$LOG_FILE"
 
-# Step 2: Claude reads fresh results and generates HTML
-echo "$(date): Claude analyzing..." >> "$LOG_FILE"
-"$CURSOR_CLI" agent --trust --print --output-format text \
-"Read public/results.json (just generated with today's live Prow data).
-Read template.html for the CSS styling — use the SAME dark theme and layout.
-
-Generate public/claude-dashboard.html with:
-- Same CSS as template.html (dark theme, Inter font, etc)
-- Header: 'Claude Investigation — network-flow-matrix' + timestamp
-- Stats row: total, passed, failed, pending, pass rate
-- Category breakdown cards for failure types
-- Table with ALL jobs from results.json
-- For each failed job: show the investigation from results.json analysis field
-  Include: failed tests, error messages, root cause, suggested fix
-  Show matrix diff details if category is matrix_mismatch
-  Show artifacts.ss_findings if available
-- Expandable details sections for Investigation and AI Analysis
-- Link back to main dashboard
-- Footer with links
-
-Write the complete HTML to public/claude-dashboard.html.
-IMPORTANT: Embed ALL data directly in the HTML. Do NOT use JavaScript fetch() or load external JSON files. The HTML must work standalone when opened as a local file." \
->> "$LOG_FILE" 2>&1
+# Step 2: Embed results into standalone HTML (no fetch — works as file://)
+echo "$(date): Building claude-dashboard.html from results.json..." >> "$LOG_FILE"
+python3 "$REPO_DIR/generate_claude_dashboard.py" --from-results "$REPO_DIR/public/results.json" >> "$LOG_FILE" 2>&1
 
 # Check if file was updated
 if [ -f "$OUTPUT" ] && [ "$(find "$OUTPUT" -mmin -5)" ]; then

@@ -119,12 +119,18 @@
 
 <div class="header">
   <h1 id="dashTitle">Claude Investigation — <code id="jobFilterCod">network-flow-matrix</code></h1>
-  <div class="meta">Loaded live from <code>results.json</code> · <span id="genAt">loading…</span></div>
+  <div class="meta">Reads <code>results.json</code> via fetch (same directory) · <span id="genAt">loading…</span></div>
 </div>
 
 <div class="container">
 
 <p class="nav-row">← <a href="index.html">Main dashboard</a> · <a href="history.html">Run history</a></p>
+
+<p class="muted" style="margin-bottom:14px;line-height:1.5;border-left:3px solid #58a6ff;padding-left:12px;">
+  For a <strong>self-contained</strong> copy with all data inlined (no <code>fetch</code>), run from the repo root:
+  <code style="background:#21262d;padding:2px 6px;border-radius:4px;">python3 scripts/embed_claude_dashboard.py</code>.
+  Alternative static layout: <code style="background:#21262d;padding:2px 6px;border-radius:4px;">python3 generate_claude_dashboard.py --from-results public/results.json</code>.
+</p>
 
 <div id="loadError" class="load-err" style="display:none"></div>
 
@@ -293,7 +299,8 @@
     var passed = data.passed != null ? data.passed : jobs.filter(function (j) { return j.state === 'success'; }).length;
     var failed = data.failed != null ? data.failed : jobs.filter(function (j) { return j.state === 'failure'; }).length;
     var pending = jobs.filter(function (j) { return j.state === 'pending'; }).length;
-    var passRate = total ? Math.round(1000 * passed / total) / 10 : 0;
+    var finished = passed + failed;
+    var passRate = finished ? Math.round(1000 * passed / finished) / 10 : 0;
 
     document.getElementById('stTotal').textContent = total;
     document.getElementById('stPass').textContent = passed;
