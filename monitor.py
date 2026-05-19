@@ -1501,50 +1501,47 @@ def _build_smart_context(job: dict, log_text: str,
                          matrix_diff: dict | None,
                          step_logs: dict[str, str] | None,
                          artifacts_data: dict | None) -> str:
-    """Build a rich context for AI by auto-investigating the failure.
+    """Dump ALL available data to let the AI investigate on its own.
 
-    Fully generic — works for any failure type. Gathers all available
-    evidence and presents it structured for the AI to reason about.
+    Give the AI everything: logs, test source, warnings, port data,
+    ss output, step errors, artifacts. Let it figure out what matters.
     """
     context_parts = []
 
-    # 1. Extract failure summary from logs
+    # 1. Full failure log context
     failure_ctx = _extract_failure_context(log_text)
     if failure_ctx:
         context_parts.append(f"=== FAILURE LOG ===\n{failure_ctx}")
 
-    # 2. List failed tests with messages
+    # 2. All failed tests
     if investigation and investigation.get("failed_tests"):
         tests_str = "\n".join(
-            f"- {t.get('name', '?')}: {t.get('message', '')[:150]}"
-            for t in investigation["failed_tests"][:5]
+            f"- {t.get('name', '?')} ({t.get('test_file', '')}): {t.get('message', '')[:200]}"
+            for t in investigation["failed_tests"][:10]
         )
         context_parts.append(f"=== FAILED TESTS ===\n{tests_str}")
 
-    # 3. Fetch test source code from GitHub (for any failure with file refs)
+    # 3. Test source code from GitHub
     if investigation and investigation.get("source_files"):
         source = _fetch_test_source(job, investigation["source_files"])
         if source:
-            context_parts.append(f"=== TEST SOURCE CODE ===\n{source[:1000]}")
+            context_parts.append(f"=== TEST SOURCE CODE ===\n{source[:1500]}")
 
-    # 4. Extract warnings separately
+    # 4. All warnings
     clean_log = re.sub(r"\x1b\[[0-9;]*m", "", log_text)
-    warnings = re.findall(
-        r'level=warning msg="([^"]+)"', clean_log,
-    )
+    warnings = re.findall(r'level=warning msg="([^"]+)"', clean_log)
     if warnings:
-        warn_str = "\n".join(f"- {w[:200]}" for w in warnings[:5])
-        context_parts.append(f"=== WARNINGS (informational, not failures) ===\n{warn_str}")
+        warn_str = "\n".join(f"- {w[:300]}" for w in warnings[:10])
+        context_parts.append(f"=== WARNINGS ===\n{warn_str}")
 
-    # 5. Port analysis (for matrix mismatches)
+    # 5. ALL port data
     if matrix_diff and matrix_diff.get("is_matrix_mismatch"):
         no_ep = matrix_diff.get("no_endpointslice_ports", [])
         stale = matrix_diff.get("stale_ports", [])
         undoc = matrix_diff.get("undocumented_ports", [])
-
-        diff_str = ""
+        port_str = ""
         if no_ep:
-            diff_str += "Ports open but NO EndpointSlice:\n"
+            port_str += "PORTS WITH NO ENDPOINTSLICE (this is the failure):\n"
             for p in no_ep:
                 fields = p.split(",")
                 port_num = fields[2] if len(fields) >= 3 else ""
@@ -1553,60 +1550,38 @@ def _build_smart_context(job: dict, log_text: str,
                     ss_match = next((s for s in artifacts_data["ss_findings"] if s["port"] == port_num), None)
                     if ss_match:
                         ss_line = ss_match["ss_line"]
-
                 port_info = classify_port(p, ss_line)
-                diff_str += f"  {p}\n"
-                diff_str += f"  → {port_info['desc']}\n"
+                port_str += f"  Port entry: {p}\n"
+                port_str += f"  Port range: {port_info['desc']}\n"
                 if ss_line:
-                    diff_str += f"  → ss: {ss_line}\n"
-                diff_str += f"  → {port_info['action']}\n"
-
+                    port_str += f"  ss output: {ss_line}\n"
+                port_str += f"  Process: {port_info.get('process', 'unknown')}\n"
+                port_str += "\n"
         if stale:
-            diff_str += f"\nPorts in matrix but NOT open ({len(stale)}):\n"
-            for p in stale[:5]:
-                diff_str += f"  {p}\n"
+            port_str += f"STALE PORTS (in matrix but not open, {len(stale)}):\n"
+            for p in stale:
+                port_str += f"  {p}\n"
         if undoc:
-            diff_str += f"\nPorts open but NOT in matrix ({len(undoc)}):\n"
-            for p in undoc[:5]:
-                diff_str += f"  {p}\n"
+            port_str += f"UNDOCUMENTED PORTS (open but not in matrix, {len(undoc)}):\n"
+            for p in undoc:
+                port_str += f"  {p}\n"
+        context_parts.append(f"=== PORT DATA ===\n{port_str}")
 
-        if diff_str:
-            context_parts.append(f"=== PORT ANALYSIS ===\n{diff_str}")
-
-    # 6. Step logs summary (for any failure — show key error lines from each step)
+    # 6. ALL step log errors
     if step_logs:
-        step_errors = []
         for step_name, step_log in step_logs.items():
             clean = re.sub(r"\x1b\[[0-9;]*m", "", step_log)
-            errors = []
-            for line in clean.splitlines():
-                stripped = line.strip()
-                if re.search(r"(?:error|fatal|panic|FAIL|refused|timeout|unauthorized)", stripped, re.IGNORECASE):
-                    if len(stripped) > 20 and stripped not in errors:
-                        errors.append(stripped[:150])
-                if len(errors) >= 3:
-                    break
-            if errors:
-                step_errors.append(f"[{step_name}]\n" + "\n".join(f"  {e}" for e in errors))
-        if step_errors:
-            context_parts.append(f"=== KEY ERRORS FROM STEP LOGS ===\n" + "\n".join(step_errors[:5]))
+            lines = clean.splitlines()
+            relevant = [l.strip() for l in lines if l.strip() and len(l.strip()) > 15
+                        and re.search(r"error|fatal|panic|FAIL|refused|timeout|warning|unauthorized|not found|mismatch|endpointslice|ports are", l, re.IGNORECASE)]
+            if relevant:
+                context_parts.append(f"=== STEP: {step_name} (key lines) ===\n" + "\n".join(relevant[:15]))
 
-    # 7. Artifacts summary
+    # 7. ALL artifacts data
     if artifacts_data and artifacts_data.get("text_summary"):
-        context_parts.append(f"=== ARTIFACTS (ss output, matrix diff, commatrix data) ===\n{artifacts_data['text_summary'][:800]}")
+        context_parts.append(f"=== ARTIFACTS ===\n{artifacts_data['text_summary'][:1000]}")
 
-    # 8. Tell AI to investigate further
-    if matrix_diff and matrix_diff.get("no_endpointslice_ports"):
-        context_parts.append(
-            "=== INVESTIGATION GUIDANCE ===\n"
-            "For ports with no EndpointSlice: the ss output above shows what process owns the port.\n"
-            "Check if the port is in Linux ephemeral range (32768-60999) — if yes, it changes on reboot.\n"
-            "The matrix-diff-ss artifact shows the difference between expected and actual ports.\n"
-            "The ss-generated-matrix shows all ports found by the ss command.\n"
-            "Explain WHY this port has no EndpointSlice and what the fix should be."
-        )
-
-    return "\n\n".join(context_parts)[:6000]
+    return "\n\n".join(context_parts)[:8000]
 
 
 def ai_analyze_failure(job: dict, log_text: str,
@@ -1827,7 +1802,7 @@ def _cursor_analyze(job: dict, log_text: str,
 
         result = subprocess.run(
             [CURSOR_CLI, "agent", "--trust", "--print", "--output-format", "text", prompt],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=180,
             cwd=Path(__file__).parent,
         )
         if result.returncode == 0 and result.stdout.strip():
