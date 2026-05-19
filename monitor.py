@@ -595,47 +595,54 @@ def fetch_step_junit(job: dict, workflow: str, step: str) -> list[dict]:
 # Port range intelligence
 # ---------------------------------------------------------------------------
 
-def classify_port(port_entry: str) -> dict:
-    """Classify a port based on its number and process ownership.
+def classify_port(port_entry: str, ss_line: str = "") -> dict:
+    """Classify a port based on its number, process, and ss output.
 
-    The commatrix e2e tests do NOT skip Linux ephemeral ports.
-    CRI-O uses a random ephemeral port that changes every reboot,
-    so it always fails validation. It needs a static entry.
+    Pure logic — no hardcoded process names. Determines if a port is
+    ephemeral, well-known, or registered based on standard port ranges
+    and what the ss output shows.
     """
     fields = port_entry.split(",")
     port_num = int(fields[2]) if len(fields) >= 3 and fields[2].isdigit() else 0
     process = fields[5] if len(fields) >= 6 else ""
-    process_lower = process.lower()
 
-    if "crio" in process_lower or "cri-o" in process_lower:
+    if ss_line:
+        ss_proc = re.search(r'users:\(\("([^"]+)"', ss_line)
+        if ss_proc:
+            process = ss_proc.group(1)
+
+    if 32768 <= port_num <= 60999:
         return {
             "range": "ephemeral",
-            "desc": f"CRI-O runtime health endpoint (port {port_num} is random, changes every reboot)",
-            "action": "Add CRI-O as a static entry in the commatrix repo. This test will ALWAYS fail on CRI-O because the port is OS-assigned and changes on reboot. It has no EndpointSlice because CRI-O is not a Kubernetes service.",
-        }
-    elif 32768 <= port_num <= 60999:
-        return {
-            "range": "ephemeral",
-            "desc": f"Linux ephemeral port range (32768-60999), process: {process or 'unknown'}",
-            "action": f"Port {port_num} is in the OS ephemeral range. Check if {process or 'the process'} always uses a random port. If yes, add as static entry. If it uses a fixed port, add to documented matrix.",
+            "process": process,
+            "desc": f"Linux ephemeral range (32768-60999). Process: {process or 'unknown'}. "
+                    f"This port is assigned randomly by the OS and likely changes on reboot.",
+            "action": f"Port {port_num} is ephemeral (OS-assigned). "
+                      f"Process '{process or 'unknown'}' is likely not a Kubernetes service, so it has no EndpointSlice. "
+                      f"If this process always runs on the node, add it as a static entry.",
         }
     elif 30000 <= port_num <= 32767:
         return {
             "range": "nodeport",
-            "desc": "Kubernetes NodePort range (30000-32767)",
-            "action": "This is a NodePort — check if a Service is exposing this port. May be dynamic.",
+            "process": process,
+            "desc": f"Kubernetes NodePort range (30000-32767). Process: {process or 'unknown'}.",
+            "action": f"This is a dynamic NodePort. Check if a Kubernetes Service is exposing it.",
         }
     elif port_num <= 1023:
         return {
             "range": "well_known",
-            "desc": f"Well-known port ({process or 'unknown'})",
-            "action": f"Port {port_num} is a standard system port. It should have an EndpointSlice if it's a Kubernetes service. Investigate why it's missing.",
+            "process": process,
+            "desc": f"Well-known port. Process: {process or 'unknown'}.",
+            "action": f"Standard system port {port_num}. If this is a Kubernetes-managed service, "
+                      f"it should have an EndpointSlice. Investigate why it's missing.",
         }
     else:
         return {
             "range": "registered",
-            "desc": f"Registered port ({process or 'unknown'})",
-            "action": f"Check if {process or 'this service'} is new in this OCP version. If so, add to documented matrix.",
+            "process": process,
+            "desc": f"Registered port range (1024-29999). Process: {process or 'unknown'}.",
+            "action": f"Check if '{process or 'this service'}' is new or changed. "
+                      f"Add to the documented matrix if it's a permanent service.",
         }
 
 
@@ -1489,10 +1496,6 @@ def ai_analyze_failure(job: dict, log_text: str,
             log.info("  Fetched artifacts context for AI")
             extra_context += f"\n\n**Artifacts:**\n{artifacts_data['text_summary']}"
 
-    knowledge = _load_knowledge()
-    if knowledge:
-        extra_context += f"\n\n**Domain Knowledge:**\n{knowledge}"
-
     source_section = extra_context if extra_context else ""
 
     prompt = f"""You are a senior CI failure analyst for OpenShift. Analyze this failed CI job thoroughly.
@@ -1502,11 +1505,7 @@ State: {job['state']}
 {source_section}
 
 IMPORTANT: Be detailed and specific. Do NOT give one-sentence answers.
-
-Context for common failure types:
-- MATRIX MISMATCH: The commatrix e2e test compares documented ports (CSV) against actual open ports (from ss command) and EndpointSlice resources. If a port is open (ss shows it) but has no EndpointSlice, it may be an ephemeral port (CRI-O changes port each reboot) that needs a static entry in samples/custom-entries/. If a port is documented but not open, it was removed from the cluster.
-- INFRA: Bare metal provisioning (ofcir) failures, cluster setup timeouts, telco5g cluster not found.
-- TEST FAILURE: A specific Ginkgo test assertion failed.
+Use the test source code and artifacts provided to understand what the test checks.
 
 Provide your analysis in this EXACT format (be thorough for each section):
 
@@ -1528,9 +1527,9 @@ Provide your analysis in this EXACT format (be thorough for each section):
 - MATRIX_MISMATCH / INFRA / TEST_FAILURE / BUILD_ERROR / FLAKE
 
 **Recommended Action:**
-- Give specific, actionable steps (file paths, commands, what to change)
-- For matrix issues: which CSV file to update, which lines to add/remove
-- For infra: whether to retry or escalate
+- Give specific, actionable steps
+- If a port is in Linux ephemeral range (32768-60999), note that it changes on reboot
+- Look at the ss output to determine what process owns the port and why it has no EndpointSlice
 
 **Severity:** CRITICAL / HIGH / MEDIUM / LOW
 
@@ -1684,26 +1683,19 @@ def _ollama_analyze(job: dict, log_text: str,
             artifacts_data = _fetch_artifacts_context(job, category, matrix_diff or {}, step_logs or {})
             if artifacts_data.get("text_summary"):
                 extra += f"\n\nArtifacts:\n{artifacts_data['text_summary'][:400]}"
-        knowledge = _load_knowledge()
-        if knowledge:
-            extra += f"\n\nDomain knowledge:\n{knowledge[:800]}"
         source_hint = extra
 
         prompt = (
-            f"You are a senior CI failure analyst for OpenShift. Analyze this failure.\n"
+            f"You are a senior CI failure analyst. Analyze this failure.\n"
             f"Job: {job['name']}\n\n"
-            f"Context: This is an OpenShift CI nightly job. Common failures include:\n"
-            f"- Matrix mismatch: documented ports don't match actual open ports (from ss command)\n"
-            f"- Missing EndpointSlice: a port is open (ss shows it) but no Kubernetes EndpointSlice exists. "
-            f"CRI-O uses ephemeral ports that need static entries.\n"
-            f"- Cluster setup failure: bare metal provisioning (ofcir) or telco5g cluster setup failed\n"
-            f"- Upgrade failures: node not ready after upgrade\n\n"
+            f"Be detailed. Use the log, test source, ss output, and artifacts to understand WHY it failed.\n"
+            f"If a port has no EndpointSlice, check what range it's in (32768-60999 = OS ephemeral, changes on reboot).\n\n"
             f"Respond in this EXACT format:\n\n"
-            f"**Failed Tests:**\n- <exact test name from the log>\n\n"
-            f"**Failure Messages:**\n- \"<quote the exact error message>\"\n\n"
-            f"**Root Cause:**\n- <explain specifically WHY it failed, not just what happened>\n\n"
+            f"**Failed Tests:**\n- <test name from the log>\n\n"
+            f"**Failure Messages:**\n- \"<exact error>\"\n\n"
+            f"**Root Cause:**\n- <WHY it failed, not just what happened>\n\n"
             f"**Classification:**\n- INFRA / TEST_FAILURE / MATRIX_MISMATCH / BUILD_ERROR\n\n"
-            f"**Recommended Action:**\n- <specific steps to fix, e.g. 'add static entry for CRI-O port' or 'retry - infra issue'>\n\n"
+            f"**Recommended Action:**\n- <specific fix>\n\n"
             f"**Severity:** CRITICAL / HIGH / MEDIUM / LOW\n\n"
             f"Log:\n{log_truncated}{source_hint}"
         )
