@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>network-flow-matrix — CI nightly dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #0d1117;
+    color: #e1e4e8;
+    min-height: 100vh;
+    line-height: 1.45;
+  }
+  .top {
+    background: linear-gradient(120deg, #161b22 0%, #1a2332 40%, #2d2238 100%);
+    border-bottom: 1px solid #30363d;
+    padding: 22px 28px;
+  }
+  .top h1 { font-size: 1.35rem; font-weight: 650; letter-spacing: -0.02em; }
+  .top .sub, .tags { font-size: 0.8rem; color: #8b949e; margin-top: 8px; max-width: 940px; }
+  .tags code { font-size: 0.74rem; }
+  .top a { color: #58a6ff; }
+  .banner {
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: rgba(210,153,34,0.08);
+    border: 1px dashed rgba(210,153,34,0.45);
+    border-radius: 8px;
+    font-size: 0.78rem;
+    color: #d29922;
+    max-width: 960px;
+  }
+  .wrap { max-width: 1560px; margin: 0 auto; padding: 20px 24px 48px; }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 22px;
+  }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+  }
+  .card .n { font-size: 1.95rem; font-weight: 750; font-variant-numeric: tabular-nums; }
+  .card .lbl {
+    font-size: 0.62rem;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-top: 4px;
+  }
+  .card.total .n { color: #79c0ff; }
+  .card.pass .n { color: #3fb950; }
+  .card.fail .n { color: #f85149; }
+  .card.pend .n { color: #58a6ff; }
+  .card.rate .n { color: #ffa657; }
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 0.87rem;
+  }
+  thead th {
+    background: #1c2128;
+    color: #8b949e;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 12px 10px;
+    text-align: left;
+    border-bottom: 1px solid #30363d;
+  }
+  td { padding: 10px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  tbody tr:hover:not(.dim) { background: rgba(56,139,253,0.06); }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.dim td:not(.invest) { opacity: 0.52; color: #adbac7; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .pill { font-size: 0.92rem; font-weight: 700; display: inline-block; vertical-align: middle; }
+  .st-mini { font-size: 0.58rem; display: block; margin-top: 2px; }
+  .st-ok { color: #3fb950; }
+  .st-bad { color: #f85149; }
+  .st-pend { color: #58a6ff; }
+  .v { font-weight: 700; background: #21262d; padding: 2px 8px; border-radius: 6px; border: 1px solid #30363d; }
+  .muted { color: #8b949e; }
+  .invest { max-width: 720px; min-width: 300px; font-size: 0.82rem; }
+  details.inv-fold summary {
+    cursor: pointer;
+    color: #79c0ff;
+    font-weight: 650;
+    font-size: 0.84rem;
+  }
+  .fail-wrap-inner { padding: 8px 0 4px 2px; }
+  .badge {
+    font-size: 0.58rem;
+    font-weight: 750;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 6px;
+    color: #fff;
+    display: inline-block;
+  }
+  .cat-infra { background: #d29922; color: #0d1117; }
+  .warn-box {
+    border: 1px dashed rgba(242,204,96,0.45);
+    background: rgba(210,153,34,0.06);
+    border-radius: 8px;
+    padding: 8px;
+    margin: 10px 0;
+    font-size: 0.72rem;
+    color: #8b949e;
+  }
+  .action-green {
+    background: rgba(35,134,54,0.22);
+    border: 1px solid #238636;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-top: 10px;
+    color: #aff5b4;
+    font-size: 0.78rem;
+    white-space: pre-wrap;
+  }
+  .action-green strong {
+    display: block;
+    color: #56d364;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  blockquote.snip {
+    border-left: 3px solid #f85149;
+    margin: 8px 0;
+    padding: 8px 10px;
+    background: #0d1117;
+    border-radius: 6px;
+  }
+  pre.snip-pre {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 0.67rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #c9d1d9;
+    max-height: 320px;
+    overflow: auto;
+  }
+  .foot {
+    margin-top: 26px;
+    padding-top: 16px;
+    border-top: 1px solid #21262d;
+    font-size: 0.72rem;
+    color: #484f58;
+    text-align: center;
+  }
+  @media(max-width: 1100px) {
+    .cards { grid-template-columns: repeat(auto-fill, minmax(130px,1fr)); }
+    .invest { max-width: none; }
+    table { font-size: 0.8rem; }
+  }
+</style>
+</head>
+<body>
+  <header class="top">
+    <h1>nightly network-flow-matrix</h1>
+    <p class="sub">Browser snapshot from embedded archive · for <strong>live</strong> Prow + GCS + junit_operator.xml run:
+      <code>python3 generate_claude_dashboard.py</code></p>
+    <p class="tags">Filter <code>network-flow-matrix</code> · OCP min <strong id="vmin">4.21</strong>+ · newest row per job</p>
+    <div class="banner" id="archive-banner"></div>
+  </header>
+  <div class="wrap">
+    <div class="cards">
+      <div class="card total"><div class="n" id="st-total">0</div><div class="lbl">Total jobs</div></div>
+      <div class="card pass"><div class="n" id="st-pass">0</div><div class="lbl">Passed</div></div>
+      <div class="card fail"><div class="n" id="st-fail">0</div><div class="lbl">Failed</div></div>
+      <div class="card pend"><div class="n" id="st-pend">0</div><div class="lbl">Pending</div></div>
+      <div class="card rate"><div class="n" id="st-rate">—</div><div class="lbl">Pass rate (finished)</div></div>
+    </div>
+    <table><thead><tr>
+      <th>Status</th><th>V</th><th>Job</th><th>Dur</th><th>Started*</th><th>Investigate</th>
+    </tr></thead><tbody id="tbody"></tbody></table>
+    <p class="foot">*Started uses archive timestamp when precise startTime is unavailable. Live generator uses Prow ISO times.</p>
+  </div>
+<script type="application/json" id="raw-data">
+{
+  "generated_at": "2026-05-10T13:57:18.375907+00:00",
+  "job_filter": "network-flow-matrix",
+  "jobs": [
+    {"name": "periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix", "version": "4.21", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix/2053460230452285440", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node", "version": "4.21", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2053460232130007040", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.21-metal-ovn-network-flow-matrix-bm", "version": "4.21", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-metal-ovn-network-flow-matrix-bm/2053460233824505856", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-bm", "version": "4.21", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-bm/2053460236328505344", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm", "version": "4.21", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm/2053460238845087744", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-aws-upgrade-ovn-single-node-network-flow-matrix", "version": "4.21", "state": "failure", "duration": "241m", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2053188601755209728", "analysis": {"category": "infra", "reason": "Cluster in error state (must-gather triggered)", "junit_failures": [], "log_snippet": "… Link to job on registry info site: https://steps.ci.openshift.org/job?org=openshift&repo=release&branch=main&test=e2e-aws-upgrade-ovn-single-node-network-flow-matrix&variant=nightly-4.21-upgrade-from-stable-4.20 \\n[INFO][2026-05-09T23:01:51Z] Reporting job state 'failed' with reason 'executing_graph:step_failed:utilizing_lease:executing_test:utilizing_ip_pool:executing_test:executing_multi_stage_test' "}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix", "version": "4.21", "state": "success", "duration": "274m", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2053188610143817728", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix", "version": "4.22", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix/2053460240518615040", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix-single-node", "version": "4.22", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix-single-node/2053460243043586048", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.22-metal-ovn-network-flow-matrix-bm", "version": "4.22", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-metal-ovn-network-flow-matrix-bm/2053460245551779840", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm", "version": "4.22", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm/2053460247233695744", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-single-node-bm", "version": "4.22", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-single-node-bm/2053460248907223040", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-aws-upgrade-ovn-single-node-network-flow-matrix", "version": "4.22", "state": "success", "duration": "281m", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2053188618536620032", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-metal-ipi-ovn-upgrade-network-flow-matrix", "version": "4.22", "state": "failure", "duration": "310m", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2053188626082172928", "analysis": {"category": "infra", "reason": "Cluster in error state (must-gather triggered)", "junit_failures": [], "log_snippet": "… baremetalds-e2e-test … nightly-4.22-upgrade-from-stable-4.21 \\n[INFO][2026-05-10T00:10:51Z] Reporting job state 'failed' with reason 'executing_graph:step_failed:utilizing_lease:executing_test:utilizing_ip_pool:executing_test:executing_multi_stage_test' "}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix", "version": "4.23", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix/2053460252258471936", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node", "version": "4.23", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2053460253936193536", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm", "version": "4.23", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2053460255618109440", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm", "version": "4.23", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2053460257291636736", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm", "version": "4.23", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2053460259812413440", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.23-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix", "version": "4.23", "state": "failure", "duration": "255m", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2053188635313836032", "analysis": {"category": "infra", "reason": "Cluster in error state (must-gather triggered)", "junit_failures": [], "log_snippet": "… single-node-e2e-test … nightly-4.23-upgrade-from-stable-4.22 \\n[INFO][2026-05-09T23:16:21Z] Reporting job state 'failed' with reason 'executing_graph:step_failed:utilizing_lease:executing_test:utilizing_ip_pool:executing_test:executing_multi_stage_test' "}},
+    {"name": "periodic-ci-openshift-release-main-nightly-4.23-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix", "version": "4.23", "state": "success", "duration": "305m", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2053188644583247872", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix", "version": "5.0", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix/2053460262328995840", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node", "version": "5.0", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2053460264002523136", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm", "version": "5.0", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2053460266523299840", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm", "version": "5.0", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2053460269039882240", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm", "version": "5.0", "state": "pending", "duration": "running...", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2053460272412102656", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix", "version": "5.0", "state": "success", "duration": "249m", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2053188654603440128", "analysis": {}},
+    {"name": "periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix", "version": "5.0", "state": "success", "duration": "304m", "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2053188666347491328", "analysis": {}}
+  ]
+}
+</script>
+<script>
+(function () {
+  const MIN_MAJ = 4, MIN_MIN = 21;
+  const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  function verOk(v) {
+    const m = /^(\d+)\.(\d+)/.exec(v || '');
+    if (!m) return true;
+    const a = +m[1], b = +m[2];
+    if (a !== MIN_MAJ) return a > MIN_MAJ;
+    return b >= MIN_MIN;
+  }
+  const RAW = JSON.parse(document.getElementById('raw-data').textContent);
+  document.getElementById('archive-banner').textContent =
+    'Archived snapshot generated_at=' + RAW.generated_at + ' — rerun python3 generate_claude_dashboard.py for current Prow + GCS junit + step logs.';
+  const jobsAll = RAW.jobs.filter(j => verOk(j.version));
+  /* latest run per unique job name — archive already unique */
+  const sorted = [...jobsAll].sort((a,b) => (a.version + a.name).localeCompare(b.version + b.name));
+
+  let pass = 0, fail = 0, pend = 0;
+  sorted.forEach(j => {
+    if (j.state === 'success') pass++;
+    else if (['failure','error','aborted'].includes(j.state)) fail++;
+    else pend++;
+  });
+  const fin = pass + fail;
+  document.getElementById('st-total').textContent = sorted.length;
+  document.getElementById('st-pass').textContent = pass;
+  document.getElementById('st-fail').textContent = fail;
+  document.getElementById('st-pend').textContent = pend;
+  document.getElementById('st-rate').textContent = fin ? ((100 * pass / fin).toFixed(1) + '%') : 'n/a';
+
+  const emoji = { success:'✅', failure:'❌', error:'❌', pending:'🔵', triggered:'🔵', aborted:'⚠️' };
+  const prowList = 'https://prow.ci.openshift.org/?type=periodic&job=network-flow-matrix';
+  document.querySelector('.sub').insertAdjacentHTML('beforeend',
+    ' · <a href="' + prowList + '">Open Prow</a>');
+
+  const tb = document.getElementById('tbody');
+  function failPanel(j, an) {
+    const cat = esc(an.category || 'unknown');
+    const reason = esc(an.reason || '');
+    const junit = Array.isArray(an.junit_failures) ? an.junit_failures.length : 0;
+    var juBlock = junit
+      ? '<p><strong>JUnit failures parsed in archive:</strong> ' + junit + '</p>'
+      : '<p><strong>JUnit failures in archive:</strong> none (open live junit_operator.xml for failed steps).</p>';
+    var quote = '';
+    if (an.log_snippet) {
+      quote = '<blockquote class="snip"><pre class="snip-pre">' + esc(an.log_snippet.trim()) + '</pre></blockquote>';
+    }
+    return '<details class="inv-fold">' +
+      '<summary>Expand investigation — ' + reason.slice(0, 140) + '…</summary>' +
+      '<div class="fail-wrap-inner">' +
+      '<span class="badge cat-infra">' + cat + '</span>' +
+      '<p class="muted" style="margin:10px 0">Infra classification in archive: upgrade / cluster unhealthy before stable commatrix assertions.</p>' +
+      juBlock +
+      '<p style="margin:8px 0"><strong>Quoted failure context (archive log_snippet):</strong></p>' + quote +
+      '<div class="warn-box"><strong>Warnings vs failures</strong><br/>Only <code>[FAIL]</code> / Ginkgo assertion output counts as product failure. ' +
+      '<code>level=warning</code> lines are informational. This snapshot shows CI graph abort <code>executing_multi_stage_test</code> — treat as infra until junit_operator shows a real test case failure.</div>' +
+      '<p><strong>Root cause (synthesis):</strong> The upgrade workflow did not complete the multi-stage test chain (lease / IP pool / graph execution). ' +
+      'That is upstream of the network-flow-matrix test container; it is not a documented matrix port mismatch by itself.</p>' +
+      '<div class="action-green"><strong>Recommended action</strong>Rerun the periodic job. If failures persist across 4.21 / 4.22 / 4.23 upgrade lanes, file an issue against the upgrade / platform workflow owners with must-gather from the build. ' +
+      'For port-level analysis, run the Python generator to pull step <code>build-log.txt</code> and <code>raw-ss-tcp</code>.</div>' +
+      '</div></details>';
+  }
+
+  sorted.forEach(j => {
+    const st = j.state;
+    const dim = st === 'success';
+    const em = emoji[st] || '•';
+    const sm = st === 'success' ? 'ok' : (['failure','error','aborted'].includes(st) ? 'bad' : 'pend');
+    const short = esc(j.name.replace('periodic-ci-openshift-release-main-nightly-',''));
+    const inv = (['failure','error','aborted'].includes(st))
+      ? failPanel(j, j.analysis || {})
+      : '<span class="muted">—</span>';
+    const tr = document.createElement('tr');
+    if (dim) tr.className = 'dim';
+    tr.innerHTML =
+      '<td><span class="pill" title="' + esc(st) + '">' + em + '</span>' +
+      '<span class="st-mini st-' + sm + '">' + esc(String(st).toUpperCase()) + '</span></td>' +
+      '<td><span class="v">' + esc(j.version) + '</span></td>' +
+      '<td><a href="' + esc(j.url) + '" target="_blank" rel="noopener">' + short + '</a></td>' +
+      '<td>' + esc(j.duration) + '</td>' +
+      '<td class="muted">' + esc(RAW.generated_at.slice(0,16).replace('T',' ')) + '</td>' +
+      '<td class="invest">' + inv + '</td>';
+    tb.appendChild(tr);
+  });
+})();
+</script>
+</body>
+</html>
