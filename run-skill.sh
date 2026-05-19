@@ -30,6 +30,9 @@ else
   echo "$CLAUDE_REPORT" > "$REPO_DIR/public/claude-report.md" 2>/dev/null
 fi
 
+# Convert markdown to styled HTML
+python3 "$REPO_DIR/md2html.py" "$REPO_DIR/public/claude-report.md" "$REPO_DIR/public/claude-report.html"
+
 # Step 3: Push to GitHub
 echo "$(date): Pushing to GitHub..." >> "$LOG_FILE"
 cd "$REPO_DIR"
