@@ -1762,6 +1762,53 @@ Provide your analysis in this EXACT format (be thorough for each section):
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
 
 
+CURSOR_CLI = os.environ.get("CURSOR_CLI", "/Applications/Cursor.app/Contents/Resources/app/bin/cursor")
+USE_CURSOR = os.environ.get("USE_CURSOR", "false").lower() == "true"
+
+
+def _cursor_analyze(job: dict, log_text: str,
+                    investigation: dict | None = None,
+                    category: str = "",
+                    matrix_diff: dict | None = None,
+                    step_logs: dict[str, str] | None = None,
+                    artifacts_data: dict | None = None) -> str:
+    """Use Cursor CLI Claude for AI analysis (local only, free)."""
+    try:
+        smart_ctx = _build_smart_context(
+            job, log_text, investigation, category,
+            matrix_diff, step_logs, artifacts_data,
+        )
+        ctx = smart_ctx[:3000] if smart_ctx else _extract_failure_context(log_text)[:2000]
+
+        prompt = (
+            f"Analyze this CI failure. Distinguish warnings from failures.\n\n"
+            f"**Failed Tests:** list only [FAILED] tests\n"
+            f"**Failure Messages:** quote exact errors\n"
+            f"**Warnings:** list level=warning messages separately\n"
+            f"**Root Cause:** explain WHY\n"
+            f"**Classification:** INFRA/TEST_FAILURE/MATRIX_MISMATCH\n"
+            f"**Recommended Action:** specific fix\n"
+            f"**Severity:** CRITICAL/HIGH/MEDIUM/LOW\n\n"
+            f"{ctx}"
+        )
+
+        result = subprocess.run(
+            [CURSOR_CLI, "agent", "--trust", "--print", "--output-format", "text", prompt],
+            capture_output=True, text=True, timeout=120,
+            cwd=Path(__file__).parent,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()[:2000]
+        log.warning("  Cursor CLI failed: %s", result.stderr[:200] if result.stderr else "no output")
+        return ""
+    except subprocess.TimeoutExpired:
+        log.warning("  Cursor CLI timeout")
+        return ""
+    except Exception as e:
+        log.warning("  Cursor CLI error: %s", e)
+        return ""
+
+
 def _ollama_analyze(job: dict, log_text: str,
                     investigation: dict | None = None,
                     category: str = "",
@@ -2326,15 +2373,23 @@ def main():
         ai_log = analysis_log if analysis_log else build_log
         ai_summary = ""
         if ai_log and not ai_log.startswith("("):
-            provider, _, _ = _get_ai_provider()
-            if provider:
-                log.info("  Running AI analysis (%s)...", provider)
-                time.sleep(10)
-                ai_summary = ai_analyze_failure(
+            if USE_CURSOR:
+                log.info("  Running AI analysis (cursor-claude)...")
+                ai_summary = _cursor_analyze(
                     job, ai_log, investigation, category, matrix_diff, step_logs, artifacts_data,
                 )
                 if ai_summary:
-                    log.info("  AI: %s", ai_summary[:200])
+                    log.info("  Claude: %s", ai_summary[:200])
+            else:
+                provider, _, _ = _get_ai_provider()
+                if provider:
+                    log.info("  Running AI analysis (%s)...", provider)
+                    time.sleep(10)
+                    ai_summary = ai_analyze_failure(
+                        job, ai_log, investigation, category, matrix_diff, step_logs, artifacts_data,
+                    )
+                    if ai_summary:
+                        log.info("  AI: %s", ai_summary[:200])
             if not ai_summary:
                 fb_context = _extract_failure_context(ai_log)
                 fb_prompt = (
