@@ -1598,7 +1598,7 @@ Log:
 # Ollama local AI fallback
 # ---------------------------------------------------------------------------
 
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
 
 
 def _ollama_analyze(job: dict, log_text: str,
@@ -2179,7 +2179,7 @@ def main():
             provider, _, _ = _get_ai_provider()
             if provider:
                 log.info("  Running AI analysis (%s)...", provider)
-                time.sleep(5)
+                time.sleep(10)
                 ai_summary = ai_analyze_failure(
                     job, ai_log, investigation, category, matrix_diff, step_logs,
                 )
