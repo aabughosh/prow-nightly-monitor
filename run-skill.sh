@@ -1,6 +1,7 @@
 #!/bin/bash
-# Daily Prow Investigation — Cursor CLI Claude
-# Claude does EVERYTHING: fetch, investigate, analyze, generate dashboard
+# Daily Prow Investigation — two-step approach
+# 1. Python fetches fresh data from Prow (can make HTTP requests)
+# 2. Claude analyzes the fresh results and generates HTML dashboard
 # Cron: 0 12 * * 1-5 (noon weekdays)
 
 CURSOR_CLI="/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
@@ -8,84 +9,65 @@ REPO_DIR="$HOME/Documents/GitHub/prow-nightly-monitor"
 OUTPUT="$REPO_DIR/public/claude-dashboard.html"
 LOG_FILE="$REPO_DIR/skill-run.log"
 
-echo "$(date): === Starting Claude investigation ===" >> "$LOG_FILE"
+echo "$(date): === Starting daily run ===" >> "$LOG_FILE"
 cd "$REPO_DIR" || exit 1
 
+# Step 1: Python fetches FRESH data from Prow
+echo "$(date): Fetching fresh Prow data..." >> "$LOG_FILE"
+export JOB_FILTER="network-flow-matrix"
+export MIN_VERSION="4.21"
+export OUTPUT_DIR="$REPO_DIR/public"
+pip3 install requests -q 2>/dev/null
+python3 monitor.py >> "$LOG_FILE" 2>&1
+echo "$(date): Fresh data fetched" >> "$LOG_FILE"
+
+# Step 2: Claude analyzes the FRESH results.json
+echo "$(date): Claude analyzing fresh results..." >> "$LOG_FILE"
 "$CURSOR_CLI" agent --trust --print --output-format text \
-"You are a senior CI failure investigator. Your job is to deeply investigate every failed nightly job.
+"Read public/results.json — it was JUST generated with today's fresh data from Prow.
 
-STEP 1 — FETCH ALL JOBS:
-Run: curl -s 'https://prow.ci.openshift.org/prowjobs.js?type=periodic&job=network-flow-matrix'
-Parse the JSON. For each job, extract: name, state, startTime, url.
-Keep only the latest run per job name. Filter for versions 4.21+.
+For each failed job in the results:
 
-STEP 2 — FOR EACH FAILED JOB, INVESTIGATE DEEPLY:
-Extract the job_path and build_id from the Prow URL.
-The GCS base is: https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs
+1. Read the analysis.ai_summary, analysis.investigation, analysis.matrix_diff, analysis.artifacts
+2. Read the analysis.junit_failures for test step details
+3. Check analysis.category (matrix_mismatch, test_failure, infra, etc)
 
-For each failed job:
+For MATRIX MISMATCH failures:
+- Show which ports need to be ADDED, REMOVED, or INVESTIGATED
+- If artifacts.ss_findings exists, show the ss output for each port
+- Classify ports by range: 32768-60999 = ephemeral (OS-assigned, changes on reboot)
+- Explain WHY the port has no EndpointSlice
 
-a) Fetch JUnit XML:
-   curl the artifacts/junit_operator.xml — parse <failure> elements to find which steps failed
+For INFRA failures:
+- Show the root cause
+- Say if it's transient (retry) or systemic
 
-b) Fetch the STEP-SPECIFIC build-log.txt:
-   The step name comes from JUnit: 'Run multi-stage test WORKFLOW - WORKFLOW-STEP container test'
-   The log is at: artifacts/WORKFLOW/STEP/build-log.txt
-   Read the LAST 100 lines. Look for [FAIL], Summarizing N Failures, error messages.
+For TEST failures:
+- Show exact test name and error
+- Distinguish warnings from failures
 
-c) Browse the artifacts directory:
-   curl the artifacts/WORKFLOW/STEP/artifacts/ listing
-   Look for: commatrix-e2e/raw-ss-tcp, junit/*.xml, or other useful files
-
-d) If there are ports with no EndpointSlice:
-   Fetch the raw-ss-tcp file from artifacts/WORKFLOW/network-flow-matrix-tests/artifacts/commatrix-e2e/raw-ss-tcp
-   Find the specific port in the ss output. Note the process name and PID.
-   Check if the port is in Linux ephemeral range (32768-60999) — if so, it changes on reboot.
-
-e) Distinguish WARNINGS from FAILURES:
-   Lines with 'level=warning' are informational, NOT the failure cause.
-   Only [FAILED] assertions are real failures.
-
-f) For each failure, determine:
-   - Exact test name that failed
-   - Exact error message (quote it)
-   - Root cause — WHY it failed, not just what happened
-   - Is it infra (retry), matrix mismatch (update docs), or code bug (fix needed)?
-   - Specific recommended action
-
-STEP 3 — GENERATE A FULL HTML DASHBOARD:
-Write to public/claude-dashboard.html a self-contained HTML page with:
-- Dark theme: background #0d1117, text #e1e4e8, cards #161b22
-- Header with title, timestamp, job filter
-- Stats row: total jobs, passed (green), failed (red), pending (blue), pass rate
-- Table with ALL jobs: status emoji, version, job name (link to Prow), duration, started
-- For each FAILED job: expandable investigation section with:
-  * Failed test name and file reference
-  * Error message (quoted)
-  * Warnings (listed separately, clearly labeled as 'not a failure')
-  * Root cause explanation
-  * ss output for missing EndpointSlice ports (with port range analysis)
-  * Recommended action in a green box
-- Passed jobs dimmed
-- Modern, clean design similar to Grafana or GitHub
-
-Be thorough. Check every artifact. Read every log. This is your investigation." \
+Generate a COMPLETE self-contained HTML dashboard to public/claude-dashboard.html:
+- Dark theme (background #0d1117, text #e1e4e8, cards #161b22, borders #30363d)
+- Header: Prow Nightly Monitor — Claude Investigation, timestamp
+- Stats: total, passed (green #3fb950), failed (red #f85149), pending (blue #58a6ff), pass rate
+- Category cards: count per failure type (matrix orange #f0883e, test red, infra yellow #d29922)
+- Table with ALL jobs: status, version, job name (linked to Prow URL), duration
+- For failed jobs: detailed investigation section with all findings
+- Expandable details sections using HTML details/summary tags
+- Footer with link to main dashboard and GitHub repo
+- Make it look professional and modern" \
 >> "$LOG_FILE" 2>&1
 
 if [ -f "$OUTPUT" ]; then
-  echo "$(date): Dashboard generated, opening..." >> "$LOG_FILE"
+  echo "$(date): Dashboard generated" >> "$LOG_FILE"
   open "$OUTPUT"
 
-  # Push to GitHub so it's available at https://aabughosh.github.io/prow-nightly-monitor/claude-dashboard.html
-  echo "$(date): Pushing to GitHub..." >> "$LOG_FILE"
-  cd "$REPO_DIR"
+  # Push to GitHub Pages
   git add public/claude-dashboard.html >> "$LOG_FILE" 2>&1
   git commit -m "daily: Claude investigation $(date +%Y-%m-%d)" >> "$LOG_FILE" 2>&1
   git push origin main >> "$LOG_FILE" 2>&1
-
-  # Trigger GitHub Action to deploy to Pages
   /opt/homebrew/bin/gh workflow run monitor.yml --repo aabughosh/prow-nightly-monitor >> "$LOG_FILE" 2>&1
-  echo "$(date): Deployed to GitHub Pages" >> "$LOG_FILE"
+  echo "$(date): Published to GitHub Pages" >> "$LOG_FILE"
 else
   echo "$(date): Dashboard not generated" >> "$LOG_FILE"
 fi
