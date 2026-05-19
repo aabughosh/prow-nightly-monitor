@@ -1424,6 +1424,28 @@ def _fetch_artifacts_context(job: dict, category: str,
                 except Exception:
                     pass
 
+        if no_ep:
+            ep_artifacts = [
+                f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/network-flow-matrix-tests/artifacts/commatrix-e2e/communication-matrix",
+                f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/network-flow-matrix-tests/artifacts/commatrix-e2e/ss-generated-matrix",
+                f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/network-flow-matrix-tests/artifacts/commatrix-e2e/matrix-diff-ss",
+            ]
+            for art_url in ep_artifacts:
+                try:
+                    resp = requests.get(art_url, timeout=8)
+                    if resp.status_code == 200 and len(resp.text) > 10:
+                        art_name = art_url.split("/")[-1]
+                        for port_entry in no_ep:
+                            port_fields = port_entry.split(",")
+                            if len(port_fields) >= 3:
+                                port_num = port_fields[2]
+                                for line in resp.text.splitlines():
+                                    if port_num in line:
+                                        parts.append(f"{art_name} for port {port_num}: {line.strip()[:200]}")
+                                        break
+                except Exception:
+                    pass
+
         stale = matrix_diff.get("stale_ports", [])
         if stale:
             parts.append(f"Stale ports (in matrix but not on nodes): {len(stale)} entries")
@@ -1571,9 +1593,20 @@ def _build_smart_context(job: dict, log_text: str,
 
     # 7. Artifacts summary
     if artifacts_data and artifacts_data.get("text_summary"):
-        context_parts.append(f"=== ARTIFACTS ===\n{artifacts_data['text_summary'][:500]}")
+        context_parts.append(f"=== ARTIFACTS (ss output, matrix diff, commatrix data) ===\n{artifacts_data['text_summary'][:800]}")
 
-    return "\n\n".join(context_parts)[:5000]
+    # 8. Tell AI to investigate further
+    if matrix_diff and matrix_diff.get("no_endpointslice_ports"):
+        context_parts.append(
+            "=== INVESTIGATION GUIDANCE ===\n"
+            "For ports with no EndpointSlice: the ss output above shows what process owns the port.\n"
+            "Check if the port is in Linux ephemeral range (32768-60999) — if yes, it changes on reboot.\n"
+            "The matrix-diff-ss artifact shows the difference between expected and actual ports.\n"
+            "The ss-generated-matrix shows all ports found by the ss command.\n"
+            "Explain WHY this port has no EndpointSlice and what the fix should be."
+        )
+
+    return "\n\n".join(context_parts)[:6000]
 
 
 def ai_analyze_failure(job: dict, log_text: str,
