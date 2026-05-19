@@ -42,7 +42,7 @@ Generate public/claude-dashboard.html with:
 - Footer with links
 
 Write the complete HTML to public/claude-dashboard.html.
-Make sure it uses TODAY's data from results.json, not cached data." \
+IMPORTANT: Embed ALL data directly in the HTML. Do NOT use JavaScript fetch() or load external JSON files. The HTML must work standalone when opened as a local file." \
 >> "$LOG_FILE" 2>&1
 
 # Check if file was updated
