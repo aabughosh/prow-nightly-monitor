@@ -1469,34 +1469,90 @@ def _extract_failure_context(log_text: str) -> str:
     return clean[-4000:] if len(clean) > 4000 else clean
 
 
+def _build_smart_context(job: dict, log_text: str,
+                         investigation: dict | None,
+                         category: str,
+                         matrix_diff: dict | None,
+                         step_logs: dict[str, str] | None,
+                         artifacts_data: dict | None) -> str:
+    """Build a rich context for AI by auto-investigating based on failure type.
+
+    Acts like an engineer: sees the error, figures out what to check,
+    fetches the relevant data, and presents it all to the AI.
+    """
+    context_parts = []
+
+    failure_ctx = _extract_failure_context(log_text)
+    if failure_ctx:
+        context_parts.append(f"=== FAILURE LOG ===\n{failure_ctx}")
+
+    if investigation:
+        if investigation.get("failed_tests"):
+            tests_str = "\n".join(
+                f"- {t.get('name', '?')}: {t.get('message', '')[:150]}"
+                for t in investigation["failed_tests"][:5]
+            )
+            context_parts.append(f"=== FAILED TESTS ===\n{tests_str}")
+
+        if investigation.get("source_files"):
+            source = _fetch_test_source(job, investigation["source_files"])
+            if source:
+                context_parts.append(f"=== TEST SOURCE CODE ===\n{source[:1000]}")
+
+    if matrix_diff and matrix_diff.get("is_matrix_mismatch"):
+        no_ep = matrix_diff.get("no_endpointslice_ports", [])
+        stale = matrix_diff.get("stale_ports", [])
+        undoc = matrix_diff.get("undocumented_ports", [])
+
+        diff_str = ""
+        if no_ep:
+            diff_str += "Ports open but NO EndpointSlice:\n"
+            for p in no_ep:
+                port_info = classify_port(p, "")
+                diff_str += f"  {p}\n"
+                diff_str += f"  → Port range: {port_info['desc']}\n"
+
+                if artifacts_data and artifacts_data.get("ss_findings"):
+                    fields = p.split(",")
+                    port_num = fields[2] if len(fields) >= 3 else ""
+                    ss_match = next((s for s in artifacts_data["ss_findings"] if s["port"] == port_num), None)
+                    if ss_match:
+                        diff_str += f"  → ss output: {ss_match['ss_line']}\n"
+                        port_info = classify_port(p, ss_match["ss_line"])
+                        diff_str += f"  → Analysis: {port_info['action']}\n"
+
+        if stale:
+            diff_str += f"\nPorts in matrix but NOT open on nodes ({len(stale)}):\n"
+            for p in stale[:5]:
+                diff_str += f"  {p}\n"
+
+        if undoc:
+            diff_str += f"\nPorts open but NOT in matrix ({len(undoc)}):\n"
+            for p in undoc[:5]:
+                diff_str += f"  {p}\n"
+
+        if diff_str:
+            context_parts.append(f"=== PORT ANALYSIS ===\n{diff_str}")
+
+    return "\n\n".join(context_parts)[:4000]
+
+
 def ai_analyze_failure(job: dict, log_text: str,
                        investigation: dict | None = None,
                        category: str = "",
                        matrix_diff: dict | None = None,
-                       step_logs: dict[str, str] | None = None) -> str:
-    """Use an LLM to analyze the failure log with test source and artifacts."""
+                       step_logs: dict[str, str] | None = None,
+                       artifacts_data: dict | None = None) -> str:
+    """Use an LLM to analyze the failure with auto-investigated context."""
     provider, api_key, model = _get_ai_provider()
     if not provider:
         return ""
 
-    log_truncated = _extract_failure_context(log_text)
-
-    extra_context = ""
-
-    if investigation and investigation.get("source_files"):
-        source_code = _fetch_test_source(job, investigation["source_files"])
-        if source_code:
-            log.info("  Fetched test source code for AI context")
-            extra_context += f"\n\n**Test Source Code:**\n{source_code}"
-
-    artifacts_data = {}
-    if category and matrix_diff and step_logs:
-        artifacts_data = _fetch_artifacts_context(job, category, matrix_diff or {}, step_logs or {})
-        if artifacts_data.get("text_summary"):
-            log.info("  Fetched artifacts context for AI")
-            extra_context += f"\n\n**Artifacts:**\n{artifacts_data['text_summary']}"
-
-    source_section = extra_context if extra_context else ""
+    smart_context = _build_smart_context(
+        job, log_text, investigation, category,
+        matrix_diff, step_logs, artifacts_data,
+    )
+    source_section = f"\n{smart_context}" if smart_context else ""
 
     prompt = f"""You are a senior CI failure analyst for OpenShift. Analyze this failed CI job thoroughly.
 
@@ -1667,23 +1723,16 @@ def _ollama_analyze(job: dict, log_text: str,
                     investigation: dict | None = None,
                     category: str = "",
                     matrix_diff: dict | None = None,
-                    step_logs: dict[str, str] | None = None) -> str:
-    """Fallback: use local Ollama for AI analysis when API providers fail."""
+                    step_logs: dict[str, str] | None = None,
+                    artifacts_data: dict | None = None) -> str:
+    """Fallback: use local Ollama with pre-investigated context."""
     try:
-        log_truncated = _extract_failure_context(log_text)
-        if len(log_truncated) > 1500:
-            log_truncated = log_truncated[:1500]
-
-        extra = ""
-        if investigation and investigation.get("source_files"):
-            source_code = _fetch_test_source(job, investigation["source_files"])
-            if source_code:
-                extra += f"\n\nTest source:\n{source_code[:600]}"
-        if category and matrix_diff and step_logs:
-            artifacts_data = _fetch_artifacts_context(job, category, matrix_diff or {}, step_logs or {})
-            if artifacts_data.get("text_summary"):
-                extra += f"\n\nArtifacts:\n{artifacts_data['text_summary'][:400]}"
-        source_hint = extra
+        smart_ctx = _build_smart_context(
+            job, log_text, investigation, category,
+            matrix_diff, step_logs, artifacts_data,
+        )
+        log_truncated = smart_ctx[:2000] if smart_ctx else _extract_failure_context(log_text)[:1500]
+        source_hint = ""
 
         prompt = (
             f"You are a senior CI failure analyst. Analyze this failure.\n"
@@ -2239,7 +2288,7 @@ def main():
                 log.info("  Running AI analysis (%s)...", provider)
                 time.sleep(10)
                 ai_summary = ai_analyze_failure(
-                    job, ai_log, investigation, category, matrix_diff, step_logs,
+                    job, ai_log, investigation, category, matrix_diff, step_logs, artifacts_data,
                 )
                 if ai_summary:
                     log.info("  AI: %s", ai_summary[:200])
@@ -2279,7 +2328,7 @@ def main():
             if not ai_summary:
                 log.info("  Trying Ollama fallback...")
                 ai_summary = _ollama_analyze(
-                    job, ai_log, investigation, category, matrix_diff, step_logs,
+                    job, ai_log, investigation, category, matrix_diff, step_logs, artifacts_data,
                 )
                 if ai_summary:
                     log.info("  Ollama: %s", ai_summary[:200])
