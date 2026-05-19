@@ -1257,7 +1257,7 @@ def _get_ai_provider() -> tuple[str, str, str]:
     if AI_PROVIDER == "groq" and GROQ_API_KEY:
         return "groq", GROQ_API_KEY, AI_MODEL or "llama-3.3-70b-versatile"
     if AI_PROVIDER == "cerebras" and CEREBRAS_API_KEY:
-        return "cerebras", CEREBRAS_API_KEY, AI_MODEL or "llama-3.3-70b"
+        return "cerebras", CEREBRAS_API_KEY, AI_MODEL or "llama3.1-8b"
     if AI_PROVIDER == "deepseek" and DEEPSEEK_API_KEY:
         return "deepseek", DEEPSEEK_API_KEY, AI_MODEL or "deepseek-chat"
     if ANTHROPIC_API_KEY:
@@ -1265,7 +1265,7 @@ def _get_ai_provider() -> tuple[str, str, str]:
     if GROQ_API_KEY:
         return "groq", GROQ_API_KEY, AI_MODEL or "llama-3.3-70b-versatile"
     if CEREBRAS_API_KEY:
-        return "cerebras", CEREBRAS_API_KEY, AI_MODEL or "llama-3.3-70b"
+        return "cerebras", CEREBRAS_API_KEY, AI_MODEL or "llama3.1-8b"
     if DEEPSEEK_API_KEY:
         return "deepseek", DEEPSEEK_API_KEY, AI_MODEL or "deepseek-chat"
     if HF_API_KEY:
@@ -2301,7 +2301,7 @@ def main():
                     f"Log:\n{fb_context}"
                 )
                 for fallback_name, fallback_key, fallback_model, fallback_url in [
-                    ("cerebras", CEREBRAS_API_KEY, "llama-3.3-70b", "https://api.cerebras.ai/v1/chat/completions"),
+                    ("cerebras", CEREBRAS_API_KEY, "llama3.1-8b", "https://api.cerebras.ai/v1/chat/completions"),
                     ("deepseek", DEEPSEEK_API_KEY, "deepseek-chat", "https://api.deepseek.com/chat/completions"),
                 ]:
                     if not fallback_key or fallback_name == provider:
