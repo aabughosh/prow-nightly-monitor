@@ -1798,7 +1798,7 @@ def _cursor_analyze(job: dict, log_text: str,
             cwd=Path(__file__).parent,
         )
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()[:2000]
+            return result.stdout.strip()[:4000]
         log.warning("  Cursor CLI failed: %s", result.stderr[:200] if result.stderr else "no output")
         return ""
     except subprocess.TimeoutExpired:
