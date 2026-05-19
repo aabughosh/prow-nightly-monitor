@@ -1259,6 +1259,46 @@ def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
     return "\n\n".join(source_parts)[:2000] if source_parts else ""
 
 
+def _browse_artifacts(job: dict) -> dict[str, list[str]]:
+    """Browse GCS artifacts directory and list available files per step."""
+    url = job.get("url", "")
+    m = re.search(r"/logs/(.+)/(\d+)$", url)
+    if not m:
+        return {}
+    job_path, build_id = m.group(1), m.group(2)
+    result: dict[str, list[str]] = {}
+
+    base = f"{GCS_BASE}/{job_path}/{build_id}/artifacts/"
+    try:
+        resp = requests.get(base, timeout=10)
+        if resp.status_code != 200:
+            return {}
+        wf_dirs = re.findall(r'href="[^"]*?/artifacts/([^/"]+)/"', resp.text)
+        for wf in wf_dirs[:3]:
+            wf_url = f"{base}{wf}/"
+            try:
+                wresp = requests.get(wf_url, timeout=8)
+                if wresp.status_code == 200:
+                    steps = re.findall(r'href="[^"]*?/([^/"]+)/"', wresp.text)
+                    for step in steps:
+                        if step in (".", ".."):
+                            continue
+                        step_url = f"{wf_url}{step}/"
+                        try:
+                            sresp = requests.get(step_url, timeout=5)
+                            if sresp.status_code == 200:
+                                files = re.findall(r'href="[^"]*?/([^/"]+\.[a-z]+)"', sresp.text)
+                                if files:
+                                    result[f"{wf}/{step}"] = files
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return result
+
+
 def _fetch_artifacts_context(job: dict, category: str,
                              matrix_diff: dict,
                              step_logs: dict[str, str]) -> dict:
@@ -1392,37 +1432,46 @@ def ai_analyze_failure(job: dict, log_text: str,
 
     source_section = extra_context if extra_context else ""
 
-    prompt = f"""You are a senior CI failure analyst for OpenShift. Analyze this failed CI job and provide a detailed, structured investigation report.
+    prompt = f"""You are a senior CI failure analyst for OpenShift. Analyze this failed CI job thoroughly.
 
 Job: {job['name']}
 State: {job['state']}
 {source_section}
 
-Provide your analysis in this exact format:
+IMPORTANT: Be detailed and specific. Do NOT give one-sentence answers.
+
+Context for common failure types:
+- MATRIX MISMATCH: The commatrix e2e test compares documented ports (CSV) against actual open ports (from ss command) and EndpointSlice resources. If a port is open (ss shows it) but has no EndpointSlice, it may be an ephemeral port (CRI-O changes port each reboot) that needs a static entry in samples/custom-entries/. If a port is documented but not open, it was removed from the cluster.
+- INFRA: Bare metal provisioning (ofcir) failures, cluster setup timeouts, telco5g cluster not found.
+- TEST FAILURE: A specific Ginkgo test assertion failed.
+
+Provide your analysis in this EXACT format (be thorough for each section):
 
 **Failed Tests:**
-- List each test that failed with its full name
-- If no specific test names visible, say "Test names not found in logs"
+- List each test that failed with its FULL name
+- Include the test file and line number if available
 
 **Failure Messages:**
-- Quote the exact error messages from the logs (1-2 lines each)
+- Quote the EXACT error messages from the logs
+- Include all relevant error lines, not just one
 
 **Root Cause:**
-- What specifically caused the failure? Be precise (e.g. "port 9443 missing from expected matrix" not just "test failed")
+- Explain specifically WHY this failed, not just WHAT happened
+- If it's a matrix mismatch: which ports are wrong and why
+- If it's infra: what infrastructure component failed
+- If a port has no EndpointSlice: explain what process owns it (from ss output) and whether it needs a static entry
 
 **Classification:**
-- INFRA (cluster setup, timeout, network, node issues — not a code bug)
-- TEST_FAILURE (a real test assertion failed — code or config needs fixing)
-- BUILD_ERROR (compilation or dependency issue)
-- FLAKE (intermittent failure, likely passes on retry)
-- MATRIX_MISMATCH (expected vs actual communication matrix differs)
+- MATRIX_MISMATCH / INFRA / TEST_FAILURE / BUILD_ERROR / FLAKE
 
 **Recommended Action:**
-- Specific steps to fix (e.g. "update expected matrix in docs/stable/", "bump dependency X to vY.Z", "retry — likely a flake")
+- Give specific, actionable steps (file paths, commands, what to change)
+- For matrix issues: which CSV file to update, which lines to add/remove
+- For infra: whether to retry or escalate
 
 **Severity:** CRITICAL / HIGH / MEDIUM / LOW
 
-Log (last portion):
+Log:
 {log_truncated}
 """
 
@@ -2115,14 +2164,14 @@ def main():
         if investigation["suggested_fix"]:
             log.info("  Suggested fix: %s", investigation["suggested_fix"][:120])
 
-        artifacts_data = {}
-        if category == "matrix_mismatch" and matrix_diff.get("no_endpointslice_ports"):
-            log.info("  Fetching artifacts for port investigation...")
-            artifacts_data = _fetch_artifacts_context(job, category, matrix_diff, step_logs)
-            if artifacts_data.get("ss_findings"):
-                log.info("  Found ss data for %d port(s)", len(artifacts_data["ss_findings"]))
-                for sf in artifacts_data["ss_findings"]:
-                    log.info("    Port %s: %s", sf["port"], sf["ss_line"][:100])
+        log.info("  Fetching artifacts for investigation...")
+        artifacts_data = _fetch_artifacts_context(job, category, matrix_diff, step_logs)
+        if artifacts_data.get("ss_findings"):
+            log.info("  Found ss data for %d port(s)", len(artifacts_data["ss_findings"]))
+            for sf in artifacts_data["ss_findings"]:
+                log.info("    Port %s: %s", sf["port"], sf["ss_line"][:100])
+        if artifacts_data.get("text_summary"):
+            log.info("  Artifacts: %s", artifacts_data["text_summary"][:120])
 
         ai_log = analysis_log if analysis_log else build_log
         ai_summary = ""
