@@ -1325,12 +1325,14 @@ def _fetch_artifacts_context(job: dict, category: str,
             wf_name = "-".join(wf_parts[ver_idx + 1:]) if ver_idx >= 0 else name_short
 
             ss_paths = [
+                f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/network-flow-matrix-tests/artifacts/commatrix-e2e/raw-ss-tcp",
                 f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/network-flow-matrix-tests/artifacts/raw-ss-tcp",
                 f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/network-flow-matrix-tests/artifacts/commatrix/raw-ss-tcp",
             ]
             for step in step_logs:
                 if "network-flow-matrix" in step:
-                    ss_paths.insert(0, f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/{step}/artifacts/raw-ss-tcp")
+                    ss_paths.insert(0, f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/{step}/artifacts/commatrix-e2e/raw-ss-tcp")
+                    ss_paths.insert(1, f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/{step}/artifacts/raw-ss-tcp")
 
             for ss_url in ss_paths:
                 try:
