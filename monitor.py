@@ -1981,19 +1981,14 @@ def _cursor_analyze(job: dict, log_text: str,
         ctx = smart_ctx[:3000] if smart_ctx else _extract_failure_context(log_text)[:2000]
 
         prompt = (
-            f"Investigate this CI failure. Be clear and simple.\n\n"
-            f"RULES:\n"
-            f"- Errors are errors. Warnings are warnings. Don't mix them.\n"
-            f"- For each failing port: check ss output, name the process, say if it's a system daemon or K8s service.\n"
-            f"- System daemons (container runtimes, rpcbind, etc) CANNOT have EndpointSlices.\n"
-            f"- If the same issue appears across multiple jobs, say so and suggest ONE fix for all.\n\n"
-            f"FORMAT (keep it simple and readable):\n\n"
-            f"**What failed:**\n<test name and file>\n\n"
-            f"**Error:**\n<exact error message>\n\n"
-            f"**Warnings (not the failure):**\n<list warnings briefly>\n\n"
-            f"**Why it failed:**\n<simple explanation — what process, what port, why no EndpointSlice>\n\n"
-            f"**What to do:**\nONE of: Open PR to add static entry / Open PR to skip this port / Open Jira bug / Update documented matrix\n"
-            f"<explain which one and why>\n\n"
+            f"Investigate this CI failure. Use all the data below (test code, ss output, "
+            f"artifacts, static entries) to understand what happened and what should be done.\n\n"
+            f"Keep it simple and readable. Errors are errors, warnings are warnings — don't mix them.\n\n"
+            f"**What failed:** <test name>\n"
+            f"**Error:** <exact message>\n"
+            f"**Warnings:** <briefly, separate from the error>\n"
+            f"**Why:** <your analysis based on the data>\n"
+            f"**What to do:** <your recommendation — be specific>\n\n"
             f"{ctx}"
         )
 
