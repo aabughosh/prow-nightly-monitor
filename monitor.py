@@ -1981,14 +1981,15 @@ def _cursor_analyze(job: dict, log_text: str,
         ctx = smart_ctx[:3000] if smart_ctx else _extract_failure_context(log_text)[:2000]
 
         prompt = (
-            f"Investigate this CI failure. Use all the data below (test code, ss output, "
-            f"artifacts, static entries) to understand what happened and what should be done.\n\n"
-            f"Keep it simple and readable. Errors are errors, warnings are warnings — don't mix them.\n\n"
-            f"**What failed:** <test name>\n"
-            f"**Error:** <exact message>\n"
-            f"**Warnings:** <briefly, separate from the error>\n"
-            f"**Why:** <your analysis based on the data>\n"
-            f"**What to do:** <your recommendation — be specific>\n\n"
+            f"A CI test failed in job {job['name']}. Below is all the data collected: "
+            f"failure logs, test source code from the repo, static entries, ss output, "
+            f"matrix diff, and artifacts.\n\n"
+            f"Investigate deeply. Read the test code to understand what it checks. "
+            f"Look at the ss output to see what process owns the failing port. "
+            f"Check if the port is already in static entries. "
+            f"Think about whether the test should be changed or the data should be updated.\n\n"
+            f"If you can identify a fix (code change, config change, or PR to open), describe it specifically.\n\n"
+            f"Keep your response clean: What failed, Error, Warnings (separate), Why, What to do.\n\n"
             f"{ctx}"
         )
 
