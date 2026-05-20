@@ -792,6 +792,7 @@ def investigate_failure(job: dict, category: str, reason: str,
     )
     seen_files = set()
     for fpath, line_no in file_refs:
+        fpath = re.sub(r"^\d+m", "", fpath)
         if fpath.startswith("/tmp/") or fpath.startswith("vendor/"):
             base = fpath.split("/")[-1] if "/" in fpath else fpath
             key = f"{base}:{line_no}"
@@ -1349,12 +1350,21 @@ def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
     raw_base = f"https://raw.githubusercontent.com/{repo_slug}/main"
     source_parts = []
 
-    # 1. Fetch the FULL failing test file to understand the test logic
-    for tf in test_files[:2]:
+    # 1. Fetch the failing test files — prioritize validation/test files, deduplicate
+    seen_bases = set()
+    sorted_files = sorted(test_files, key=lambda t: (
+        0 if "validation" in t.get("file", "").lower() else
+        1 if "_test.go" in t.get("file", "") else 2
+    ))
+    for tf in sorted_files[:4]:
         filepath = tf.get("file", "")
         if not filepath or "_test.go" not in filepath:
             continue
         base = filepath.split("/")[-1] if "/" in filepath else filepath
+        base = re.sub(r"^\d+m", "", base)
+        if base in seen_bases:
+            continue
+        seen_bases.add(base)
         for sp in [f"test/e2e/{base}", f"test/{base}", base]:
             try:
                 resp = requests.get(f"{raw_base}/{sp}", timeout=10)
