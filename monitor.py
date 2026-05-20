@@ -600,54 +600,105 @@ def fetch_step_junit(job: dict, workflow: str, step: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def classify_port(port_entry: str, ss_line: str = "") -> dict:
-    """Classify a port based on its number, process, and ss output.
+    """Classify a port and recommend a specific action.
 
-    Pure logic — no hardcoded process names. Determines if a port is
-    ephemeral, well-known, or registered based on standard port ranges
-    and what the ss output shows.
+    Checks: port range, process name, namespace, listen address.
+    Recommends: add static entry / open bug / skip / update docs.
     """
     fields = port_entry.split(",")
     port_num = int(fields[2]) if len(fields) >= 3 and fields[2].isdigit() else 0
-    process = fields[5] if len(fields) >= 6 else ""
+    namespace = fields[3] if len(fields) >= 4 else ""
+    service = fields[4] if len(fields) >= 5 else ""
+    pod = fields[5] if len(fields) >= 6 else ""
+    container = fields[6] if len(fields) >= 7 else ""
+    process = pod or container
 
+    ss_process = ""
+    ss_pid = ""
+    ss_addr = ""
     if ss_line:
-        ss_proc = re.search(r'users:\(\("([^"]+)"', ss_line)
-        if ss_proc:
-            process = ss_proc.group(1)
+        proc_m = re.search(r'users:\(\("([^"]+)",pid=(\d+)', ss_line)
+        if proc_m:
+            ss_process = proc_m.group(1)
+            ss_pid = proc_m.group(2)
+            process = ss_process
+        addr_m = re.search(r'(\S+):' + str(port_num), ss_line)
+        if addr_m:
+            ss_addr = addr_m.group(1)
 
-    if 32768 <= port_num <= 60999:
-        return {
-            "range": "ephemeral",
-            "process": process,
-            "desc": f"Linux ephemeral range (32768-60999). Process: {process or 'unknown'}. "
-                    f"This port is assigned randomly by the OS and likely changes on reboot.",
-            "action": f"Port {port_num} is ephemeral (OS-assigned). "
-                      f"Process '{process or 'unknown'}' is likely not a Kubernetes service, so it has no EndpointSlice. "
-                      f"If this process always runs on the node, add it as a static entry.",
-        }
-    elif 30000 <= port_num <= 32767:
-        return {
-            "range": "nodeport",
-            "process": process,
-            "desc": f"Kubernetes NodePort range (30000-32767). Process: {process or 'unknown'}.",
-            "action": f"This is a dynamic NodePort. Check if a Kubernetes Service is exposing it.",
-        }
-    elif port_num <= 1023:
-        return {
-            "range": "well_known",
-            "process": process,
-            "desc": f"Well-known port. Process: {process or 'unknown'}.",
-            "action": f"Standard system port {port_num}. If this is a Kubernetes-managed service, "
-                      f"it should have an EndpointSlice. Investigate why it's missing.",
-        }
+    is_openshift = namespace.startswith("openshift-") if namespace else False
+    is_localhost = ss_addr in ("127.0.0.1", "::1", "localhost") if ss_addr else False
+    is_ephemeral = 32768 <= port_num <= 60999
+    is_nodeport = 30000 <= port_num <= 32767
+    is_well_known = port_num <= 1023
+
+    info = {
+        "port": port_num,
+        "process": process,
+        "ss_process": ss_process,
+        "ss_pid": ss_pid,
+        "ss_addr": ss_addr,
+        "namespace": namespace,
+        "service": service,
+        "is_openshift": is_openshift,
+        "is_ephemeral": is_ephemeral,
+        "is_localhost": is_localhost,
+    }
+
+    if is_ephemeral:
+        info["range"] = "ephemeral"
+        info["desc"] = (
+            f"Linux ephemeral port {port_num} (range 32768-60999). "
+            f"Process: {process or 'unknown'} (PID {ss_pid or '?'}). "
+            f"Listens on: {ss_addr or '?'}. "
+            f"This port is randomly assigned by the OS and changes on every reboot."
+        )
+        info["action"] = (
+            f"ADD STATIC ENTRY: Process '{process or 'unknown'}' always runs on nodes but uses "
+            f"a random OS-assigned port. It will never have an EndpointSlice because it's not "
+            f"a Kubernetes Service. Add it to samples/custom-entries/ as a static entry with optional=true."
+        )
+    elif is_nodeport:
+        info["range"] = "nodeport"
+        info["desc"] = f"Kubernetes NodePort {port_num} (range 30000-32767). Process: {process or 'unknown'}."
+        info["action"] = "CHECK SERVICE: This is a NodePort. Verify which Kubernetes Service exposes it."
+    elif is_well_known:
+        info["range"] = "well_known"
+        info["desc"] = f"Well-known system port {port_num}. Process: {process or 'unknown'}."
+        if is_openshift:
+            info["action"] = (
+                f"POSSIBLE BUG: Port {port_num} in OpenShift namespace '{namespace}' has no EndpointSlice. "
+                f"This may be a bug in the service '{service or process}'. Consider filing a Jira bug."
+            )
+        else:
+            info["action"] = f"INVESTIGATE: System port {port_num} ({process or 'unknown'}) has no EndpointSlice."
+    elif is_openshift and not is_ephemeral:
+        info["range"] = "registered"
+        info["desc"] = (
+            f"Registered port {port_num} in OpenShift namespace '{namespace}'. "
+            f"Service: {service or '?'}, Pod: {pod or '?'}, Container: {container or '?'}."
+        )
+        info["action"] = (
+            f"POSSIBLE BUG: Port {port_num} belongs to OpenShift service '{service or process}' "
+            f"in namespace '{namespace}' but has no EndpointSlice. The service may be missing its "
+            f"EndpointSlice resource. Check if the Service object exists and has matching selectors. "
+            f"Consider filing a Jira bug for the owning team."
+        )
     else:
-        return {
-            "range": "registered",
-            "process": process,
-            "desc": f"Registered port range (1024-29999). Process: {process or 'unknown'}.",
-            "action": f"Check if '{process or 'this service'}' is new or changed. "
-                      f"Add to the documented matrix if it's a permanent service.",
-        }
+        info["range"] = "registered"
+        info["desc"] = f"Registered port {port_num}. Process: {process or 'unknown'}. Namespace: {namespace or 'none'}."
+        if namespace:
+            info["action"] = (
+                f"UPDATE DOCS: Port {port_num} ({process or 'unknown'}) in namespace '{namespace}' "
+                f"may be new. Add to documented matrix if permanent, or add as static entry if dynamic."
+            )
+        else:
+            info["action"] = (
+                f"INVESTIGATE: Port {port_num} ({process or 'unknown'}) has no namespace — "
+                f"it may be a host-level daemon. Check if it needs a static entry or should be skipped."
+            )
+
+    return info
 
 
 def _load_knowledge() -> str:
@@ -1282,49 +1333,79 @@ def _get_ai_provider() -> tuple[str, str, str]:
 
 
 def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
-    """Fetch relevant test source code from GitHub for the failed test.
+    """Fetch test source code, static entries, and helper code from GitHub.
 
-    Looks at the test file references from the logs (e.g., validation_test.go:161)
-    and fetches the relevant function from the repo.
+    Downloads:
+    1. The failing test function (e.g., validation_test.go around the failure line)
+    2. Static entries (samples/custom-entries/) to know what's already covered
+    3. Documented matrix CSV to understand what's expected
     """
     repo_url = _guess_repo_from_job(job.get("name", ""))
     if not repo_url:
         return ""
 
     repo_slug = repo_url.replace("https://github.com/", "")
+    raw_base = f"https://raw.githubusercontent.com/{repo_slug}/main"
     source_parts = []
 
+    # 1. Fetch the failing test function
     for tf in test_files[:2]:
         filepath = tf.get("file", "")
         if not filepath or "_test.go" not in filepath:
             continue
-
         base = filepath.split("/")[-1] if "/" in filepath else filepath
-        search_paths = [
-            f"test/e2e/{base}",
-            f"test/{base}",
-            base,
-        ]
-
-        for sp in search_paths:
+        for sp in [f"test/e2e/{base}", f"test/{base}", base]:
             try:
-                raw_url = f"https://raw.githubusercontent.com/{repo_slug}/main/{sp}"
-                resp = requests.get(raw_url, timeout=10)
+                resp = requests.get(f"{raw_base}/{sp}", timeout=10)
                 if resp.status_code == 200:
                     lines = resp.text.splitlines()
                     line_no = int(tf.get("line", 0))
                     if line_no > 0:
-                        start = max(0, line_no - 20)
-                        end = min(len(lines), line_no + 30)
-                        snippet = "\n".join(lines[start:end])
+                        start = max(0, line_no - 30)
+                        end_line = min(len(lines), line_no + 40)
+                        snippet = "\n".join(lines[start:end_line])
                     else:
-                        snippet = "\n".join(lines[:80])
-                    source_parts.append(f"--- {sp} (lines {start+1}-{end}) ---\n{snippet}")
+                        snippet = "\n".join(lines[:100])
+                    source_parts.append(f"--- TEST: {sp} (lines {start+1}-{end_line}) ---\n{snippet}")
                     break
             except Exception:
                 continue
 
-    return "\n\n".join(source_parts)[:2000] if source_parts else ""
+    # 2. Fetch static entries (what's already covered as static)
+    static_paths = [
+        "samples/custom-entries/custom-entries.csv",
+        "samples/custom-entries/custom-entries.json",
+        "samples/custom-entries/custom-entries.yaml",
+    ]
+    for sp in static_paths:
+        try:
+            resp = requests.get(f"{raw_base}/{sp}", timeout=8)
+            if resp.status_code == 200 and len(resp.text) > 10:
+                source_parts.append(f"--- STATIC ENTRIES: {sp} ---\n{resp.text[:500]}")
+                log.info("  Fetched static entries from %s", sp)
+                break
+        except Exception:
+            continue
+
+    # 3. Fetch the documented matrix CSV for this platform
+    job_name = job.get("name", "").lower()
+    platform = "aws"
+    if "sno" in job_name or "single-node" in job_name:
+        platform = "aws-sno"
+    elif "bm" in job_name or "baremetal" in job_name or "metal" in job_name:
+        platform = "bm"
+
+    for csv_dir in ["docs/stable/unique", "docs/stable/raw"]:
+        try:
+            resp = requests.get(f"{raw_base}/{csv_dir}/{platform}.csv", timeout=8)
+            if resp.status_code == 200 and len(resp.text) > 10:
+                source_parts.append(f"--- DOCUMENTED MATRIX: {csv_dir}/{platform}.csv ---\n{resp.text[:800]}")
+                log.info("  Fetched documented matrix %s/%s.csv", csv_dir, platform)
+                break
+        except Exception:
+            continue
+
+    return "\n\n".join(source_parts)[:3000] if source_parts else ""
 
 
 def _browse_artifacts(job: dict) -> dict[str, list[str]]:
@@ -1538,19 +1619,19 @@ def _build_smart_context(job: dict, log_text: str,
                          matrix_diff: dict | None,
                          step_logs: dict[str, str] | None,
                          artifacts_data: dict | None) -> str:
-    """Dump ALL available data to let the AI investigate on its own.
+    """Build complete investigation context with all available data.
 
-    Give the AI everything: logs, test source, warnings, port data,
-    ss output, step errors, artifacts. Let it figure out what matters.
+    Includes: failure logs, test source code, static entries, documented matrix,
+    ss output, matrix diff, port classification, step errors, gather-extra.
     """
     context_parts = []
 
-    # 1. Full failure log context
+    # 1. Failure log (Ginkgo summary)
     failure_ctx = _extract_failure_context(log_text)
     if failure_ctx:
         context_parts.append(f"=== FAILURE LOG ===\n{failure_ctx}")
 
-    # 2. All failed tests
+    # 2. Failed tests
     if investigation and investigation.get("failed_tests"):
         tests_str = "\n".join(
             f"- {t.get('name', '?')} ({t.get('test_file', '')}): {t.get('message', '')[:200]}"
@@ -1558,90 +1639,92 @@ def _build_smart_context(job: dict, log_text: str,
         )
         context_parts.append(f"=== FAILED TESTS ===\n{tests_str}")
 
-    # 3. Test source code from GitHub
+    # 3. Test source code + static entries + documented matrix from GitHub
     if investigation and investigation.get("source_files"):
         source = _fetch_test_source(job, investigation["source_files"])
         if source:
-            context_parts.append(f"=== TEST SOURCE CODE ===\n{source[:1500]}")
+            context_parts.append(f"=== REPO DATA (test code + static entries + documented matrix) ===\n{source}")
 
-    # 4. All warnings
+    # 4. Warnings (separated from failures)
     clean_log = re.sub(r"\x1b\[[0-9;]*m", "", log_text)
     warnings = re.findall(r'level=warning msg="([^"]+)"', clean_log)
     if warnings:
-        warn_str = "\n".join(f"- {w[:300]}" for w in warnings[:10])
-        context_parts.append(f"=== WARNINGS ===\n{warn_str}")
+        context_parts.append(f"=== WARNINGS (not failures) ===\n" + "\n".join(f"- {w[:300]}" for w in warnings[:10]))
 
-    # 5. ALL port data
+    # 5. Port classification with full details
     if matrix_diff and matrix_diff.get("is_matrix_mismatch"):
         no_ep = matrix_diff.get("no_endpointslice_ports", [])
         stale = matrix_diff.get("stale_ports", [])
         undoc = matrix_diff.get("undocumented_ports", [])
         port_str = ""
+
         if no_ep:
-            port_str += "PORTS WITH NO ENDPOINTSLICE (this is the failure):\n"
+            port_str += "PORTS WITH NO ENDPOINTSLICE:\n"
             for p in no_ep:
-                fields = p.split(",")
-                port_num = fields[2] if len(fields) >= 3 else ""
+                pf = p.split(",")
+                pn = pf[2] if len(pf) >= 3 else ""
                 ss_line = ""
                 if artifacts_data and artifacts_data.get("ss_findings"):
-                    ss_match = next((s for s in artifacts_data["ss_findings"] if s["port"] == port_num), None)
+                    ss_match = next((s for s in artifacts_data["ss_findings"] if s["port"] == pn), None)
                     if ss_match:
                         ss_line = ss_match["ss_line"]
-                port_info = classify_port(p, ss_line)
-                port_str += f"  Port entry: {p}\n"
-                port_str += f"  Port range: {port_info['desc']}\n"
+                info = classify_port(p, ss_line)
+                port_str += f"\n  Entry: {p}\n"
+                port_str += f"  Classification: {info['desc']}\n"
                 if ss_line:
                     port_str += f"  ss output: {ss_line}\n"
-                port_str += f"  Process: {port_info.get('process', 'unknown')}\n"
-                port_str += "\n"
+                port_str += f"  Namespace: {info.get('namespace', 'none')}\n"
+                port_str += f"  Is OpenShift: {info.get('is_openshift', False)}\n"
+                port_str += f"  Is ephemeral: {info.get('is_ephemeral', False)}\n"
+                port_str += f"  RECOMMENDED ACTION: {info['action']}\n"
+
         if stale:
-            port_str += f"STALE PORTS (in matrix but not open, {len(stale)}):\n"
+            port_str += f"\nSTALE PORTS ({len(stale)} in matrix but not open on nodes):\n"
             for p in stale:
                 port_str += f"  {p}\n"
         if undoc:
-            port_str += f"UNDOCUMENTED PORTS (open but not in matrix, {len(undoc)}):\n"
+            port_str += f"\nUNDOCUMENTED PORTS ({len(undoc)} open but not in matrix):\n"
             for p in undoc:
                 port_str += f"  {p}\n"
-        context_parts.append(f"=== PORT DATA ===\n{port_str}")
 
-    # 6. ALL step log errors
-    if step_logs:
-        for step_name, step_log in step_logs.items():
-            clean = re.sub(r"\x1b\[[0-9;]*m", "", step_log)
-            lines = clean.splitlines()
-            relevant = [l.strip() for l in lines if l.strip() and len(l.strip()) > 15
-                        and re.search(r"error|fatal|panic|FAIL|refused|timeout|warning|unauthorized|not found|mismatch|endpointslice|ports are", l, re.IGNORECASE)]
-            if relevant:
-                context_parts.append(f"=== STEP: {step_name} (key lines) ===\n" + "\n".join(relevant[:15]))
+        if port_str:
+            context_parts.append(f"=== PORT ANALYSIS ===\n{port_str}")
 
-    # 7. Actual artifact file contents (not just summaries)
+    # 6. Actual artifact file contents
     if artifacts_data:
         all_art = artifacts_data.get("all_artifacts", {})
 
         if "matrix-diff-ss" in all_art:
-            diff_lines = all_art["matrix-diff-ss"].splitlines()
-            changes = [l for l in diff_lines if l.strip().startswith(("+", "-"))]
+            changes = [l for l in all_art["matrix-diff-ss"].splitlines()
+                       if l.strip().startswith(("+", "-"))]
             if changes:
                 context_parts.append(
-                    f"=== MATRIX DIFF (ss vs documented, + = in ss but not docs, - = in docs but not ss) ===\n"
-                    + "\n".join(changes[:20])
+                    f"=== MATRIX DIFF (+ = found by ss but not in docs, - = in docs but not found) ===\n"
+                    + "\n".join(changes[:25])
                 )
 
         if "raw-ss-tcp" in all_art:
             no_ep = matrix_diff.get("no_endpointslice_ports", []) if matrix_diff else []
             if no_ep:
-                relevant_ss = []
-                for port_entry in no_ep:
-                    pf = port_entry.split(",")
+                relevant = []
+                for pe in no_ep:
+                    pf = pe.split(",")
                     pn = pf[2] if len(pf) >= 3 else ""
                     for line in all_art["raw-ss-tcp"].splitlines():
                         if f":{pn}" in line:
-                            relevant_ss.append(f"  {line.strip()}")
-                if relevant_ss:
-                    context_parts.append(f"=== SS OUTPUT FOR MISSING ENDPOINTSLICE PORTS ===\n" + "\n".join(relevant_ss))
+                            relevant.append(line.strip())
+                if relevant:
+                    context_parts.append(f"=== SS OUTPUT FOR FAILING PORTS ===\n" + "\n".join(relevant))
 
-        if artifacts_data.get("text_summary"):
-            context_parts.append(f"=== ARTIFACTS SUMMARY ===\n{artifacts_data['text_summary'][:500]}")
+    # 7. Step log errors
+    if step_logs:
+        for step_name, step_log in step_logs.items():
+            clean = re.sub(r"\x1b\[[0-9;]*m", "", step_log)
+            relevant = [l.strip() for l in clean.splitlines()
+                        if l.strip() and len(l.strip()) > 15
+                        and re.search(r"error|fatal|panic|FAIL|refused|timeout|warning|unauthorized|not found|mismatch|endpointslice|ports are", l, re.IGNORECASE)]
+            if relevant:
+                context_parts.append(f"=== STEP: {step_name} ===\n" + "\n".join(relevant[:15]))
 
     return "\n\n".join(context_parts)[:10000]
 
