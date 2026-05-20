@@ -1,91 +1,598 @@
 #!/usr/bin/env python3
-"""Run Claude CLI (with full tool access) on each failed job.
+"""Run Cursor CLI agent on each failed job with full CI evidence.
 
-Claude can READ files, RUN commands, and WRITE fixes.
-Uses --output-format json which returns Claude's full response.
-Runs from the cloned commatrix repo so Claude can read the test code.
+For each failure, dumps all downloaded artifacts into ci-evidence/ inside the
+target repo checkout so the agent can read them alongside the source code.
+The agent has full tool access: it can read files, run shell commands (curl, grep),
+search code, fetch full logs from Prow, and write code fixes directly.
+
+Set TARGET_REPO to the repo under test (e.g. https://github.com/openshift-kni/commatrix.git).
 """
+from __future__ import annotations
+
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 
 CURSOR_CLI = "/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
 REPO_DIR = os.path.expanduser("~/Documents/GitHub/prow-nightly-monitor")
-COMMATRIX_DIR = "/tmp/commatrix-investigate"
+TARGET_REPO = os.environ.get("TARGET_REPO", "")
+FORK_OWNER = os.environ.get("FORK_OWNER", "aabughosh")
+UPSTREAM_REPO = os.environ.get("UPSTREAM_REPO", "openshift-kni/commatrix")
+INVESTIGATE_DIR = "/tmp/ci-investigate"
+EVIDENCE_DIR = os.path.join(INVESTIGATE_DIR, "ci-evidence")
 RESULTS = f"{REPO_DIR}/public/results.json"
 
+MAX_RESULTS_SIZE = 50 * 1024 * 1024
+AGENT_TIMEOUT = 180  # 3 minutes per job
+OPEN_PRS = os.environ.get("OPEN_PRS", "true").lower() == "true"
 
-def run_claude(prompt: str, cwd: str = COMMATRIX_DIR, timeout: int = 180) -> str:
-    """Run Claude CLI with full tool access. Returns the response text."""
+
+def check_auth() -> bool:
+    """Verify the Cursor CLI is authenticated before running agents."""
     try:
         result = subprocess.run(
-            [CURSOR_CLI, "agent", "--trust", "--yolo", "--print",
-             "--output-format", "json", prompt],
-            capture_output=True, text=True, timeout=timeout, cwd=cwd,
+            [CURSOR_CLI, "agent", "status"],
+            capture_output=True, text=True, timeout=15,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            data = json.loads(result.stdout)
-            return data.get("result", "")
-    except subprocess.TimeoutExpired:
-        print("  Claude timeout")
-    except json.JSONDecodeError:
-        if result.stdout:
-            return result.stdout.strip()[:4000]
+        if result.returncode == 0 and "Logged in" in result.stdout:
+            print(f"  Auth OK: {result.stdout.strip()}")
+            return True
+        print(f"  Auth failed: {result.stdout.strip()} {result.stderr.strip()}")
     except Exception as e:
-        print(f"  Error: {e}")
+        print(f"  Auth check error: {e}")
+    return False
+
+
+def run_cursor_agent(prompt: str, cwd: str = INVESTIGATE_DIR) -> str:
+    """Run Cursor CLI agent with full tool access. Returns the response text.
+
+    Writes the prompt to ci-evidence/prompt.txt and tells the agent to read it,
+    avoiding shell argument length limits on long prompts.
+    """
+    import signal
+
+    prompt_file = os.path.join(cwd, "ci-evidence", "prompt.txt")
+    os.makedirs(os.path.dirname(prompt_file), exist_ok=True)
+    with open(prompt_file, "w") as f:
+        f.write(prompt)
+
+    short_prompt = (
+        "Read the file ./ci-evidence/prompt.txt for your full instructions. "
+        "Follow them exactly. Write your final analysis to stdout."
+    )
+
+    try:
+        proc = subprocess.Popen(
+            [CURSOR_CLI, "agent", "--trust", "--yolo", "--print", short_prompt],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            cwd=cwd, preexec_fn=os.setsid,
+        )
+        try:
+            stdout, stderr = proc.communicate(timeout=AGENT_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except Exception:
+                    pass
+            print(f"    Agent timed out after {AGENT_TIMEOUT}s")
+            return ""
+
+        if proc.returncode != 0:
+            print(f"    Agent exit code {proc.returncode}")
+            if stderr:
+                print(f"    stderr: {stderr[:500]}")
+            if stdout:
+                return stdout.strip()[:8000]
+            return ""
+
+        return stdout.strip()[:8000] if stdout.strip() else ""
+    except Exception as e:
+        print(f"    Agent error: {e}")
     return ""
 
 
-def analyze_job(job: dict) -> str:
-    """Deep investigation of a failed job using Claude with full tool access."""
+def dump_evidence(job: dict) -> list[str]:
+    """Write all CI artifacts to ci-evidence/ as files the agent can read.
+
+    Returns a list of (filename, description) for the prompt.
+    """
+    if os.path.exists(EVIDENCE_DIR):
+        shutil.rmtree(EVIDENCE_DIR)
+    os.makedirs(EVIDENCE_DIR, exist_ok=True)
+
+    analysis = job.get("analysis", {})
+    artifacts = analysis.get("artifacts", {})
+    all_artifacts = artifacts.get("all_artifacts", {})
+    evidence_files = []
+
+    for key, content in all_artifacts.items():
+        safe_name = key.replace("/", "__")
+        path = os.path.join(EVIDENCE_DIR, safe_name)
+        with open(path, "w") as f:
+            f.write(content)
+        evidence_files.append(safe_name)
+
+    log_snippet = analysis.get("log_snippet", "")
+    if log_snippet:
+        with open(os.path.join(EVIDENCE_DIR, "failure-log.txt"), "w") as f:
+            f.write(log_snippet)
+        evidence_files.append("failure-log.txt")
+
+    prow_url = job.get("url", "")
+    if prow_url:
+        import re as _re
+        m = _re.search(r"/logs/(.+)/(\d+)$", prow_url)
+        if m:
+            job_path, build_id = m.group(1), m.group(2)
+            gcs_base = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs"
+            urls = [
+                f"Prow UI: {prow_url}",
+                f"Artifacts: {gcs_base}/{job_path}/{build_id}/artifacts/",
+                f"Build log: {gcs_base}/{job_path}/{build_id}/build-log.txt",
+            ]
+            with open(os.path.join(EVIDENCE_DIR, "prow-urls.txt"), "w") as f:
+                f.write("\n".join(urls))
+            evidence_files.append("prow-urls.txt")
+
+    inv = analysis.get("investigation", {})
+    if inv:
+        lines = []
+        lines.append(f"Severity: {inv.get('severity', '?')}")
+        lines.append(f"Fix type: {inv.get('fix_type', '?')}")
+        lines.append(f"Suggested fix: {inv.get('suggested_fix', 'N/A')}")
+        for t in inv.get("failed_tests", []):
+            lines.append(f"\nFailed test: {t.get('name', '?')}")
+            lines.append(f"  Message: {t.get('message', '')}")
+            if t.get("file"):
+                lines.append(f"  File: {t['file']}")
+        with open(os.path.join(EVIDENCE_DIR, "investigation-summary.txt"), "w") as f:
+            f.write("\n".join(lines))
+        evidence_files.append("investigation-summary.txt")
+
+    junit = analysis.get("junit_failures", [])
+    if junit:
+        lines = []
+        for jf in junit:
+            lines.append(f"Test: {jf.get('name', '?')}")
+            lines.append(f"  Message: {jf.get('message', '')[:500]}")
+            lines.append("")
+        with open(os.path.join(EVIDENCE_DIR, "junit-failures.txt"), "w") as f:
+            f.write("\n".join(lines))
+        evidence_files.append("junit-failures.txt")
+
+    matrix_diff = analysis.get("matrix_diff", {})
+    if matrix_diff:
+        lines = []
+        for key_name, label in [("no_endpointslice_ports", "Ports open but missing EndpointSlice"),
+                                ("stale_ports", "Ports in matrix but not in use on node"),
+                                ("undocumented_ports", "Ports in use but not in matrix")]:
+            ports = matrix_diff.get(key_name, [])
+            if ports:
+                lines.append(f"\n{label}:")
+                for p in ports:
+                    lines.append(f"  {p}")
+        if lines:
+            with open(os.path.join(EVIDENCE_DIR, "matrix-diff-summary.txt"), "w") as f:
+                f.write("\n".join(lines))
+            evidence_files.append("matrix-diff-summary.txt")
+
+    ss_findings = artifacts.get("ss_findings", [])
+    if ss_findings:
+        lines = []
+        for sf in ss_findings:
+            lines.append(f"Port {sf['port']}: {sf['ss_line']}")
+            lines.append(f"  Matrix entry: {sf.get('entry', '')}")
+        with open(os.path.join(EVIDENCE_DIR, "ss-port-analysis.txt"), "w") as f:
+            f.write("\n".join(lines))
+        evidence_files.append("ss-port-analysis.txt")
+
+    all_ports = _build_port_map(matrix_diff, ss_findings)
+    if all_ports:
+        with open(os.path.join(EVIDENCE_DIR, "port-map.txt"), "w") as f:
+            f.write(all_ports)
+        evidence_files.append("port-map.txt")
+
+    return evidence_files
+
+
+def _build_port_map(matrix_diff: dict, ss_findings: list[dict]) -> str:
+    """Cross-reference all port data into a single view per port."""
+    if not matrix_diff and not ss_findings:
+        return ""
+
+    ports: dict[str, dict] = {}
+
+    def _extract_port(entry: str) -> str:
+        parts = entry.split(",")
+        return parts[2].strip() if len(parts) >= 3 else ""
+
+    for p in matrix_diff.get("no_endpointslice_ports", []):
+        pn = _extract_port(p)
+        if pn:
+            ports.setdefault(pn, {"number": pn, "issues": [], "ss": "", "entries": []})
+            ports[pn]["issues"].append("NO_ENDPOINTSLICE")
+            ports[pn]["entries"].append(p)
+
+    for p in matrix_diff.get("stale_ports", []):
+        pn = _extract_port(p)
+        if pn:
+            ports.setdefault(pn, {"number": pn, "issues": [], "ss": "", "entries": []})
+            ports[pn]["issues"].append("STALE_IN_MATRIX")
+            ports[pn]["entries"].append(p)
+
+    for p in matrix_diff.get("undocumented_ports", []):
+        pn = _extract_port(p)
+        if pn:
+            ports.setdefault(pn, {"number": pn, "issues": [], "ss": "", "entries": []})
+            ports[pn]["issues"].append("UNDOCUMENTED")
+            ports[pn]["entries"].append(p)
+
+    for sf in ss_findings:
+        pn = sf.get("port", "")
+        if pn:
+            ports.setdefault(pn, {"number": pn, "issues": [], "ss": "", "entries": []})
+            ports[pn]["ss"] = sf.get("ss_line", "")
+
+    if not ports:
+        return ""
+
+    lines = ["UNIFIED PORT MAP — each port with all its data in one place", ""]
+    for pn in sorted(ports, key=lambda x: int(x) if x.isdigit() else 0):
+        info = ports[pn]
+        ephemeral = "YES" if pn.isdigit() and 32768 <= int(pn) <= 60999 else "no"
+        lines.append(f"PORT {pn}:")
+        lines.append(f"  Issues: {', '.join(info['issues'])}")
+        lines.append(f"  Ephemeral range: {ephemeral}")
+        if info["ss"]:
+            lines.append(f"  Socket state: {info['ss']}")
+        for e in info["entries"]:
+            lines.append(f"  Matrix entry: {e}")
+        lines.append(f"  --> Needs decision: ADD / REMOVE / SKIP / INVESTIGATE")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def build_prompt(job: dict, evidence_files: list[str]) -> str:
+    """Build an evidence-based prompt adapted to the failure category."""
     analysis = job.get("analysis", {})
     inv = analysis.get("investigation", {})
     category = analysis.get("category", "")
     reason = analysis.get("reason", "")
+    matrix_diff = analysis.get("matrix_diff", {})
 
     failed_tests = "\n".join(
-        f"- {t.get('name', '?')}: {t.get('message', '')[:150]}"
-        for t in inv.get("failed_tests", [])[:5]
+        f"  - {t.get('name', '?')}: {t.get('message', '')[:300]}"
+        for t in inv.get("failed_tests", [])
     )
 
-    matrix_diff = analysis.get("matrix_diff", {})
-    port_info = ""
-    if matrix_diff:
-        for key, label in [("no_endpointslice_ports", "No EndpointSlice"),
-                           ("stale_ports", "Stale"), ("undocumented_ports", "Undocumented")]:
-            ports = matrix_diff.get(key, [])
-            if ports:
-                port_info += f"\n{label}:\n" + "\n".join(f"  {p}" for p in ports[:5])
+    evidence_listing = "\n".join(f"  - {f}" for f in evidence_files)
 
-    ss_info = ""
-    for sf in analysis.get("artifacts", {}).get("ss_findings", []):
-        ss_info += f"\nss port {sf['port']}: {sf['ss_line']}"
+    prompt = f"""You are a senior CI failure investigator. You have FULL tool access:
+- You can READ any file in this repo
+- You can RUN shell commands (curl, grep, etc.)
+- You can WRITE code fixes directly to files
+- You can FETCH full CI logs from Prow URLs
 
-    prompt = (
-        f"Investigate this CI failure. You have the commatrix repo checked out — "
-        f"READ the actual code to understand the test.\n\n"
-        f"Job: {job['name']}\n"
-        f"Category: {category}\n"
-        f"Reason: {reason}\n"
-        f"Failed tests:\n{failed_tests}\n"
-        f"Port data:{port_info}\n"
-        f"ss output:{ss_info}\n\n"
-        f"Steps:\n"
-        f"1. Read test/e2e/validation_test.go — understand what the test checks\n"
-        f"2. Read the filterOutPortsOfKnownServices and filterOutPortsInDynamicRanges functions\n"
-        f"3. Read samples/custom-entries/ for existing static entries\n"
-        f"4. For each failing port: determine what process it is, can it have EndpointSlice, "
-        f"is it already filtered, should it be added to known services or dynamic ranges\n"
-        f"5. Suggest a specific fix\n\n"
-        f"Keep your response clean and simple:\n"
-        f"**What failed:** test name\n"
-        f"**Error:** exact message\n"
-        f"**Why:** based on code you read\n"
-        f"**What to do:** specific fix with file and code change"
+IMPORTANT: Only write a fix (and fix.patch) for REAL ERRORS that cause test failures.
+Do NOT write fixes for warnings, informational messages, or transient infra issues.
+If the issue is a warning or infra-level, just analyze and report — no code changes.
+
+The source repo is checked out here. CI evidence files are in ./ci-evidence/.
+If the evidence files are not enough, use the URLs in ./ci-evidence/prow-urls.txt
+to curl the full step logs yourself.
+
+## Evidence Files
+{evidence_listing}
+
+## Failure Summary
+Job: {job['name']}
+Prow URL: {job.get('url', 'N/A')}
+Category: {category}
+Reason: {reason}
+
+## Failed Tests
+{failed_tests or '(none extracted)'}
+
+## Log Snippet
+{analysis.get('log_snippet', '(no log)')[:500]}
+"""
+
+    if category == "matrix_mismatch":
+        prompt += _matrix_mismatch_task(matrix_diff, analysis)
+    elif category == "test_failure":
+        prompt += _test_failure_task(inv)
+    elif category == "infra":
+        prompt += _infra_task()
+    elif category == "build":
+        prompt += _build_failure_task()
+    else:
+        prompt += _generic_task()
+
+    return prompt
+
+
+def _matrix_mismatch_task(matrix_diff: dict, analysis: dict) -> str:
+    """Task instructions for matrix mismatch failures."""
+    no_ep = matrix_diff.get("no_endpointslice_ports", [])
+    stale = matrix_diff.get("stale_ports", [])
+    undoc = matrix_diff.get("undocumented_ports", [])
+    ss_lines = "\n".join(
+        f"  Port {sf['port']}: {sf['ss_line']}"
+        for sf in analysis.get("artifacts", {}).get("ss_findings", [])
     )
 
-    return run_claude(prompt)
+    task = "\n## Matrix Diff\n"
+    if no_ep:
+        task += "Ports open but NO EndpointSlice (test fails on these):\n"
+        task += "\n".join(f"  {p}" for p in no_ep) + "\n"
+    if stale:
+        task += "Ports in matrix but NOT in use on node:\n"
+        task += "\n".join(f"  {p}" for p in stale) + "\n"
+    if undoc:
+        task += "Ports in use but NOT documented:\n"
+        task += "\n".join(f"  {p}" for p in undoc) + "\n"
+    if ss_lines:
+        task += f"\nSocket state (ss) for failing ports:\n{ss_lines}\n"
+
+    task += """
+## Deep Investigation Steps
+1. Read ALL evidence files in ./ci-evidence/ — especially raw-ss-tcp, matrix-diff-ss, port-map.txt
+2. Read the test code to understand what it checks — grep for the assertion that fails
+3. If the log snippet is not enough, curl the full step log from prow-urls.txt
+4. Search the source code: grep for port numbers, process names, filter functions
+5. Match ports across the different lists — same port in multiple places = ONE issue
+6. Check existing static/custom entries for patterns
+
+## For EACH port, decide one action:
+- **ADD** — port is a known daemon that always listens but has no EndpointSlice.
+  Show the exact entry to add (format depends on project).
+- **REMOVE** — port is documented but no longer in use. Show what to remove.
+- **SKIP** — port is ephemeral and changes on every reboot, can't be statically listed.
+  Show what code change filters it out.
+- **INVESTIGATE** — can't determine the right action, explain why.
+- **IGNORE** — transient issue, not a real matrix problem.
+
+## Write a Fix
+If you can determine the right fix, WRITE it directly to the files in this repo.
+Create or modify the appropriate file (custom-entries CSV, test code, filter code).
+Save the patch to ./ci-evidence/fix.patch by running: git diff > ./ci-evidence/fix.patch
+
+## Respond with:
+**Root Cause:** what specifically caused this failure
+
+**Port-by-Port Analysis:**
+| Port | Process | Ephemeral? | Has Endpoint? | Action | Detail |
+|------|---------|-----------|---------------|--------|--------|
+
+**Suggested Fix:** exact file paths and changes you made (or would make)
+**Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
+
+**Severity:** CRITICAL / HIGH / MEDIUM / LOW
+"""
+    return task
+
+
+def _test_failure_task(inv: dict) -> str:
+    """Task instructions for test failures (not matrix-related)."""
+    suggested = inv.get("suggested_fix", "")
+    return f"""
+## Deep Investigation Steps
+1. Read ALL evidence files in ./ci-evidence/
+2. Find the failing test file in the source code and read it
+3. If the log snippet is not enough, curl the full step log from prow-urls.txt
+4. Grep the codebase for the failing function, assertion, or error message
+5. Check git log for recent changes to the failing test or its dependencies
+6. Determine: is this a flake, a real regression, or a test bug?
+
+Pre-analysis suggestion: {suggested or 'N/A'}
+
+## Write a Fix
+If you identify a code bug, WRITE the fix directly to the file.
+Save the patch: git diff > ./ci-evidence/fix.patch
+
+## Respond with:
+**Root Cause:** what specifically caused this test to fail
+**Is it a flake?** yes/no — and why
+**Code Path:** the exact function/line that failed and why
+**Suggested Fix:** exact code change, or "retry" if flaky
+**Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
+**Severity:** CRITICAL / HIGH / MEDIUM / LOW
+"""
+
+
+def _infra_task() -> str:
+    """Task instructions for infrastructure failures."""
+    return """
+## Deep Investigation Steps
+1. Read ALL evidence files in ./ci-evidence/
+2. If the log snippet is not enough, curl the full build log from prow-urls.txt
+3. Determine: cluster provisioning issue, cloud quota, network problem, or timeout?
+4. Check if the test ever got to run or failed during setup
+5. Look for specific error patterns: "no route to host", "context deadline exceeded",
+   "node not ready", "cluster operator degraded"
+
+## Respond with:
+**Root Cause:** what infrastructure issue caused the failure
+**Is it transient?** yes/no — does retrying likely fix it?
+**Error Chain:** the sequence of events that led to failure
+**Suggested Fix:** what to check (quotas, config, network) or just "retry"
+**Severity:** CRITICAL / HIGH / MEDIUM / LOW
+"""
+
+
+def _build_failure_task() -> str:
+    """Task instructions for build/compile failures."""
+    return """
+## Deep Investigation Steps
+1. Read ALL evidence files in ./ci-evidence/
+2. If the log snippet is not enough, curl the full build log from prow-urls.txt
+3. Find the exact compilation error, file, and line
+4. Read the failing source file to understand the error
+5. Check if a dependency changed or if there's a syntax/type error
+
+## Write a Fix
+If you can fix the build error, WRITE the fix directly to the file.
+Save the patch: git diff > ./ci-evidence/fix.patch
+
+## Respond with:
+**Root Cause:** exact compilation/build error
+**Failing File:** file path and line
+**Suggested Fix:** the code change needed to fix the build
+**Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
+**Severity:** CRITICAL / HIGH / MEDIUM / LOW
+"""
+
+
+def _generic_task() -> str:
+    """Task instructions when category is unknown."""
+    return """
+## Deep Investigation Steps
+1. Read ALL evidence files in ./ci-evidence/
+2. If the log snippet is not enough, curl the full step log from prow-urls.txt
+3. Search the codebase for the error message or failing component
+4. Classify the failure and determine root cause
+5. If you can fix it, write the fix directly
+
+## Write a Fix
+If you identify a fixable issue, WRITE it directly to the files.
+Save the patch: git diff > ./ci-evidence/fix.patch
+
+## Respond with:
+**Root Cause:** what caused this failure
+**Category:** matrix mismatch / test failure / infra / build / other
+**Suggested Fix:** what should be done (exact file + change if possible)
+**Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
+**Severity:** CRITICAL / HIGH / MEDIUM / LOW
+"""
+
+
+def _open_pr(job: dict, patch: str, ai_summary: str) -> str:
+    """Create a branch on fork, push, and open a PR against upstream. Returns PR URL."""
+    from datetime import datetime
+    job_name = job["name"]
+    short = re.sub(r"periodic-ci-openshift-release-main-nightly-", "", job_name)
+    short = re.sub(r"[^a-zA-Z0-9-]", "", short)[:60]
+    branch = f"fix/{short}-{datetime.now().strftime('%m%d')}"
+
+    def _run(cmd, **kw):
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=60,
+                              cwd=INVESTIGATE_DIR, **kw)
+
+    fork_url = f"https://github.com/{FORK_OWNER}/{UPSTREAM_REPO.split('/')[-1]}.git"
+    _run(["git", "remote", "remove", "fork"])
+    _run(["git", "remote", "add", "fork", fork_url])
+
+    _run(["git", "checkout", "-b", branch])
+    _run(["git", "checkout", "."])
+
+    patch_file = os.path.join(EVIDENCE_DIR, "fix.patch")
+    apply = _run(["git", "apply", "--check", patch_file])
+    if apply.returncode != 0:
+        print(f"    Patch doesn't apply cleanly: {apply.stderr[:200]}")
+        _run(["git", "checkout", "main"])
+        _run(["git", "branch", "-D", branch])
+        return ""
+
+    _run(["git", "apply", patch_file])
+
+    _run(["git", "add", "-A"])
+    commit_msg = (f"fix: address CI failure in {short}\n\n"
+                  f"Auto-generated by prow-nightly-monitor AI analysis.\n"
+                  f"Prow job: {job.get('url', 'N/A')}")
+    _run(["git", "commit", "-m", commit_msg])
+
+    push = _run(["git", "push", "-u", "fork", branch])
+    if push.returncode != 0:
+        print(f"    Push failed: {push.stderr[:300]}")
+        _run(["git", "checkout", "main"])
+        _run(["git", "branch", "-D", branch])
+        return ""
+
+    category = job.get("analysis", {}).get("category", "unknown")
+    body_lines = [
+        "## Summary",
+        f"Automated fix for CI failure in `{job_name}`.",
+        f"- **Category:** {category}",
+        f"- **Prow URL:** {job.get('url', 'N/A')}",
+        "",
+        "## AI Analysis",
+        ai_summary[:3000] if ai_summary else "(no analysis)",
+        "",
+        "## Patch",
+        "```diff",
+        patch[:2000],
+        "```",
+        "",
+        "---",
+        "*Auto-generated by [prow-nightly-monitor](https://github.com/aabughosh/prow-nightly-monitor)*",
+    ]
+    body = "\n".join(body_lines)
+
+    pr = _run(["gh", "pr", "create",
+               "--repo", UPSTREAM_REPO,
+               "--title", f"fix: {short} CI failure",
+               "--body", body,
+               "--head", f"{FORK_OWNER}:{branch}"])
+    if pr.returncode != 0:
+        print(f"    PR creation failed: {pr.stderr[:300]}")
+        return ""
+
+    pr_url = pr.stdout.strip()
+    print(f"    PR opened: {pr_url}")
+    return pr_url
+
+
+def analyze_job(job: dict, opened_patches: set[str] | None = None) -> str:
+    """Deep investigation: dump evidence, build prompt, run agent, capture patch."""
+    evidence_files = dump_evidence(job)
+    print(f"    Dumped {len(evidence_files)} evidence files")
+    prompt = build_prompt(job, evidence_files)
+    result = run_cursor_agent(prompt)
+
+    patch_file = os.path.join(EVIDENCE_DIR, "fix.patch")
+    patch = ""
+    if os.path.exists(patch_file):
+        with open(patch_file) as f:
+            patch = f.read().strip()
+        if patch:
+            job.setdefault("analysis", {})["fix_patch"] = patch[:4000]
+            print(f"    Fix patch captured ({len(patch)} bytes)")
+
+    if patch and OPEN_PRS:
+        category = job.get("analysis", {}).get("category", "")
+        severity = job.get("analysis", {}).get("investigation", {}).get("severity", "")
+        skip_pr_categories = ("infra", "warning")
+        if category in skip_pr_categories:
+            print(f"    Skipping PR — category '{category}' is warning-level")
+        elif severity and severity.upper() in ("LOW",):
+            print(f"    Skipping PR — severity is {severity}")
+        else:
+            import hashlib
+            patch_hash = hashlib.sha256(patch.encode()).hexdigest()[:16]
+            if opened_patches is not None and patch_hash in opened_patches:
+                print(f"    Duplicate patch — skipping PR (already opened)")
+            else:
+                pr_url = _open_pr(job, patch, result)
+                if pr_url:
+                    job.setdefault("analysis", {})["pr_url"] = pr_url
+                    if opened_patches is not None:
+                        opened_patches.add(patch_hash)
+
+    subprocess.run(["git", "checkout", "."], cwd=INVESTIGATE_DIR,
+                   capture_output=True)
+    subprocess.run(["git", "checkout", "main"], cwd=INVESTIGATE_DIR,
+                   capture_output=True)
+
+    return result
 
 
 def main():
@@ -93,28 +600,50 @@ def main():
         print(f"No results at {RESULTS}")
         sys.exit(1)
 
-    if not os.path.exists(COMMATRIX_DIR):
-        print("Cloning commatrix...")
-        subprocess.run(["git", "clone", "--depth=1",
-                       "https://github.com/openshift-kni/commatrix.git",
-                       COMMATRIX_DIR], capture_output=True)
+    file_size = os.path.getsize(RESULTS)
+    if file_size > MAX_RESULTS_SIZE:
+        print(f"results.json is {file_size / 1024 / 1024:.0f} MB — too large (limit {MAX_RESULTS_SIZE // 1024 // 1024} MB)")
+        print("Delete it and re-run monitor.py first.")
+        sys.exit(1)
 
-    data = json.load(open(RESULTS))
+    if not check_auth():
+        print("Cursor CLI not authenticated. Run:")
+        print(f"  {CURSOR_CLI} agent login")
+        sys.exit(1)
+
+    if TARGET_REPO and not os.path.exists(INVESTIGATE_DIR):
+        print(f"Cloning {TARGET_REPO}...")
+        subprocess.run(["git", "clone", "--depth=1", TARGET_REPO,
+                       INVESTIGATE_DIR], capture_output=True)
+    elif not os.path.exists(INVESTIGATE_DIR):
+        os.makedirs(INVESTIGATE_DIR, exist_ok=True)
+
+    with open(RESULTS) as f:
+        data = json.load(f)
+
     failed = [j for j in data.get("jobs", []) if j["state"] in ("failure", "error")]
-    print(f"Analyzing {len(failed)} failures with Claude (full tool access)...")
+    print(f"Analyzing {len(failed)} failure(s) with Cursor agent (deep mode)...")
+    if OPEN_PRS:
+        print("  PRs enabled — will open PRs for unique fixes")
 
-    for job in failed:
-        name = job["name"][-50:]
-        print(f"  {name}...")
-        ai = analyze_job(job)
+    opened_patches: set[str] = set()
+    success_count = 0
+    for i, job in enumerate(failed, 1):
+        name = job["name"].split("-")[-5:] if len(job["name"]) > 50 else [job["name"]]
+        short_name = "-".join(name)
+        print(f"  [{i}/{len(failed)}] {short_name}...")
+        ai = analyze_job(job, opened_patches)
         if ai:
-            job.setdefault("analysis", {})["ai_summary"] = ai[:4000]
+            job.setdefault("analysis", {})["ai_summary"] = ai[:8000]
+            success_count += 1
             print(f"    Done ({len(ai)} chars)")
         else:
-            print(f"    No analysis")
+            print(f"    No analysis returned")
 
-    json.dump(data, open(RESULTS, "w"), indent=2)
-    print("Results updated with Claude analysis")
+    with open(RESULTS, "w") as f:
+        json.dump(data, f, indent=2)
+
+    print(f"Results updated: {success_count}/{len(failed)} failures analyzed")
 
 
 if __name__ == "__main__":

@@ -49,6 +49,8 @@ CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "auto")
 AI_MODEL = os.environ.get("AI_MODEL", "")
+SKIP_AI = os.environ.get("SKIP_AI", "false").lower() == "true"
+RENDER_ONLY = os.environ.get("RENDER_ONLY", "false").lower() == "true"
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 AUTO_FIX = os.environ.get("AUTO_FIX", "false").lower() == "true"
 TARGET_REPO = os.environ.get("TARGET_REPO", "")
@@ -1462,10 +1464,10 @@ def _browse_artifacts(job: dict) -> dict[str, list[str]]:
 def _fetch_artifacts_context(job: dict, category: str,
                              matrix_diff: dict,
                              step_logs: dict[str, str]) -> dict:
-    """Smart artifact browser — discovers and downloads ALL relevant data.
+    """Fetch only commatrix-relevant artifacts from GCS.
 
-    Browses the GCS artifacts directory structure, finds every useful file,
-    and downloads it. Generic — works for any Prow job, not just commatrix.
+    Targeted downloads: commatrix e2e output (ss data, matrix diffs, CSV),
+    JUnit results, and nftables data. Skips gather bundles, audit logs, etc.
     """
     result: dict = {"ss_findings": [], "stale_info": [], "all_artifacts": {}, "text_summary": ""}
     url = job.get("url", "")
@@ -1477,7 +1479,17 @@ def _fetch_artifacts_context(job: dict, category: str,
 
     parts = []
 
-    # Step 1: Browse the top-level artifacts to find the workflow directory
+    COMMATRIX_FILES = {
+        "raw-ss-tcp", "raw-ss-udp", "matrix-diff-ss", "doc-diff-commatrix",
+        "communication-matrix.csv", "communication-matrix-master.nft",
+        "mc-master.yaml",
+    }
+    SKIP_STEPS = {
+        "gather-audit-logs", "gather-must-gather", "gather-core-dump",
+        "gather-network", "gather-extra", "ipi-install-hosted-loki",
+        "ipi-install-rbac", "observers-resource-watch",
+    }
+
     try:
         resp = requests.get(f"{base_url}/", timeout=10)
         if resp.status_code != 200:
@@ -1488,67 +1500,58 @@ def _fetch_artifacts_context(job: dict, category: str,
     except Exception:
         return result
 
-    # Step 2: For each workflow, browse its steps
     for wf in wf_dirs[:2]:
         try:
             wf_resp = requests.get(f"{base_url}/{wf}/", timeout=8)
             if wf_resp.status_code != 200:
                 continue
-            steps = re.findall(r'href="[^"]*?/([^/"]+)/"', wf_resp.text)
-            log.info("  Steps in %s: %s", wf, [s for s in steps if s != ".."][:10])
+            all_steps = re.findall(r'href="[^"]*?/([^/"]+)/"', wf_resp.text)
+            steps = [s for s in all_steps
+                     if s not in ("..", "artifacts")
+                     and any(k in s.lower() for k in ("matrix", "network-flow", "e2e-test"))]
+            log.info("  Target steps in %s: %s (from %d total)", wf, steps, len(all_steps))
 
-            # Step 3: For each step, browse and download useful files
-            interesting_steps = [s for s in steps if any(k in s.lower() for k in
-                                ["test", "gather", "matrix", "e2e", "network"])]
-            if not interesting_steps:
-                interesting_steps = steps[:5]
-
-            for step in interesting_steps:
-                if step == "..":
-                    continue
+            for step in steps:
                 step_url = f"{base_url}/{wf}/{step}"
-
-                # Check for artifacts subdirectory
                 for artifacts_dir in [f"{step_url}/artifacts/", f"{step_url}/"]:
                     try:
                         aresp = requests.get(artifacts_dir, timeout=6)
                         if aresp.status_code != 200:
                             continue
 
-                        # Find all subdirs and files
                         subdirs = re.findall(r'href="[^"]*?/([^/"]+)/"', aresp.text)
                         afiles = re.findall(r'href="[^"]*?/([^/"]+)"', aresp.text)
-                        useful_files = [f for f in afiles
-                                       if any(k in f.lower() for k in
-                                              ["ss", "matrix", "junit", "diff", "commatrix"])
-                                       and f not in ("style.css", "gsutil", "install", "..")]
 
-                        # Browse subdirs for more files
+                        useful_files = [f for f in afiles
+                                       if f in COMMATRIX_FILES
+                                       or f.endswith((".xml",))
+                                       and "junit" in f.lower()]
+
                         for sd in subdirs:
-                            if sd in ("..", "style.css"):
+                            if not any(k in sd.lower() for k in ("commatrix", "e2e", "junit")):
                                 continue
                             try:
                                 sd_resp = requests.get(f"{artifacts_dir}{sd}/", timeout=5)
                                 if sd_resp.status_code == 200:
-                                    sd_files = re.findall(r'href="[^"]*?/([^/"]+)"', sd_resp.text)
-                                    for sf in sd_files:
-                                        if sf not in ("..", "style.css", "gsutil", "install"):
+                                    skip = {"..", "style.css", "gsutil", "install"}
+                                    for sf in re.findall(r'href="[^"]*?/([^/"]+)"', sd_resp.text):
+                                        if sf not in skip and not sf.endswith((".tar", ".xz", ".gz", ".html", ".css")):
                                             useful_files.append(f"{sd}/{sf}")
                             except Exception:
                                 pass
 
-                        # Download useful files
-                        for uf in useful_files[:8]:
-                            file_url = f"{artifacts_dir}{uf}"
+                        for uf in useful_files[:10]:
                             try:
-                                fresp = requests.get(file_url, timeout=8)
+                                fresp = requests.get(f"{artifacts_dir}{uf}", timeout=8, stream=True)
+                                size = int(fresp.headers.get("content-length", 0))
+                                if size > 200000:
+                                    continue
                                 if fresp.status_code == 200 and len(fresp.text) > 10:
                                     content = fresp.text
                                     key = f"{step}/{uf}"
                                     result["all_artifacts"][key] = content
-                                    log.info("  Downloaded: %s/%s (%d bytes)", step, uf, len(content))
+                                    log.info("  Downloaded: %s (%d bytes)", key, len(content))
 
-                                    # Extract ss findings for failing ports
                                     if "raw-ss-tcp" in uf.lower():
                                         no_ep = matrix_diff.get("no_endpointslice_ports", []) if matrix_diff else []
                                         for pe in no_ep:
@@ -1562,7 +1565,6 @@ def _fetch_artifacts_context(job: dict, category: str,
                                                     })
                                                     parts.append(f"ss for port {pn}: {line.strip()}")
 
-                                    # Summarize what we got
                                     lines = content.splitlines()
                                     if "diff" in uf.lower():
                                         changes = [l for l in lines if l.strip().startswith(("+", "-"))]
@@ -1571,39 +1573,43 @@ def _fetch_artifacts_context(job: dict, category: str,
                                             parts.append(f"  {c.strip()}")
                                     else:
                                         parts.append(f"[{key}: {len(lines)} lines]")
-
                             except Exception:
                                 pass
-
                     except Exception:
                         pass
-
         except Exception:
             pass
 
-    # Step 4: Download gather-extra and gather-must-gather
+    # Fetch specific gather-extra files useful for investigation (skip everything else)
+    GATHER_EXTRA_USEFUL = {
+        "endpointslices.json", "endpoints.json", "services.json",
+        "pods.json", "nodes.json",
+    }
     for wf in wf_dirs[:1]:
-        for gather in ["gather-extra", "gather-must-gather"]:
-            gather_url = f"{base_url}/{wf}/{gather}/artifacts/"
-            try:
-                gresp = requests.get(gather_url, timeout=6)
-                if gresp.status_code != 200:
+        gather_url = f"{base_url}/{wf}/gather-extra/artifacts/"
+        try:
+            gresp = requests.get(gather_url, timeout=6)
+            if gresp.status_code != 200:
+                continue
+            gfiles = re.findall(r'href="[^"]*?/([^/"]+)"', gresp.text)
+            for gf in gfiles:
+                if gf not in GATHER_EXTRA_USEFUL:
                     continue
-                gfiles = re.findall(r'href="[^"]*?/([^/"]+)"', gresp.text)
-                useful_gfiles = [f for f in gfiles
-                                if f.endswith((".json", ".yaml", ".txt", ".log"))
-                                and f not in ("style.css", "gsutil", "install")]
-                for gf in useful_gfiles[:3]:
-                    try:
-                        gfresp = requests.get(f"{gather_url}{gf}", timeout=6)
-                        if gfresp.status_code == 200 and len(gfresp.text) > 10:
-                            result["all_artifacts"][f"{gather}/{gf}"] = gfresp.text[:1000]
-                            parts.append(f"[{gather}/{gf}]: {gfresp.text[:150]}")
-                            log.info("  Downloaded: %s/%s", gather, gf)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                try:
+                    gfresp = requests.get(f"{gather_url}{gf}", timeout=8, stream=True)
+                    size = int(gfresp.headers.get("content-length", 0))
+                    if size > 500000:
+                        log.info("  Skipping gather-extra/%s (%d bytes, too large)", gf, size)
+                        continue
+                    if gfresp.status_code == 200:
+                        content = gfresp.text[:2000]
+                        result["all_artifacts"][f"gather-extra/{gf}"] = content
+                        parts.append(f"[gather-extra/{gf}]: {content[:150]}")
+                        log.info("  Downloaded: gather-extra/%s (%d bytes)", gf, len(content))
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     if matrix_diff:
         stale = matrix_diff.get("stale_ports", [])
@@ -1962,54 +1968,6 @@ Provide your analysis:
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b")
 
 
-CURSOR_CLI = os.environ.get("CURSOR_CLI", "/Applications/Cursor.app/Contents/Resources/app/bin/cursor")
-USE_CURSOR = os.environ.get("USE_CURSOR", "false").lower() == "true"
-
-
-def _cursor_analyze(job: dict, log_text: str,
-                    investigation: dict | None = None,
-                    category: str = "",
-                    matrix_diff: dict | None = None,
-                    step_logs: dict[str, str] | None = None,
-                    artifacts_data: dict | None = None) -> str:
-    """Use Cursor CLI Claude for AI analysis (local only, free)."""
-    try:
-        smart_ctx = _build_smart_context(
-            job, log_text, investigation, category,
-            matrix_diff, step_logs, artifacts_data,
-        )
-        ctx = smart_ctx[:3000] if smart_ctx else _extract_failure_context(log_text)[:2000]
-
-        prompt = (
-            f"A CI test failed in job {job['name']}. Below is all the data collected: "
-            f"failure logs, test source code from the repo, static entries, ss output, "
-            f"matrix diff, and artifacts.\n\n"
-            f"Investigate deeply. Read the test code to understand what it checks. "
-            f"Look at the ss output to see what process owns the failing port. "
-            f"Check if the port is already in static entries. "
-            f"Think about whether the test should be changed or the data should be updated.\n\n"
-            f"If you can identify a fix (code change, config change, or PR to open), describe it specifically.\n\n"
-            f"Keep your response clean: What failed, Error, Warnings (separate), Why, What to do.\n\n"
-            f"{ctx}"
-        )
-
-        result = subprocess.run(
-            [CURSOR_CLI, "agent", "--trust", "--print", "--output-format", "text", prompt],
-            capture_output=True, text=True, timeout=180,
-            cwd=Path(__file__).parent,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()[:4000]
-        log.warning("  Cursor CLI failed: %s", result.stderr[:200] if result.stderr else "no output")
-        return ""
-    except subprocess.TimeoutExpired:
-        log.warning("  Cursor CLI timeout")
-        return ""
-    except Exception as e:
-        log.warning("  Cursor CLI error: %s", e)
-        return ""
-
-
 def _ollama_analyze(job: dict, log_text: str,
                     investigation: dict | None = None,
                     category: str = "",
@@ -2240,6 +2198,130 @@ STATE_COLOR = {
 }
 
 
+def _strip_agent_thinking(text: str) -> str:
+    """Remove Cursor agent progress/thinking lines from the AI output.
+
+    These are short lines like 'Investigating the CI failure: reading evidence...'
+    that appear before the real analysis starts.
+    """
+    lines = text.split("\n")
+    start = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped.startswith("|") or stripped.startswith("**"):
+            start = i
+            break
+        if stripped.startswith("---"):
+            start = i
+            break
+    return "\n".join(lines[start:])
+
+
+def _md_to_html(md: str) -> str:
+    """Convert markdown to HTML for AI analysis rendering."""
+    import html as _html
+    lines = md.split("\n")
+    out: list[str] = []
+    in_code = False
+    in_table = False
+    i = 0
+
+    while i < len(lines):
+        line = lines[i]
+
+        if line.startswith("```"):
+            if in_code:
+                out.append("</code></pre>")
+                in_code = False
+            else:
+                lang = line[3:].strip()
+                out.append(f'<pre style="background:#161b22;padding:10px;border-radius:6px;'
+                           f'overflow-x:auto;font-size:12px"><code>')
+                in_code = True
+            i += 1
+            continue
+
+        if in_code:
+            out.append(_html.escape(line))
+            i += 1
+            continue
+
+        if line.startswith("|") and "|" in line[1:]:
+            cells = [c.strip() for c in line.split("|")[1:-1]]
+            if i + 1 < len(lines) and re.match(r"^\|[\s\-:|]+\|$", lines[i + 1]):
+                if not in_table:
+                    out.append('<table style="border-collapse:collapse;width:100%;'
+                               'font-size:12px;margin:8px 0">')
+                    in_table = True
+                out.append("<tr>" + "".join(
+                    f'<th style="border:1px solid #30363d;padding:6px 8px;'
+                    f'background:#161b22;text-align:left">{_inline_md(c)}</th>'
+                    for c in cells) + "</tr>")
+                i += 2
+                continue
+            elif in_table:
+                out.append("<tr>" + "".join(
+                    f'<td style="border:1px solid #30363d;padding:6px 8px">'
+                    f'{_inline_md(c)}</td>'
+                    for c in cells) + "</tr>")
+                i += 1
+                continue
+
+        if in_table:
+            out.append("</table>")
+            in_table = False
+
+        stripped = line.strip()
+
+        if not stripped:
+            out.append("<br>")
+            i += 1
+            continue
+
+        if stripped.startswith("### "):
+            out.append(f'<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">'
+                       f'{_inline_md(stripped[4:])}</h4>')
+        elif stripped.startswith("## "):
+            out.append(f'<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;'
+                       f'border-bottom:1px solid #21262d;padding-bottom:4px">'
+                       f'{_inline_md(stripped[3:])}</h3>')
+        elif stripped.startswith("# "):
+            out.append(f'<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">'
+                       f'{_inline_md(stripped[2:])}</h2>')
+        elif stripped.startswith("- "):
+            out.append(f'<div style="padding-left:16px;margin:2px 0">'
+                       f'&bull; {_inline_md(stripped[2:])}</div>')
+        elif stripped.startswith("---"):
+            out.append('<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">')
+        elif re.match(r"^\d+\.\s", stripped):
+            m = re.match(r"^(\d+)\.\s(.+)", stripped)
+            if m:
+                out.append(f'<div style="padding-left:16px;margin:2px 0">'
+                           f'{m.group(1)}. {_inline_md(m.group(2))}</div>')
+        else:
+            out.append(f'<p style="margin:4px 0">{_inline_md(stripped)}</p>')
+
+        i += 1
+
+    if in_table:
+        out.append("</table>")
+    if in_code:
+        out.append("</code></pre>")
+
+    return "\n".join(out)
+
+
+def _inline_md(text: str) -> str:
+    """Convert inline markdown (bold, code, italic) to HTML."""
+    import html as _html
+    text = re.sub(r"`([^`]+)`",
+                  r'<code style="background:#161b22;padding:1px 4px;border-radius:3px;'
+                  r'font-size:12px">\1</code>', text)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", text)
+    return text
+
+
 def generate_html(jobs: list[dict], analyses: dict[str, dict],
                    trend_html: str = "") -> str:
     """Generate the HTML dashboard using table layout with category breakdown."""
@@ -2411,9 +2493,30 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                 detail_buttons.append(f'<details><summary>Matrix Diff</summary><div>{diff_html}</div></details>')
 
             if ai_summary:
+                cleaned = _strip_agent_thinking(ai_summary)
+                rendered = _md_to_html(cleaned)
                 detail_buttons.append(
                     f'<details><summary>AI Analysis</summary>'
-                    f'<div style="white-space:pre-wrap;line-height:1.4">{ai_summary}</div></details>'
+                    f'<div style="line-height:1.5;color:#c9d1d9;padding:8px 12px">{rendered}</div></details>'
+                )
+
+            fix_patch = analysis.get("fix_patch", "")
+            pr_url = analysis.get("pr_url", "")
+            if pr_url:
+                detail_buttons.append(
+                    f'<a href="{pr_url}" target="_blank" style="display:inline-flex;'
+                    f'align-items:center;gap:4px;padding:2px 8px;background:#238636;'
+                    f'color:#fff;border-radius:6px;font-size:11px;text-decoration:none">'
+                    f'PR Opened</a>'
+                )
+            elif fix_patch:
+                import html as _html_mod
+                escaped_patch = _html_mod.escape(fix_patch[:3000])
+                detail_buttons.append(
+                    f'<details><summary>Fix Patch</summary>'
+                    f'<pre style="background:#161b22;padding:10px;border-radius:6px;'
+                    f'font-size:11px;overflow-x:auto;max-height:400px;overflow-y:auto">'
+                    f'{escaped_patch}</pre></details>'
                 )
 
             if detail_buttons:
@@ -2467,7 +2570,60 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
 # Main
 # ---------------------------------------------------------------------------
 
+def _render_only():
+    """Re-render HTML from existing results.json without re-fetching from Prow."""
+    results_path = OUTPUT_DIR / "results.json"
+    if not results_path.exists():
+        log.error("No results.json found at %s", results_path)
+        return
+    log.info("RENDER_ONLY: re-rendering from existing results.json")
+    data = json.loads(results_path.read_text())
+
+    jobs = []
+    analyses = {}
+    for j in data.get("jobs", []):
+        job = {
+            "name": j["name"],
+            "state": j["state"],
+            "url": j.get("url", ""),
+            "start_time": j.get("start_time", ""),
+            "completion_time": j.get("completion_time", ""),
+            "spec": {"job": j["name"]},
+        }
+        jobs.append(job)
+        if j.get("analysis"):
+            analyses[j["name"]] = j["analysis"]
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    history = load_history()
+    trend_html = generate_trend_html(history)
+    html = generate_html(jobs, analyses, trend_html)
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    run_dir = OUTPUT_DIR / "runs" / today
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "index.html").write_text(html)
+    (OUTPUT_DIR / "index.html").write_text(html)
+    log.info("Dashboard re-rendered with AI analysis")
+
+    data_out = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "job_filter": data.get("job_filter", JOB_FILTER),
+        "total_jobs": len(jobs),
+        "passed": sum(1 for j in jobs if j["state"] == "success"),
+        "failed": sum(1 for j in jobs if j["state"] in ("failure", "error")),
+        "jobs": data["jobs"],
+    }
+    results_path.write_text(json.dumps(data_out, indent=2))
+    (run_dir / "results.json").write_text(json.dumps(data_out, indent=2))
+    _generate_runs_index(OUTPUT_DIR)
+
+
 def main():
+    if RENDER_ONLY:
+        _render_only()
+        return
+
     log.info("Prow Nightly Monitor starting")
     log.info("Job filter: %s", JOB_FILTER)
     log.info("Min version: %s", MIN_VERSION or "(all)")
@@ -2573,24 +2729,18 @@ def main():
 
         ai_log = analysis_log if analysis_log else build_log
         ai_summary = ""
-        if ai_log and not ai_log.startswith("("):
-            if USE_CURSOR:
-                log.info("  Running AI analysis (cursor-claude)...")
-                ai_summary = _cursor_analyze(
+        if SKIP_AI:
+            log.info("  AI analysis skipped (SKIP_AI=true)")
+        elif ai_log and not ai_log.startswith("("):
+            provider, _, _ = _get_ai_provider()
+            if provider:
+                log.info("  Running AI analysis (%s)...", provider)
+                time.sleep(10)
+                ai_summary = ai_analyze_failure(
                     job, ai_log, investigation, category, matrix_diff, step_logs, artifacts_data,
                 )
                 if ai_summary:
-                    log.info("  Claude: %s", ai_summary[:200])
-            else:
-                provider, _, _ = _get_ai_provider()
-                if provider:
-                    log.info("  Running AI analysis (%s)...", provider)
-                    time.sleep(10)
-                    ai_summary = ai_analyze_failure(
-                        job, ai_log, investigation, category, matrix_diff, step_logs, artifacts_data,
-                    )
-                    if ai_summary:
-                        log.info("  AI: %s", ai_summary[:200])
+                    log.info("  AI: %s", ai_summary[:200])
             if not ai_summary:
                 fb_context = _extract_failure_context(ai_log)
                 fb_prompt = (
