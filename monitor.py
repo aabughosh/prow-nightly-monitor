@@ -1614,11 +1614,36 @@ def _build_smart_context(job: dict, log_text: str,
             if relevant:
                 context_parts.append(f"=== STEP: {step_name} (key lines) ===\n" + "\n".join(relevant[:15]))
 
-    # 7. ALL artifacts data
-    if artifacts_data and artifacts_data.get("text_summary"):
-        context_parts.append(f"=== ARTIFACTS ===\n{artifacts_data['text_summary'][:1000]}")
+    # 7. Actual artifact file contents (not just summaries)
+    if artifacts_data:
+        all_art = artifacts_data.get("all_artifacts", {})
 
-    return "\n\n".join(context_parts)[:8000]
+        if "matrix-diff-ss" in all_art:
+            diff_lines = all_art["matrix-diff-ss"].splitlines()
+            changes = [l for l in diff_lines if l.strip().startswith(("+", "-"))]
+            if changes:
+                context_parts.append(
+                    f"=== MATRIX DIFF (ss vs documented, + = in ss but not docs, - = in docs but not ss) ===\n"
+                    + "\n".join(changes[:20])
+                )
+
+        if "raw-ss-tcp" in all_art:
+            no_ep = matrix_diff.get("no_endpointslice_ports", []) if matrix_diff else []
+            if no_ep:
+                relevant_ss = []
+                for port_entry in no_ep:
+                    pf = port_entry.split(",")
+                    pn = pf[2] if len(pf) >= 3 else ""
+                    for line in all_art["raw-ss-tcp"].splitlines():
+                        if f":{pn}" in line:
+                            relevant_ss.append(f"  {line.strip()}")
+                if relevant_ss:
+                    context_parts.append(f"=== SS OUTPUT FOR MISSING ENDPOINTSLICE PORTS ===\n" + "\n".join(relevant_ss))
+
+        if artifacts_data.get("text_summary"):
+            context_parts.append(f"=== ARTIFACTS SUMMARY ===\n{artifacts_data['text_summary'][:500]}")
+
+    return "\n\n".join(context_parts)[:10000]
 
 
 def ai_analyze_failure(job: dict, log_text: str,
