@@ -1333,12 +1333,12 @@ def _get_ai_provider() -> tuple[str, str, str]:
 
 
 def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
-    """Fetch test source code, static entries, and helper code from GitHub.
+    """Fetch the full test logic, static entries, and repo context.
 
-    Downloads:
-    1. The failing test function (e.g., validation_test.go around the failure line)
-    2. Static entries (samples/custom-entries/) to know what's already covered
-    3. Documented matrix CSV to understand what's expected
+    The AI needs to understand:
+    1. What the test function does (the comparison logic)
+    2. What static entries already exist (what's already skipped/covered)
+    3. How EndpointSlices are used in the test
     """
     repo_url = _guess_repo_from_job(job.get("name", ""))
     if not repo_url:
@@ -1348,7 +1348,7 @@ def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
     raw_base = f"https://raw.githubusercontent.com/{repo_slug}/main"
     source_parts = []
 
-    # 1. Fetch the failing test function
+    # 1. Fetch the FULL failing test file to understand the test logic
     for tf in test_files[:2]:
         filepath = tf.get("file", "")
         if not filepath or "_test.go" not in filepath:
@@ -1361,51 +1361,51 @@ def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
                     lines = resp.text.splitlines()
                     line_no = int(tf.get("line", 0))
                     if line_no > 0:
-                        start = max(0, line_no - 30)
-                        end_line = min(len(lines), line_no + 40)
-                        snippet = "\n".join(lines[start:end_line])
+                        start = max(0, line_no - 50)
+                        end_line = min(len(lines), line_no + 60)
                     else:
-                        snippet = "\n".join(lines[:100])
-                    source_parts.append(f"--- TEST: {sp} (lines {start+1}-{end_line}) ---\n{snippet}")
+                        start, end_line = 0, min(len(lines), 120)
+                    snippet = "\n".join(lines[start:end_line])
+                    source_parts.append(
+                        f"--- TEST FUNCTION: {sp} (lines {start+1}-{end_line}) ---\n"
+                        f"This is the test that FAILED. Read it to understand:\n"
+                        f"- What it compares (ss output vs EndpointSlices)\n"
+                        f"- Which ports it expects to have EndpointSlices\n"
+                        f"- Which ports are skipped/static\n\n{snippet}"
+                    )
+                    log.info("  Fetched test source %s (lines %d-%d)", sp, start+1, end_line)
                     break
             except Exception:
                 continue
 
-    # 2. Fetch static entries (what's already covered as static)
-    static_paths = [
-        "samples/custom-entries/custom-entries.csv",
-        "samples/custom-entries/custom-entries.json",
-        "samples/custom-entries/custom-entries.yaml",
-    ]
-    for sp in static_paths:
+    # 2. Fetch ALL static entries to see what's already covered
+    static_dirs = ["samples/custom-entries"]
+    for sd in static_dirs:
         try:
-            resp = requests.get(f"{raw_base}/{sp}", timeout=8)
-            if resp.status_code == 200 and len(resp.text) > 10:
-                source_parts.append(f"--- STATIC ENTRIES: {sp} ---\n{resp.text[:500]}")
-                log.info("  Fetched static entries from %s", sp)
-                break
+            dir_resp = requests.get(
+                f"https://api.github.com/repos/{repo_slug}/contents/{sd}",
+                timeout=8,
+            )
+            if dir_resp.status_code == 200:
+                files = dir_resp.json()
+                for f in files:
+                    if f.get("name", "").endswith((".csv", ".json", ".yaml")):
+                        try:
+                            fresp = requests.get(f"{raw_base}/{sd}/{f['name']}", timeout=8)
+                            if fresp.status_code == 200:
+                                source_parts.append(
+                                    f"--- STATIC ENTRIES: {sd}/{f['name']} ---\n"
+                                    f"These entries are already handled as static (not via EndpointSlice).\n"
+                                    f"If a port is here, the test should not fail on it.\n\n"
+                                    f"{fresp.text[:600]}"
+                                )
+                                log.info("  Fetched static entries %s/%s", sd, f["name"])
+                        except Exception:
+                            pass
         except Exception:
-            continue
+            pass
 
-    # 3. Fetch the documented matrix CSV for this platform
-    job_name = job.get("name", "").lower()
-    platform = "aws"
-    if "sno" in job_name or "single-node" in job_name:
-        platform = "aws-sno"
-    elif "bm" in job_name or "baremetal" in job_name or "metal" in job_name:
-        platform = "bm"
-
-    for csv_dir in ["docs/stable/unique", "docs/stable/raw"]:
-        try:
-            resp = requests.get(f"{raw_base}/{csv_dir}/{platform}.csv", timeout=8)
-            if resp.status_code == 200 and len(resp.text) > 10:
-                source_parts.append(f"--- DOCUMENTED MATRIX: {csv_dir}/{platform}.csv ---\n{resp.text[:800]}")
-                log.info("  Fetched documented matrix %s/%s.csv", csv_dir, platform)
-                break
-        except Exception:
-            continue
-
-    return "\n\n".join(source_parts)[:3000] if source_parts else ""
+    return "\n\n".join(source_parts)[:4000] if source_parts else ""
 
 
 def _browse_artifacts(job: dict) -> dict[str, list[str]]:
@@ -1752,35 +1752,40 @@ Job: {job['name']}
 State: {job['state']}
 {source_section}
 
-IMPORTANT: Be detailed and specific. Do NOT give one-sentence answers.
-Use the test source code and artifacts provided to understand what the test checks.
-NOTE: Distinguish between FAILURES ([FAILED] assertions) and WARNINGS (level=warning).
-List warnings separately — they provide context but are NOT the cause of the failure.
+IMPORTANT: Read the TEST SOURCE CODE provided below to understand what the test checks.
+For ports with no EndpointSlice: determine if the process CAN have an EndpointSlice.
+- System daemons (container runtimes, rpcbind, etc) run on the host — they CANNOT have EndpointSlices
+- OpenShift services SHOULD have EndpointSlices — if missing, it may be a bug
+Check STATIC ENTRIES to see if the port is already handled.
 
-Provide your analysis in this EXACT format (be thorough for each section):
+Provide your analysis:
 
 **Failed Tests:**
-- List ONLY actual [FAILED] tests with their FULL name
-- Include the test file and line number if available
+- ONLY [FAILED] tests, with file and line
 
 **Failure Messages:**
-- Quote the EXACT [FAILED] error messages from the logs
+- Exact [FAILED] errors
 
 **Warnings (not failures):**
-- List any level=warning messages that appeared during the test
+- level=warning messages (context only, not the failure)
 - These provide context but did NOT cause the failure
 
 **Root Cause:**
-- Explain specifically WHY this failed, not just WHAT happened
-- If it's a matrix mismatch: which ports are wrong and why
-- If it's infra: what infrastructure component failed
-- If a port has no EndpointSlice: explain what process owns it (from ss output) and whether it needs a static entry
+- Read the TEST SOURCE CODE to understand what the test checks
+- For ports with no EndpointSlice: check ss output for the process name
+- Determine if the process CAN have an EndpointSlice (K8s service) or NOT (system daemon)
+
+**Port Analysis:**
+- For each failing port: process name, can it have EndpointSlice, is it in static entries
 
 **Classification:**
 - MATRIX_MISMATCH / INFRA / TEST_FAILURE / BUILD_ERROR / FLAKE
 
 **Recommended Action:**
-- Give specific, actionable steps
+- ADD STATIC ENTRY: if process can't have EndpointSlice (system daemon)
+- OPEN BUG: if OpenShift service should have EndpointSlice but doesn't
+- SKIP: if port is irrelevant
+- UPDATE DOCS: if port should be in documented matrix
 - If a port is in Linux ephemeral range (32768-60999), note that it changes on reboot
 - Look at the ss output to determine what process owns the port and why it has no EndpointSlice
 
@@ -1934,13 +1939,27 @@ def _cursor_analyze(job: dict, log_text: str,
         ctx = smart_ctx[:3000] if smart_ctx else _extract_failure_context(log_text)[:2000]
 
         prompt = (
-            f"Analyze this CI failure. Distinguish warnings from failures.\n\n"
-            f"**Failed Tests:** list only [FAILED] tests\n"
-            f"**Failure Messages:** quote exact errors\n"
-            f"**Warnings:** list level=warning messages separately\n"
-            f"**Root Cause:** explain WHY\n"
-            f"**Classification:** INFRA/TEST_FAILURE/MATRIX_MISMATCH\n"
-            f"**Recommended Action:** specific fix\n"
+            f"You are investigating a CI test failure. Read the test source code, static entries, "
+            f"ss output, and matrix diff provided below.\n\n"
+            f"For each port that failed:\n"
+            f"1. Read the TEST SOURCE CODE to understand what the test checks\n"
+            f"2. Check the SS OUTPUT to see what process owns the port\n"
+            f"3. Determine: CAN this process have a Kubernetes EndpointSlice?\n"
+            f"   - System daemons (like container runtimes) run on the host, not as K8s Services — they CANNOT have EndpointSlices\n"
+            f"   - OpenShift services should have EndpointSlices — if missing, it's a bug\n"
+            f"4. Check STATIC ENTRIES to see if this port is already handled\n"
+            f"5. Recommend ONE of:\n"
+            f"   - ADD STATIC ENTRY (if the process always runs but can't have EndpointSlice)\n"
+            f"   - OPEN BUG (if it's an OpenShift service that should have EndpointSlice but doesn't)\n"
+            f"   - SKIP IN TEST (if the port is irrelevant to the matrix)\n"
+            f"   - UPDATE DOCS (if the port should be in the documented matrix)\n\n"
+            f"Respond with:\n"
+            f"**Failed Tests:** [FAILED] tests only\n"
+            f"**Failure Messages:** exact errors\n"
+            f"**Warnings:** level=warning (not failures)\n"
+            f"**Root Cause:** WHY — based on test code and ss output\n"
+            f"**Port Analysis:** for each port, what process, can it have EndpointSlice, why/why not\n"
+            f"**Recommended Action:** specific (add static entry / open bug / skip / update docs)\n"
             f"**Severity:** CRITICAL/HIGH/MEDIUM/LOW\n\n"
             f"{ctx}"
         )
