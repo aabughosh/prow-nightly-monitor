@@ -654,9 +654,10 @@ def classify_port(port_entry: str, ss_line: str = "") -> dict:
             f"This port is randomly assigned by the OS and changes on every reboot."
         )
         info["action"] = (
-            f"ADD STATIC ENTRY: Process '{process or 'unknown'}' always runs on nodes but uses "
-            f"a random OS-assigned port. It will never have an EndpointSlice because it's not "
-            f"a Kubernetes Service. Add it to samples/custom-entries/ as a static entry with optional=true."
+            f"Ephemeral port owned by '{process or 'unknown'}'. "
+            f"This is a host-level process, not a Kubernetes Service. "
+            f"Consider: is this port needed in the matrix? Does this process always run? "
+            f"Options: add static entry, skip in test, or investigate further."
         )
     elif is_nodeport:
         info["range"] = "nodeport"
@@ -1451,10 +1452,10 @@ def _browse_artifacts(job: dict) -> dict[str, list[str]]:
 def _fetch_artifacts_context(job: dict, category: str,
                              matrix_diff: dict,
                              step_logs: dict[str, str]) -> dict:
-    """Download ALL available artifacts for deep investigation.
+    """Smart artifact browser — discovers and downloads ALL relevant data.
 
-    Fetches everything: ss output, matrix diffs, commatrix data,
-    gather-extra, JUnit XMLs. Gives the AI maximum data to investigate.
+    Browses the GCS artifacts directory structure, finds every useful file,
+    and downloads it. Generic — works for any Prow job, not just commatrix.
     """
     result: dict = {"ss_findings": [], "stale_info": [], "all_artifacts": {}, "text_summary": ""}
     url = job.get("url", "")
@@ -1462,106 +1463,137 @@ def _fetch_artifacts_context(job: dict, category: str,
     if not m:
         return result
     job_path, build_id = m.group(1), m.group(2)
-
-    job_name = job.get("name", "")
-    name_short = job_name.replace("periodic-ci-openshift-release-main-nightly-", "")
-    wf_parts = name_short.split("-")
-    ver_idx = next((i for i, p in enumerate(wf_parts) if re.match(r"\d+\.\d+", p)), -1)
-    wf_name = "-".join(wf_parts[ver_idx + 1:]) if ver_idx >= 0 else name_short
+    base_url = f"{GCS_BASE}/{job_path}/{build_id}/artifacts"
 
     parts = []
-    test_step = "network-flow-matrix-tests"
-    for step in step_logs:
-        if "network-flow-matrix" in step or "e2e-test" in step:
-            test_step = step
-            break
 
-    artifacts_base = f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/{test_step}/artifacts"
-
-    # Browse the artifacts directory to find all available files
+    # Step 1: Browse the top-level artifacts to find the workflow directory
     try:
-        resp = requests.get(f"{artifacts_base}/", timeout=10)
-        if resp.status_code == 200:
-            dirs = re.findall(r'href="[^"]*?/([^/"]+)/"', resp.text)
-            files = re.findall(r'href="[^"]*?/([^/"]+\.[a-z]+)"', resp.text)
-            log.info("  Artifacts dirs: %s, files: %s", dirs, files)
+        resp = requests.get(f"{base_url}/", timeout=10)
+        if resp.status_code != 200:
+            return result
+        wf_dirs = [d for d in re.findall(r'href="[^"]*?/artifacts/([^/"]+)/"', resp.text)
+                   if d not in ("build-resources", "release")]
+        log.info("  Artifact workflows: %s", wf_dirs)
+    except Exception:
+        return result
 
-            # Try commatrix-e2e subdirectory first
-            for subdir in ["commatrix-e2e", "commatrix", ""]:
-                base = f"{artifacts_base}/{subdir}" if subdir else artifacts_base
-                artifact_files = [
-                    "raw-ss-tcp", "raw-ss-udp", "communication-matrix",
-                    "ss-generated-matrix", "matrix-diff-ss",
-                ]
-                for af in artifact_files:
+    # Step 2: For each workflow, browse its steps
+    for wf in wf_dirs[:2]:
+        try:
+            wf_resp = requests.get(f"{base_url}/{wf}/", timeout=8)
+            if wf_resp.status_code != 200:
+                continue
+            steps = re.findall(r'href="[^"]*?/([^/"]+)/"', wf_resp.text)
+            log.info("  Steps in %s: %s", wf, [s for s in steps if s != ".."][:10])
+
+            # Step 3: For each step, browse and download useful files
+            interesting_steps = [s for s in steps if any(k in s.lower() for k in
+                                ["test", "gather", "matrix", "e2e", "network"])]
+            if not interesting_steps:
+                interesting_steps = steps[:5]
+
+            for step in interesting_steps:
+                if step == "..":
+                    continue
+                step_url = f"{base_url}/{wf}/{step}"
+
+                # Check for artifacts subdirectory
+                for artifacts_dir in [f"{step_url}/artifacts/", f"{step_url}/"]:
                     try:
-                        aresp = requests.get(f"{base}/{af}", timeout=8)
-                        if aresp.status_code == 200 and len(aresp.text) > 10:
-                            content = aresp.text
-                            result["all_artifacts"][af] = content
+                        aresp = requests.get(artifacts_dir, timeout=6)
+                        if aresp.status_code != 200:
+                            continue
 
-                            if af == "raw-ss-tcp":
-                                log.info("  Fetched %s (%d lines)", af, len(content.splitlines()))
-                                no_ep = matrix_diff.get("no_endpointslice_ports", []) if matrix_diff else []
-                                for port_entry in no_ep:
-                                    pf = port_entry.split(",")
-                                    if len(pf) >= 3:
-                                        pn = pf[2]
-                                        for line in content.splitlines():
-                                            if f":{pn}" in line:
-                                                result["ss_findings"].append({
-                                                    "port": pn, "entry": port_entry,
-                                                    "ss_line": line.strip(),
-                                                })
-                                                parts.append(f"ss for port {pn}: {line.strip()}")
-                                parts.append(f"[raw-ss-tcp: {len(content.splitlines())} ports total]")
+                        # Find all subdirs and files
+                        subdirs = re.findall(r'href="[^"]*?/([^/"]+)/"', aresp.text)
+                        afiles = re.findall(r'href="[^"]*?/([^/"]+)"', aresp.text)
+                        useful_files = [f for f in afiles
+                                       if any(k in f.lower() for k in
+                                              ["ss", "matrix", "junit", "diff", "commatrix"])
+                                       and f not in ("style.css", "gsutil", "install", "..")]
 
-                            elif af == "matrix-diff-ss":
-                                log.info("  Fetched %s (%d lines)", af, len(content.splitlines()))
-                                relevant = [l.strip() for l in content.splitlines()
-                                            if l.strip().startswith(("+", "-")) and len(l.strip()) > 5]
-                                if relevant:
-                                    parts.append(f"[matrix-diff-ss: {len(relevant)} differences]")
-                                    for r in relevant[:10]:
-                                        parts.append(f"  {r}")
+                        # Browse subdirs for more files
+                        for sd in subdirs:
+                            if sd in ("..", "style.css"):
+                                continue
+                            try:
+                                sd_resp = requests.get(f"{artifacts_dir}{sd}/", timeout=5)
+                                if sd_resp.status_code == 200:
+                                    sd_files = re.findall(r'href="[^"]*?/([^/"]+)"', sd_resp.text)
+                                    for sf in sd_files:
+                                        if sf not in ("..", "style.css", "gsutil", "install"):
+                                            useful_files.append(f"{sd}/{sf}")
+                            except Exception:
+                                pass
 
-                            elif af == "ss-generated-matrix":
-                                log.info("  Fetched %s (%d entries)", af, len(content.splitlines()))
-                                parts.append(f"[ss-generated-matrix: {len(content.splitlines())} entries]")
+                        # Download useful files
+                        for uf in useful_files[:8]:
+                            file_url = f"{artifacts_dir}{uf}"
+                            try:
+                                fresp = requests.get(file_url, timeout=8)
+                                if fresp.status_code == 200 and len(fresp.text) > 10:
+                                    content = fresp.text
+                                    key = f"{step}/{uf}"
+                                    result["all_artifacts"][key] = content
+                                    log.info("  Downloaded: %s/%s (%d bytes)", step, uf, len(content))
 
-                            elif af == "communication-matrix":
-                                log.info("  Fetched %s (%d entries)", af, len(content.splitlines()))
-                                parts.append(f"[communication-matrix: {len(content.splitlines())} documented entries]")
+                                    # Extract ss findings for failing ports
+                                    if "raw-ss-tcp" in uf.lower():
+                                        no_ep = matrix_diff.get("no_endpointslice_ports", []) if matrix_diff else []
+                                        for pe in no_ep:
+                                            pf = pe.split(",")
+                                            pn = pf[2] if len(pf) >= 3 else ""
+                                            for line in content.splitlines():
+                                                if f":{pn}" in line:
+                                                    result["ss_findings"].append({
+                                                        "port": pn, "entry": pe,
+                                                        "ss_line": line.strip(),
+                                                    })
+                                                    parts.append(f"ss for port {pn}: {line.strip()}")
+
+                                    # Summarize what we got
+                                    lines = content.splitlines()
+                                    if "diff" in uf.lower():
+                                        changes = [l for l in lines if l.strip().startswith(("+", "-"))]
+                                        parts.append(f"[{key}: {len(changes)} changes]")
+                                        for c in changes[:8]:
+                                            parts.append(f"  {c.strip()}")
+                                    else:
+                                        parts.append(f"[{key}: {len(lines)} lines]")
+
+                            except Exception:
+                                pass
 
                     except Exception:
                         pass
-                if result["all_artifacts"]:
-                    break
-    except Exception as e:
-        log.debug("  Artifacts browse failed: %s", e)
 
-    # Fetch gather-extra if available
-    gather_steps = ["gather-extra", "gather-must-gather"]
-    for gs in gather_steps:
-        gather_url = f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{wf_name}/{gs}/artifacts/"
-        try:
-            resp = requests.get(gather_url, timeout=8)
-            if resp.status_code == 200:
-                gather_files = re.findall(r'href="[^"]*?/([^/"]+)"', resp.text)
-                log.info("  gather %s has: %s", gs, gather_files[:5])
-                for gf in gather_files[:3]:
-                    if gf.endswith((".json", ".yaml", ".txt", ".log")):
-                        try:
-                            gresp = requests.get(f"{gather_url}{gf}", timeout=8)
-                            if gresp.status_code == 200 and len(gresp.text) > 10:
-                                content = gresp.text[:500]
-                                result["all_artifacts"][f"gather-{gs}/{gf}"] = content
-                                parts.append(f"[{gs}/{gf}]: {content[:200]}")
-                                log.info("  Fetched %s/%s", gs, gf)
-                        except Exception:
-                            pass
         except Exception:
             pass
+
+    # Step 4: Download gather-extra and gather-must-gather
+    for wf in wf_dirs[:1]:
+        for gather in ["gather-extra", "gather-must-gather"]:
+            gather_url = f"{base_url}/{wf}/{gather}/artifacts/"
+            try:
+                gresp = requests.get(gather_url, timeout=6)
+                if gresp.status_code != 200:
+                    continue
+                gfiles = re.findall(r'href="[^"]*?/([^/"]+)"', gresp.text)
+                useful_gfiles = [f for f in gfiles
+                                if f.endswith((".json", ".yaml", ".txt", ".log"))
+                                and f not in ("style.css", "gsutil", "install")]
+                for gf in useful_gfiles[:3]:
+                    try:
+                        gfresp = requests.get(f"{gather_url}{gf}", timeout=6)
+                        if gfresp.status_code == 200 and len(gfresp.text) > 10:
+                            result["all_artifacts"][f"{gather}/{gf}"] = gfresp.text[:1000]
+                            parts.append(f"[{gather}/{gf}]: {gfresp.text[:150]}")
+                            log.info("  Downloaded: %s/%s", gather, gf)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
     if matrix_diff:
         stale = matrix_diff.get("stale_ports", [])
