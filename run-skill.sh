@@ -32,6 +32,7 @@ export TARGET_REPO="${TARGET_REPO:-https://github.com/openshift-kni/commatrix.gi
 export UPSTREAM_REPO="${UPSTREAM_REPO:-openshift-kni/commatrix}"
 export FORK_OWNER="${FORK_OWNER:-aabughosh}"
 export OPEN_PRS="${OPEN_PRS:-true}"
+export SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
 export OUTPUT_DIR="$REPO_DIR/public"
 export SKIP_AI="true"
 
@@ -76,6 +77,23 @@ else
     unset RENDER_ONLY
 fi
 
-# Step 5: Open the dashboard
+# Step 5: Push dashboard to GitHub Pages
+log "Pushing dashboard to GitHub Pages..."
+cd "$REPO_DIR"
+git add public/index.html public/results.json public/history.html public/history.json public/runs/ 2>/dev/null
+if git diff --cached --quiet; then
+    log "No dashboard changes to push"
+else
+    git commit -m "dashboard: $(date '+%Y-%m-%d') nightly results" >> "$LOG_FILE" 2>&1
+    git push origin main >> "$LOG_FILE" 2>&1 && log "Dashboard pushed to GitHub Pages" || log "WARNING: git push failed"
+fi
+
+# Step 6: Send Slack summary
+if [ -n "$SLACK_WEBHOOK_URL" ]; then
+    log "Sending Slack summary..."
+    python3 -c "import sys; sys.path.insert(0,'$REPO_DIR'); from inject_claude import send_slack_summary; send_slack_summary()" >> "$LOG_FILE" 2>&1 || true
+fi
+
+# Step 7: Open the dashboard
 open "$REPO_DIR/public/index.html"
 log "=== Done ==="

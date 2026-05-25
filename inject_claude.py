@@ -27,8 +27,10 @@ EVIDENCE_DIR = os.path.join(INVESTIGATE_DIR, "ci-evidence")
 RESULTS = f"{REPO_DIR}/public/results.json"
 
 MAX_RESULTS_SIZE = 50 * 1024 * 1024
-AGENT_TIMEOUT = 180  # 3 minutes per job
+AGENT_TIMEOUT = 300  # 5 minutes per job
 OPEN_PRS = os.environ.get("OPEN_PRS", "true").lower() == "true"
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
+DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/")
 
 
 def check_auth() -> bool:
@@ -644,6 +646,90 @@ def main():
         json.dump(data, f, indent=2)
 
     print(f"Results updated: {success_count}/{len(failed)} failures analyzed")
+
+
+def send_slack_summary():
+    """Send a daily summary to Slack via Incoming Webhook."""
+    from datetime import datetime
+    import urllib.request
+
+    if not SLACK_WEBHOOK_URL:
+        print("No SLACK_WEBHOOK_URL set — skipping Slack notification")
+        return
+
+    if not os.path.exists(RESULTS):
+        print(f"No results at {RESULTS}")
+        return
+
+    data = json.load(open(RESULTS))
+    jobs = data.get("jobs", [])
+    total = len(jobs)
+    passed = sum(1 for j in jobs if j["state"] == "success")
+    failed_jobs = [j for j in jobs if j["state"] in ("failure", "error")]
+    failed = len(failed_jobs)
+
+    today = datetime.now().strftime("%B %d, %Y")
+    lines = [
+        f"*Prow Nightly Monitor — {today}*",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f":white_check_mark: {passed} passed  :x: {failed} failed",
+    ]
+
+    if failed_jobs:
+        lines.append("")
+        lines.append("*Failures:*")
+        for j in failed_jobs:
+            analysis = j.get("analysis", {})
+            category = analysis.get("category", "unknown").upper()
+            severity = analysis.get("investigation", {}).get("severity", "?")
+            ai = analysis.get("ai_summary", "")
+            pr_url = analysis.get("pr_url", "")
+
+            short_name = re.sub(
+                r"periodic-ci-openshift-release-main-nightly-", "", j["name"]
+            )
+            first_line = ""
+            if ai:
+                for al in ai.split("\n"):
+                    stripped = al.strip()
+                    if stripped.startswith("**Root Cause:**"):
+                        first_line = stripped.replace("**Root Cause:**", "").strip()
+                        break
+                if not first_line:
+                    first_line = ai[:120].split("\n")[0]
+
+            entry = f"• `{short_name}` — {category} ({severity})"
+            if first_line:
+                entry += f" — {first_line[:100]}"
+            lines.append(entry)
+
+            if pr_url:
+                lines.append(f"  :wrench: PR: {pr_url}")
+
+    lines.append("")
+    lines.append(f":bar_chart: <{DASHBOARD_URL}|Dashboard>")
+
+    pr_urls = [
+        j.get("analysis", {}).get("pr_url", "")
+        for j in failed_jobs if j.get("analysis", {}).get("pr_url")
+    ]
+    if pr_urls:
+        for url in pr_urls:
+            lines.append(f":wrench: <{url}|PR opened>")
+
+    message = "\n".join(lines)
+    payload = json.dumps({"text": message}).encode("utf-8")
+
+    req = urllib.request.Request(
+        SLACK_WEBHOOK_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"Slack notification sent ({resp.status})")
+    except Exception as e:
+        print(f"Slack notification failed: {e}")
 
 
 if __name__ == "__main__":
