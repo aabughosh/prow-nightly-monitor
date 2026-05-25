@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-05-25T13:16:48.424534+00:00",
+  "generated_at": "2026-05-25T13:40:01.421948+00:00",
   "job_filter": "network-flow-matrix",
   "total_jobs": 28,
   "passed": 7,
-  "failed": 2,
+  "failed": 3,
   "jobs": [
     {
       "name": "periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix",
@@ -144,10 +144,192 @@
     {
       "name": "periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm",
       "version": "4.23",
-      "state": "pending",
-      "duration": "running...",
+      "state": "failure",
+      "duration": "12m",
       "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2058896048910241792",
-      "analysis": {}
+      "analysis": {
+        "category": "test_failure",
+        "reason": "Test failed: ! => {\"ansible_facts\": {\"discovered_interpreter_python\": \"/usr/bin/python3\"}, \"changed\": true, \"cmd\": \"kcli delete plan -y cnfdu8_ci\", \"delta\": \"0:00:00.617278\", \"end\": \"2026-05-25 09:12:20.191845\", \"",
+        "layer": "test_suite",
+        "layer_label": "gather-audit-logs, gather-extra, gather-must-gather, telco5g",
+        "ai_summary": "Here is the final analysis:\n\n---\n\n## CI failure analysis (`periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm` / build `2058896048910241792`)\n\n**Root Cause:**  \nThe job fails in **`telco5g-cluster-setup`** when Ansible runs **`ocp-install.yml`**, task **\u201cRun deployment\u201d**: `kcli create plan \u2026 cnfdu8_ci \u2026` exits with **`rc`: 1**. Inside **`kvirt.providers.kvm` \u2192 `create`**, **`virStorageVolGetPath()`** fails because **libvirt has no storage volume** named **`boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso`** in the expected pool. That is a **bare-metal libvirt/KVM provisioning error** (missing or already-removed ISO, stale plan/volume bookkeeping, or host pool drift), not a failure in this checked-out **`commatrix`** codebase.\n\nEarlier, **\u201cRemove last run\u201d** runs `kcli delete plan` with **`rc`: 4** (\u201cNo objects found\u201d) but is **`...ignoring`**, so it does **not** stop the playbook.\n\nThe **JUnit \u201cstorage volume not found\u201d** line corresponds to this **`kcli create plan`** traceback.  \n\nA **follow-on failure** appears in **`destroy-cluster.yml`**: **`kcli delete plan -y cnfdu8_ci`** returns **`rc`: 4** when the plan was **never successfully created**. That task **does not** ignore errors, so teardown **hard-fails** even though deletion is effectively a **no-op**\u2014this **`telco5g-release-cluster`** step failure is downstream of the aborted install.\n\n**`memcache.go:265`** in **client-go discovery** only logs **`couldn't get current server API group list`** when the **API server** is slow/unreachable (**TLS handshake / timeout**). That matches **gather / must-gather** steps in **`junit-failures.txt`** and reflects **cluster/API or network instability** during artifact collection\u2014not the initial **`kcli` / libvirt** install break.\n\nReferences to **`mustgather.go`** and **`/tmp/secret/get-cluster-name.yml`** match **CI/pod-side scripts and `oc`/must-gather**, which are **not** present in this repo.\n\n---\n\n**Is it a flake?**  \n**Mixed.**  \n- **Dominant:** **Environment / infra** on the **`cnfdu8`** bare-metal runner (missing **`boot-*.iso`** in libvirt) can be **intermittent** (*retry may pass*) but also may **repeat** if the host or image sync is systematically wrong\u2014not a deterministic \u201cone bad commit\u201d in **`commatrix`**.  \n- **Secondary:** **`destroy-cluster.yml`** treating **\u201cnothing to delete\u201d** as fatal is **repeatable whenever install never creates the plan**.\n\n**Code Path:**  \n- **Install failure:** Ansible **`/output/ocp-install.yml`** \u2192 task **`Run deployment`** \u2192 shell **`kcli create plan \u2026 cnfdu8_ci`** \u2192 Python **`kvirt/config.py:create_vm`** \u2192 **`kvirt/providers/kvm/__init__.py:create`** \u2192 **`libvirt` `virStorageVolGetPath()`** \u2192 **`libvirt.libvirtError`** for missing **`boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso`**.  \n- **Gather noise:** **`k8s.io/client-go/discovery/cached/memory/memcache.go`** (e.g. around **line 265**) **`HandleError`** on discovery when **`Get https://\u2026:64415/api`** times out (**TLS**/deadline).\n\n**Suggested Fix:**  \n- **Infra / kcli-KVM:** On the **`cnfdu8`** side, confirm the **openshift/installer ISO** (or **`boot-<uuid>.iso`**) exists in the configured **storage pool**, fix **stale volumes/plans**, and ensure **`kcli` plan**/params align with deployed images (**not** actionable inside this **`commatrix`** tree).  \n- **CI playbook hardening:** In **`destroy-cluster.yml`** (in the **`telco-runner` / openshift/release** workflow asset that ships it), make **`kcli delete plan`** **`failed_when: false`** or treat **`rc` 4** / \u201cNo objects found\u201d as **success**, so teardown does not fail when the plan never existed.  \n- **Optional retry:** One **job rerun** is reasonable if this is isolated **runner drift**; recurring failures need **infra** fixes.\n\n**Fix Written:** **no** \u2014 the failing Ansible and **`kcli`** assets live **outside** this **`commatrix`** checkout; patching **vendored** **`client-go`** would not address **`kcli`/libvirt**. No **`ci-evidence/fix.patch`** was produced.\n\n**Severity:** **HIGH** for the nightly **telco5g bm** lane (blocking install); **gather** timeouts are **MEDIUM** aggravation (**symptom** of API stress/unreachability after/during instability).\n\n---\n\n*Workspace note: `./ci-evidence/` was read fully; `./ci-evidence/prow-urls.txt` **`build-log.txt`** was curled for the full **`ocp-install.yml`** / **`destroy-cluster.yml`** context. This repo has **no** `ocp-install.yml`, **`fetch-information.yml`**, or **`destroy-cluster.yml`**, and **`git log`** applies only to **`commatrix`**, not the CI job\u2019s container paths (`/output/`, `/tmp/secret/`).*",
+        "junit_failures": [
+          {
+            "name": "Run multi-stage test post phase",
+            "classname": "",
+            "time": "458.821147982",
+            "message": "[\"telco5g-network-flow-matrix-bm\" pod \"telco5g-network-flow-matrix-bm-telco5g-log-gather\" failed: could not watch pod: the pod ci-op-xfhpv6gt/telco5g-network-flow-matrix-bm-telco5g-log-gather failed after 33s (failed containers: test): ContainerFailed one or more containers exited\n\nContainer test exited with code 1, reason Error\n---\nnone-any.whl (14 kB)\nCollecting requests\n  Downloading requests-2.32.5-py3-none-any.whl (64 kB)\nCollecting MarkupSafe>=2.0\n  Downloading markupsafe-3.0.3-cp39-cp39-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (20 kB)\nCollecting idna<4,>=2.5\n  Downloading idna-3.16-py3-none-any.whl (74 kB)\nCollecting urllib3<3,>=1.21.1\n  Downloading urllib3-2.6.3-py3-none-any.whl (131 kB)\nCollecting certifi>=2017.4.17\n  Downloading certifi-2026.5.20-py3-none-any.whl (134 kB)\nCollecting charset_normalizer<4,>=2\n  Downloading charset_normalizer-3.4.7-cp39-cp39-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (208 kB)\nInstalling collected packages: urllib3, MarkupSafe, idna, charset-normalizer, certifi, requests, junitparser, jinja2\nSuccessfully installed MarkupSafe-3.0.3 certifi-2026.5.20 charset-normalizer-3.4.7 idna-3.16 jinja2-3.1.6 junitparser-4.0.2 requests-2.32.5 urllib3-2.6.3\nWARNING: You are using pip version 21.2.3; however, version 26.0.1 is available.\nYou should consider upgrading via the '/tmp/secret/myenv/bin/python3 -m pip install --upgrade pip' command.\n+ [[ -f /tmp/secret/cnf-tests-run.log ]]\n+ [[ -f /tmp/secret/cnf-validations-run.log ]]\n+ [[ -f /tmp/secret/cnf-tests-run.log ]]\n+ [[ -f /logs/artifacts/parsed-cnftests.json ]]\n+ [[ -f /logs/artifacts/parsed-validations.json ]]\n+ [[ -f /logs/artifacts/parsed-tests.json ]]\n+ rm -rf /tmp/secret/myenv\n+ set +x\nOC client version from the container:\nClient Version: 4.12.29\nKustomize Version: v4.5.7\nUnable to connect to the server: net/http: TLS handshake timeout\n{\"component\":\"entrypoint\",\"error\":\"wrapped process failed: exit status 1\",\"file\":\"sigs.k8s.io/prow/pkg/entrypoint/run.go:84\",\"func\":\"sigs.k8s.io/prow/pkg/entrypoint.Options.internalRun\",\"level\":\"error\",\"msg\":\"Error executing test process\",\"severity\":\"error\",\"time\":\"2026-05-25T13:05:16Z\"}\ntime=\"2026-05-25T13:05:16Z\" level=warning msg=\"skipped directory \\\"telco5gci\\\" when creating secret from directory \\\"/tmp/secret\\\"\"\nerror: failed to execute wrapped command: exit status 1\n---\nLink to step on registry info site: https://steps.ci.openshift.org/reference/telco5g-log-gather\nLink to job on registry info site: https://steps.ci.openshift.org/job?org=openshift&repo=release&branch=main&test=telco5g-network-flow-matrix-bm&variant=nightly-4.23, \"telco5g-network-flow-matrix-bm\" pod \"telco5g-network-flow-matrix-bm-gather-must-gather\" failed: could not watch pod: the pod ci-op-xfhpv6gt/telco5g-network-flow-matrix-bm-gather-must-gather failed after 3m7s (failed containers: test): ContainerFailed one or more containers exited\n\nContainer test exited with code 1, reason Error\n---\n65] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nE0525 13:07:23.284991      53 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nerror completing cluster type inspection: error running backup collection: Get \"https://XXXXXXXXXXXX:64415/api?timeout=32s\": net/http: TLS handshake timeout\nFalling back to `oc adm inspect namespace/openshift-cluster-version` to collect basic cluster named resources.\nE0525 13:07:33.319128      53 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nE0525 13:07:43.347202      53 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake tim",
+            "type": ""
+          },
+          {
+            "name": "Run multi-stage test pre phase",
+            "classname": "",
+            "time": "105.999925567",
+            "message": "\"telco5g-network-flow-matrix-bm\" pod \"telco5g-network-flow-matrix-bm-telco5g-cluster-setup\" failed: could not watch pod: the pod ci-op-xfhpv6gt/telco5g-network-flow-matrix-bm-telco5g-cluster-setup failed after 1m32s (failed containers: test): ContainerFailed one or more containers exited\n\nContainer test exited with code 2, reason Error\n---\n*****************************\n\nTASK [Get cluster version] *****************************************************\ntask path: /output/fetch-information.yml:7\nchanged: [XXXXXXXXXXXX] => {\n    \"ansible_facts\": {\n        \"discovered_interpreter_python\": \"/usr/bin/python3\"\n    },\n    \"changed\": true,\n    \"cmd\": \"kcli ssh root@cnfdu8-installer 'oc get clusterversion'\",\n    \"delta\": \"0:00:00.477642\",\n    \"end\": \"2026-05-25 09:04:34.454940\",\n    \"rc\": 0,\n    \"start\": \"2026-05-25 09:04:33.977298\"\n}\n\nSTDERR:\n\n\ufffd[31mVM cnfdu8-installer not found\ufffd[0m\n\nTASK [Get bmh objects] *********************************************************\ntask path: /output/fetch-information.yml:10\nchanged: [XXXXXXXXXXXX] => {\n    \"changed\": true,\n    \"cmd\": \"kcli ssh root@cnfdu8-installer 'oc get bmh -A'\",\n    \"delta\": \"0:00:00.457976\",\n    \"end\": \"2026-05-25 09:04:38.152104\",\n    \"rc\": 0,\n    \"start\": \"2026-05-25 09:04:37.694128\"\n}\n\nSTDERR:\n\n\ufffd[31mVM cnfdu8-installer not found\ufffd[0m\n\nTASK [Get nodes] ***************************************************************\ntask path: /output/fetch-information.yml:13\nchanged: [XXXXXXXXXXXX] => {\n    \"changed\": true,\n    \"cmd\": \"kcli ssh root@cnfdu8-installer 'oc get node'\",\n    \"delta\": \"0:00:00.456334\",\n    \"end\": \"2026-05-25 09:04:41.850032\",\n    \"rc\": 0,\n    \"start\": \"2026-05-25 09:04:41.393698\"\n}\n\nSTDERR:\n\n\ufffd[31mVM cnfdu8-installer not found\ufffd[0m\n\nPLAY RECAP *********************************************************************\nXXXXXXXXXXXX               : ok=3    changed=3    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   \n\n{\"component\":\"entrypoint\",\"error\":\"wrapped process failed: exit status 2\",\"file\":\"sigs.k8s.io/prow/pkg/entrypoint/run.go:84\",\"func\":\"sigs.k8s.io/prow/pkg/entrypoint.Options.internalRun\",\"level\":\"error\",\"msg\":\"Error executing test process\",\"severity\":\"error\",\"time\":\"2026-05-25T13:04:42Z\"}\ntime=\"2026-05-25T13:04:42Z\" level=warning msg=\"skipped directory \\\"~deadbeef\\\" when creating secret from directory \\\"/tmp/secret\\\"\"\nerror: failed to execute wrapped command: exit status 2\n---\nLink to step on registry info site: https://steps.ci.openshift.org/reference/telco5g-cluster-setup\nLink to job on registry info site: https://steps.ci.openshift.org/job?org=openshift&repo=release&branch=main&test=telco5g-network-flow-matrix-bm&variant=nightly-4.23",
+            "type": ""
+          },
+          {
+            "name": "Run multi-stage test telco5g-network-flow-matrix-bm - telco5g-network-flow-matrix-bm-gather-audit-logs container test",
+            "classname": "",
+            "time": "182",
+            "message": "   37 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nE0525 13:11:24.078124      37 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nE0525 13:11:34.109156      37 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nE0525 13:11:44.141138      37 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nerror completing cluster named resource inspection: error running backup collection: Get \"https://XXXXXXXXXXXX:64415/api?timeout=32s\": net/http: TLS handshake timeout\n\n\nReprinting Cluster State:\nWhen opening a support case, bugzilla, or issue please include the following summary data along with any other requested information:\nerror getting cluster version: Get \"https://XXXXXXXXXXXX:64415/apis/config.openshift.io/v1/clusterversions/version\": net/http: TLS handshake timeout\nClusterID: \nClientVersion: 4.23.0-202605230118.p2.ga052bd4.assembly.stream.el9-a052bd4\nClusterVersion: Installing \"\" for <unknown>: <unknown>\nerror getting cluster operators: Get \"https://XXXXXXXXXXXX:64415/apis/config.openshift.io/v1/clusteroperators\": net/http: TLS handshake timeout\nClusterOperators:\n\tclusteroperators are missing\n\n\nerror: creating temp namespace: Post \"https://XXXXXXXXXXXX:64415/api/v1/namespaces\": net/http: TLS handshake timeout\n{\"component\":\"entrypoint\",\"error\":\"wrapped process failed: exit status 1\",\"file\":\"sigs.k8s.io/prow/pkg/entrypoint/run.go:84\",\"func\":\"sigs.k8s.io/prow/pkg/entrypoint.Options.internalRun\",\"level\":\"error\",\"msg\":\"Error executing test process\",\"severity\":\"error\",\"time\":\"2026-05-25T13:12:04Z\"}\nerror: failed to execute wrapped command: exit status 1\n",
+            "type": ""
+          },
+          {
+            "name": "Run multi-stage test telco5g-network-flow-matrix-bm - telco5g-network-flow-matrix-bm-gather-extra container test",
+            "classname": "",
+            "time": "25",
+            "message": "Gathering artifacts ...\nE0525 13:08:35.818519      28 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=5s\\\": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)\"\nE0525 13:08:40.818836      28 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=5s\\\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)\"\nE0525 13:08:45.819279      28 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=5s\\\": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)\"\nE0525 13:08:50.819739      28 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=5s\\\": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)\"\nE0525 13:08:55.820884      28 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=5s\\\": context deadline exceeded\"\nUnable to connect to the server: context deadline exceeded\n{\"component\":\"entrypoint\",\"error\":\"wrapped process failed: exit status 1\",\"file\":\"sigs.k8s.io/prow/pkg/entrypoint/run.go:84\",\"func\":\"sigs.k8s.io/prow/pkg/entrypoint.Options.internalRun\",\"level\":\"error\",\"msg\":\"Error executing test process\",\"severity\":\"error\",\"time\":\"2026-05-25T13:08:55Z\"}\nerror: failed to execute wrapped command: exit status 1\n",
+            "type": ""
+          },
+          {
+            "name": "Run multi-stage test telco5g-network-flow-matrix-bm - telco5g-network-flow-matrix-bm-gather-must-gather container test",
+            "classname": "",
+            "time": "181",
+            "message": "65] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nE0525 13:07:23.284991      53 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nerror completing cluster type inspection: error running backup collection: Get \"https://XXXXXXXXXXXX:64415/api?timeout=32s\": net/http: TLS handshake timeout\nFalling back to `oc adm inspect namespace/openshift-cluster-version` to collect basic cluster named resources.\nE0525 13:07:33.319128      53 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nE0525 13:07:43.347202      53 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nE0525 13:07:53.376175      53 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nE0525 13:08:03.407938      53 memcache.go:265] \"Unhandled Error\" err=\"couldn't get current server API group list: Get \\\"https://XXXXXXXXXXXX:64415/api?timeout=32s\\\": net/http: TLS handshake timeout\"\nerror completing cluster named resource inspection: error running backup collection: Get \"https://XXXXXXXXXXXX:64415/api?timeout=32s\": net/http: TLS handshake timeout\nerror: creating temp namespace: Post \"https://XXXXXXXXXXXX:64415/api/v1/namespaces\": net/http: TLS handshake timeout\n{\"component\":\"entrypoint\",\"error\":\"wrapped process failed: exit status 1\",\"file\":\"sigs.k8s.io/prow/pkg/entrypoint/run.go:84\",\"func\":\"sigs.k8s.io/prow/pkg/entrypoint.Options.internalRun\",\"level\":\"error\",\"msg\":\"Error executing test process\",\"severity\":\"error\",\"time\":\"2026-05-25T13:08:23Z\"}\nerror: failed to execute wrapped command: exit status 1\n",
+            "type": ""
+          },
+          {
+            "name": "Run multi-stage test telco5g-network-flow-matrix-bm - telco5g-network-flow-matrix-bm-telco5g-cluster-setup container test",
+            "classname": "",
+            "time": "86",
+            "message": "*****************************\n\nTASK [Get cluster version] *****************************************************\ntask path: /output/fetch-information.yml:7\nchanged: [XXXXXXXXXXXX] => {\n    \"ansible_facts\": {\n        \"discovered_interpreter_python\": \"/usr/bin/python3\"\n    },\n    \"changed\": true,\n    \"cmd\": \"kcli ssh root@cnfdu8-installer 'oc get clusterversion'\",\n    \"delta\": \"0:00:00.477642\",\n    \"end\": \"2026-05-25 09:04:34.454940\",\n    \"rc\": 0,\n    \"start\": \"2026-05-25 09:04:33.977298\"\n}\n\nSTDERR:\n\n\ufffd[31mVM cnfdu8-installer not found\ufffd[0m\n\nTASK [Get bmh objects] *********************************************************\ntask path: /output/fetch-information.yml:10\nchanged: [XXXXXXXXXXXX] => {\n    \"changed\": true,\n    \"cmd\": \"kcli ssh root@cnfdu8-installer 'oc get bmh -A'\",\n    \"delta\": \"0:00:00.457976\",\n    \"end\": \"2026-05-25 09:04:38.152104\",\n    \"rc\": 0,\n    \"start\": \"2026-05-25 09:04:37.694128\"\n}\n\nSTDERR:\n\n\ufffd[31mVM cnfdu8-installer not found\ufffd[0m\n\nTASK [Get nodes] ***************************************************************\ntask path: /output/fetch-information.yml:13\nchanged: [XXXXXXXXXXXX] => {\n    \"changed\": true,\n    \"cmd\": \"kcli ssh root@cnfdu8-installer 'oc get node'\",\n    \"delta\": \"0:00:00.456334\",\n    \"end\": \"2026-05-25 09:04:41.850032\",\n    \"rc\": 0,\n    \"start\": \"2026-05-25 09:04:41.393698\"\n}\n\nSTDERR:\n\n\ufffd[31mVM cnfdu8-installer not found\ufffd[0m\n\nPLAY RECAP *********************************************************************\nXXXXXXXXXXXX               : ok=3    changed=3    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   \n\n{\"component\":\"entrypoint\",\"error\":\"wrapped process failed: exit status 2\",\"file\":\"sigs.k8s.io/prow/pkg/entrypoint/run.go:84\",\"func\":\"sigs.k8s.io/prow/pkg/entrypoint.Options.internalRun\",\"level\":\"error\",\"msg\":\"Error executing test process\",\"severity\":\"error\",\"time\":\"2026-05-25T13:04:42Z\"}\ntime=\"2026-05-25T13:04:42Z\" level=warning msg=\"skipped directory \\\"~deadbeef\\\" when creating secret from directory \\\"/tmp/secret\\\"\"\nerror: failed to execute wrapped command: exit status 2\n",
+            "type": ""
+          },
+          {
+            "name": "Run multi-stage test telco5g-network-flow-matrix-bm - telco5g-network-flow-matrix-bm-telco5g-log-gather container test",
+            "classname": "",
+            "time": "26",
+            "message": "none-any.whl (14 kB)\nCollecting requests\n  Downloading requests-2.32.5-py3-none-any.whl (64 kB)\nCollecting MarkupSafe>=2.0\n  Downloading markupsafe-3.0.3-cp39-cp39-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (20 kB)\nCollecting idna<4,>=2.5\n  Downloading idna-3.16-py3-none-any.whl (74 kB)\nCollecting urllib3<3,>=1.21.1\n  Downloading urllib3-2.6.3-py3-none-any.whl (131 kB)\nCollecting certifi>=2017.4.17\n  Downloading certifi-2026.5.20-py3-none-any.whl (134 kB)\nCollecting charset_normalizer<4,>=2\n  Downloading charset_normalizer-3.4.7-cp39-cp39-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (208 kB)\nInstalling collected packages: urllib3, MarkupSafe, idna, charset-normalizer, certifi, requests, junitparser, jinja2\nSuccessfully installed MarkupSafe-3.0.3 certifi-2026.5.20 charset-normalizer-3.4.7 idna-3.16 jinja2-3.1.6 junitparser-4.0.2 requests-2.32.5 urllib3-2.6.3\nWARNING: You are using pip version 21.2.3; however, version 26.0.1 is available.\nYou should consider upgrading via the '/tmp/secret/myenv/bin/python3 -m pip install --upgrade pip' command.\n+ [[ -f /tmp/secret/cnf-tests-run.log ]]\n+ [[ -f /tmp/secret/cnf-validations-run.log ]]\n+ [[ -f /tmp/secret/cnf-tests-run.log ]]\n+ [[ -f /logs/artifacts/parsed-cnftests.json ]]\n+ [[ -f /logs/artifacts/parsed-validations.json ]]\n+ [[ -f /logs/artifacts/parsed-tests.json ]]\n+ rm -rf /tmp/secret/myenv\n+ set +x\nOC client version from the container:\nClient Version: 4.12.29\nKustomize Version: v4.5.7\nUnable to connect to the server: net/http: TLS handshake timeout\n{\"component\":\"entrypoint\",\"error\":\"wrapped process failed: exit status 1\",\"file\":\"sigs.k8s.io/prow/pkg/entrypoint/run.go:84\",\"func\":\"sigs.k8s.io/prow/pkg/entrypoint.Options.internalRun\",\"level\":\"error\",\"msg\":\"Error executing test process\",\"severity\":\"error\",\"time\":\"2026-05-25T13:05:16Z\"}\ntime=\"2026-05-25T13:05:16Z\" level=warning msg=\"skipped directory \\\"telco5gci\\\" when creating secret from directory \\\"/tmp/secret\\\"\"\nerror: failed to execute wrapped command: exit status 1\n",
+            "type": ""
+          },
+          {
+            "name": "Run multi-stage test telco5g-network-flow-matrix-bm - telco5g-network-flow-matrix-bm-telco5g-release-cluster container test",
+            "classname": "",
+            "time": "9",
+            "message": "e/ansible/plugins/modules']\n  ansible python module location = /usr/local/lib/python3.9/site-packages/ansible\n  ansible collection location = /output/.ansible/collections:/usr/share/ansible/collections\n  executable location = /usr/local/bin/ansible-playbook\n  python version = 3.9.19 (main, Jun 11 2024, 00:00:00) [GCC 11.4.1 20231218 (Red Hat 11.4.1-3)] (/usr/bin/python3)\n  jinja version = 3.1.4\n  libyaml = True\nNo config file found; using defaults\nSkipping callback 'default', as we already have a stdout callback.\nSkipping callback 'minimal', as we already have a stdout callback.\nSkipping callback 'oneline', as we already have a stdout callback.\n\nPLAYBOOK: destroy-cluster.yml **************************************************\n1 plays in /tmp/secret/destroy-cluster.yml\n\nPLAY [Delete cluster] **********************************************************\n\nTASK [Delete deployment plan] **************************************************\ntask path: /tmp/secret/destroy-cluster.yml:7\nfatal: [XXXXXXXXXXXX]: FAILED! => {\"ansible_facts\": {\"discovered_interpreter_python\": \"/usr/bin/python3\"}, \"changed\": true, \"cmd\": \"kcli delete plan -y cnfdu8_ci\", \"delta\": \"0:00:00.617278\", \"end\": \"2026-05-25 09:12:20.191845\", \"msg\": \"non-zero return code\", \"rc\": 4, \"start\": \"2026-05-25 09:12:19.574567\", \"stderr\": \"\\u001b[31mNo objects found during deletion of plan cnfdu8_ci\\u001b[0m\", \"stderr_lines\": [\"\\u001b[31mNo objects found during deletion of plan cnfdu8_ci\\u001b[0m\"], \"stdout\": \"\", \"stdout_lines\": []}\n\nPLAY RECAP *********************************************************************\nXXXXXXXXXXXX               : ok=0    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   \n\n{\"component\":\"entrypoint\",\"error\":\"wrapped process failed: exit status 2\",\"file\":\"sigs.k8s.io/prow/pkg/entrypoint/run.go:84\",\"func\":\"sigs.k8s.io/prow/pkg/entrypoint.Options.internalRun\",\"level\":\"error\",\"msg\":\"Error executing test process\",\"severity\":\"error\",\"time\":\"2026-05-25T13:12:20Z\"}\nerror: failed to execute wrapped command: exit status 2\n",
+            "type": ""
+          }
+        ],
+        "matrix_diff": {},
+        "investigation": {
+          "summary": "2 test(s) failed: Storage volume not found: no storage vol with matching name 'boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso'; ! => {\"ansible_facts\": {\"discovered_interpreter_python\": \"/usr/bin/python3\"}, \"changed\": true, \"cmd\": \"kcli delete plan -y cnfdu8_ci\", \"delta\": \"0:00:00.617278\", \"end\": \"2026-05-25 09:12:20.191845\", \"",
+          "root_cause": "Storage volume not found: no storage vol with matching name 'boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso'; ! => {\"ansible_facts\": {\"discovered_interpreter_python\": \"/usr/bin/python3\"}, \"changed\": true, \"cmd\": \"kcli delete plan -y cnfdu8_ci\", \"delta\": \"0:00:00.617278\", \"end\": \"2026-05-25 09:12:20.191845\", \"",
+          "failed_tests": [
+            {
+              "step": "telco5g-cluster-setup",
+              "name": "Storage volume not found: no storage vol with matching name 'boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso'",
+              "message": ""
+            },
+            {
+              "step": "telco5g-release-cluster",
+              "name": "! => {\"ansible_facts\": {\"discovered_interpreter_python\": \"/usr/bin/python3\"}, \"changed\": true, \"cmd\": \"kcli delete plan -y cnfdu8_ci\", \"delta\": \"0:00:00.617278\", \"end\": \"2026-05-25 09:12:20.191845\", \"",
+              "message": ""
+            }
+          ],
+          "source_files": [
+            {
+              "file": "mustgather.go",
+              "line": "480"
+            },
+            {
+              "file": "memcache.go",
+              "line": "265"
+            },
+            {
+              "file": "/tmp/secret/get-cluster-name.yml",
+              "line": "6"
+            },
+            {
+              "file": "/tmp/secret/get-cluster-name.yml",
+              "line": "14"
+            },
+            {
+              "file": "/tmp/secret/get-cluster-name.yml",
+              "line": "19"
+            },
+            {
+              "file": "/output/ocp-install.yml",
+              "line": "7"
+            },
+            {
+              "file": "/output/ocp-install.yml",
+              "line": "12"
+            },
+            {
+              "file": "/output/ocp-install.yml",
+              "line": "18"
+            },
+            {
+              "file": "/output/ocp-install.yml",
+              "line": "23"
+            },
+            {
+              "file": "/output/fetch-kubeconfig.yml",
+              "line": "7"
+            },
+            {
+              "file": "/output/fetch-kubeconfig.yml",
+              "line": "10"
+            },
+            {
+              "file": "/output/fetch-kubeconfig.yml",
+              "line": "16"
+            },
+            {
+              "file": "/output/fetch-kubeconfig.yml",
+              "line": "22"
+            },
+            {
+              "file": "/output/fetch-kubeconfig.yml",
+              "line": "29"
+            },
+            {
+              "file": "/output/fetch-information.yml",
+              "line": "7"
+            },
+            {
+              "file": "/output/fetch-information.yml",
+              "line": "10"
+            },
+            {
+              "file": "/output/fetch-information.yml",
+              "line": "13"
+            },
+            {
+              "file": "/tmp/secret/release-cluster.yml",
+              "line": "7"
+            },
+            {
+              "file": "/tmp/secret/destroy-cluster.yml",
+              "line": "7"
+            }
+          ],
+          "error_output": [
+            "libvirt.libvirtError: Storage volume not found: no storage vol with matching name 'boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso'",
+            "XXXXXXXXXXXX               : ok=3    changed=2    unreachable=0    failed=1    skipped=0    rescued=0    ignored=1",
+            "XXXXXXXXXXXX               : ok=5    changed=4    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0",
+            "XXXXXXXXXXXX               : ok=3    changed=3    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0",
+            "<XXXXXXXXXXXX> (0, b'ansible-tmp-1779714733.3785763-35-13357458077913=/home/XXXXXXXXXX/.ansible/tmp/ansible-tmp-1779714733.3785763-35-13357458077913\\n', b\"OpenSSH_8.7p1, OpenSSL 3.0.7 1 Nov 2022\\r\\ndebug1: Reading configuration data /etc/ssh/ssh_config\\r\\ndebug3: /etc/ssh/ssh_config line 55: Includi",
+            "<XXXXXXXXXXXX> (0, b'sftp> put /output/.ansible/tmp/ansible-local-31g1_m735q/tmplykwu_cw /home/XXXXXXXXXX/.ansible/tmp/ansible-tmp-1779714733.3785763-35-13357458077913/AnsiballZ_command.py\\n', b'OpenSSH_8.7p1, OpenSSL 3.0.7 1 Nov 2022\\r\\ndebug1: Reading configuration data /etc/ssh/ssh_config\\r\\ndebu",
+            "<XXXXXXXXXXXX> (0, b'\\r\\n{\"changed\": true, \"stdout\": \"\", \"stderr\": \"\", \"rc\": 0, \"cmd\": [\"python3\", \"~/telco5g-lab-deployment/scripts/upstream_cluster_all.py\", \"--release-cluster\", \"cnfdu8\"], \"start\": \"2026-05-25 09:12:14.499879\", \"end\": \"2026-05-25 09:12:14.620837\", \"delta\": \"0:00:00.120958\", \"msg\":",
+            "XXXXXXXXXXXX               : ok=1    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0",
+            "fatal: [XXXXXXXXXXXX]: FAILED! => {\"ansible_facts\": {\"discovered_interpreter_python\": \"/usr/bin/python3\"}, \"changed\": true, \"cmd\": \"kcli delete plan -y cnfdu8_ci\", \"delta\": \"0:00:00.617278\", \"end\": \"2026-05-25 09:12:20.191845\", \"msg\": \"non-zero return code\", \"rc\": 4, \"start\": \"2026-05-25 09:12:19.57",
+            "XXXXXXXXXXXX               : ok=0    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0"
+          ],
+          "suggested_fix": "2 test(s) failed:\n  - Storage volume not found: no storage vol with matching name 'boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso'\n  - ! => {\"ansible_facts\": {\"discovered_interpreter_python\": \"/usr/bin/python3\"}, \"changed\": true, \"cmd\": \"kcli delete plan -y cnfdu8_ci\", \"delta\": \"0:00:00.617278\", \"end\": \"2026-05-25 09:12:20.191845\", \"\n\nSource references: mustgather.go:480, memcache.go:265, /tmp/secret/get-cluster-name.yml:6, /tmp/secret/get-cluster-name.yml:14, /tmp/secret/get-cluster-name.yml:19\nCheck if this is a flake (retry the job) or a real regression from a recent commit.",
+          "severity": "MEDIUM",
+          "fix_type": "test_investigation"
+        },
+        "artifacts": {
+          "ss_findings": [],
+          "stale_info": [],
+          "all_artifacts": {},
+          "text_summary": ""
+        },
+        "pr_url": "",
+        "log_snippet": ":20.191845\", \"msg\": \"non-zero return code\", \"rc\": 4, \"start\": \"2026-05-25 09:12:19.574567\", \"stderr\": \"\\u001b[31mNo objects found during deletion of plan cnfdu8_ci\\u001b[0m\", \"stderr_lines\": [\"\\u001b[31mNo objects found during deletion of plan cnfdu8_ci\\u001b[0m\"], \"stdout\": \"\", \"stdout_lines\": []}\n\nPLAY RECAP *********************************************************************\nXXXXXXXXXXXX               : ok=0    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   \n"
+      }
     },
     {
       "name": "periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm",
@@ -192,7 +374,7 @@
         "reason": "Test failed: Import the release payload \"latest\" from an external source",
         "layer": "ci_step",
         "layer_label": "cli",
-        "ai_summary": "Here is the same analysis (cleaned up from the shell output):\n\n---\n\n**Root Cause:** The job never reached this repo\u2019s tests. Ci-operator stopped at the prerequisite step **`[release:latest]`** while importing the OpenShift nightly release payload. It failed when resolving the **`cli`** image: tag **`cli`** could not be imported onto the ephemeral **`ImageStream`** `ci-op-rgrf29g9/stable` because of **missing definition in the spec**\u2014i.e. the **`stable`** stream never got a usable **`cli`** tag from the release-import graph. That is release-import / CI orchestration on the build cluster, not a failing assertion or bug in **commatrix** Go code.\n\n**Is it a flake?** **Uncertain.** **Retry** (another periodic run or retest if applicable) is reasonable in case of transient registry or ImageStream reconcile issues. The message **\u201cmissing definition in the spec\u201d** is also consistent with a **repeatable** payload or **openshift/release** plumbing issue (e.g. **`cli`** not present where ci-operator expects it on **`stable`**). JUnit naming (\u201cImport the release payload \u2026\u201d) matches ci-operator\u2019s synthetic step, not `go test` output from this tree.\n\n**Code Path:** **No** failing function or line in **commatrix**. The failure is in **ci-operator\u2019s release import / wait for `stable` (including `cli`)** before **`aws-ovn-network-flow-matrix-single-node`** runs.\n\n**Suggested Fix:** **No change in this repo.** If it keeps happening, escalate to **openshift/release** / nightly **5.x** payload and **test-platform** for **`release:latest`** and **`stable:cli`**. If it\u2019s isolated, **retry the job**.\n\n**Fix Written:** **no** (no `./ci-evidence/fix.patch`; per your instructions this is infra-level, not a product code defect here).\n\n**Severity:** **LOW** for **commatrix** (nothing in-tree failed). **HIGH** operational impact for **that job** until import succeeds; treat as **MEDIUM/HIGH** for release/CI owners if **`importing_release`** failures cluster across runs.\n\n---\n\nThat block was also printed to stdout via `cat <<'ANALYSIS' \u2026` as requested.",
+        "ai_summary": "**Root Cause:** The job stopped in the openshift CI provisioning step **`release:latest`**, not while running repo tests. Ci-operator imported nightly payload `registry.ci.openshift.org/ocp/release-5:5.0.0-0.nightly-2026-05-25-010342` into the build namespace, then tried to ensure the **`cli`** image existed on **`ImageStream/ci-op-rgrf29g9/stable`**. Kubernetes reported that the **`cli`** tag could not be imported because **that tag did not appear in (or lacked a usable reference in) the import spec**. So the CLI image dependency for the assembled \u201cstable\u201d stream never became available within the allotted wait. Typical drivers are a **broken or incomplete nightly release payload** (metadata missing/hiding the `cli` image), **registry/metadata inconsistency**, or occasionally **temporary cluster/registry/API flakes** during that import/wait phase.\n\n**Is it a flake?** **Either way is plausible.** From a single failing run alone you cannot distinguish a **retry-friendly infra flake** from a **systematic problem with that nightly**. If retries on the **same nightly** consistently fail while **other nightly tags** succeed, treat it as a **payload/ci-operator compatibility** issue rather than flake. Per-run retry is reasonable for **transitory** infra only.\n\n**Code Path:** There is **no failing test or function in this workspace** (`github.com/openshift-kni/commatrix`). The stack is **ci-operator** (build log shows `ci-operator version v20260525-46d397526`) during **release image import** \u2192 **wait for `cli` on the `stable` stream** \u2192 **ImageStream tag import** error: `failed to import tag(s) [cli] ... because of missing definition in the spec`. The JUnit entry \u201cImport the release payload latest from an external source\u201d is how that **CI step** is surfaced, not an e2e test under `test/e2e/` here.\n\n**Suggested Fix:** **No code change in commatrix applies.** Actionable next steps: **re-run the job** once to rule out transient failure; if it persists, **inspect that nightly\u2019s payload and `cli` image availability** (openshift/release / release-controller / payload promotion) and **ci-operator** behavior for 5.0 nightlies with the team that owns **ci-operator** and **OCP 5.0 nightly composition**.\n\n**Fix Written:** **no** (no `fix.patch`; this is **CI/payload/infra-level**, not an application or test bug in this repository).\n\n**Severity:** **MEDIUM** for this repository (no product defect); **HIGH** for **CI signal** on that job until the **release import** path succeeds again.",
         "junit_failures": [
           {
             "name": "Import the release payload \"latest\" from an external source",
@@ -270,7 +452,7 @@
         "reason": "Errors found: Suite run returned error: 1 blocking fail, 0 informing fail, 1984 pass, 0 flaky, 2072 skip (1h33m8s); error: error running a test suite: 1 blocking fail, 0 informing fail, 1984 pass, 0 flaky, 2072 skip ",
         "layer": "test_suite",
         "layer_label": "baremetalds-e2e-test",
-        "ai_summary": "",
+        "ai_summary": "**Root Cause:** The job failed exactly one blocking e2e: `[sig-olmv1][OCPFeatureGate:NewOLM][Skipped:Disconnected] OLMv1 operator installation should install an openshift catalog cluster extension`. During the scenario, ClusterExtension `install-test-ce-*` stayed in retry with errors like `error walking catalogs: error getting package \"quay-operator\" from catalog \"openshift-community-operators\": cache for ca\u2026` until it timed out (~10 minutes) at `/build/openshift/tests-extension/pkg/helpers/cluster_extension.go:170`. ClusterCatalog CRs (`openshift-community-operators`, etc.) looked healthy (Progressing/Serving True), but catalog resolution failed for package `quay-operator`. That is a **Conformance / OLMv1** failure; the `ci-evidence` network-matrix nftables/MC/gather artefacts do not explain it.\n\n**Category:** test failure (OLMv1 / openshift catalog path and tests-extension helpers), not matrix mismatch.\n\n**Suggested Fix:**\n- In **`openshift/tests-extension`** and/or **`olmv1-tests-ext`**: diagnose the catalog walk/cache error for `quay-operator` on this profile (baremetal, `--external-connectivity=Proxied`); broaden skip rules if mirrored/proxy clusters should not run this `[Skipped:Disconnected]` test only when labeled \u201cDisconnected\u201d.\n- If the bug is elsewhere, **`catalogd` / OLM backend** owns cache consistency versus Serving status.\n- **openshift/release** may temporarily tune the periodic\u2019s test suite while the above is fixed.\n\n**Fix Written:** no \u2014 workspace is **`github.com/openshift-kni/commatrix`**; fixes belong in openshift tests-extension / OLM, not here (`./ci-evidence/fix.patch` not created).\n\n**Severity:** HIGH \u2014 one blocking failure turns the entire lane red despite ~1984 passes.\n\nEvidence path: blocking failure quoted in CI `build-log.txt` (\u201cBlocking test failures\u201d); detailed failure lines came from curling the artefacts URL listed in `./ci-evidence/prow-urls.txt` (baremetalds-e2e-test step log). The same summary was printed to the terminal stdout via a here-doc.",
         "junit_failures": [
           {
             "name": "Run multi-stage test e2e-metal-ipi-ovn-upgrade-network-flow-matrix - e2e-metal-ipi-ovn-upgrade-network-flow-matrix-baremetalds-e2e-test container test",
