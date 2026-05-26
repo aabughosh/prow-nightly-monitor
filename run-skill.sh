@@ -80,15 +80,17 @@ else
 fi
 
 # Step 5: Copy Cursor AI dashboard to dedicated path
-log "Copying dashboard to public/cursor/..."
+log "Copying dashboard to public/cursor/ and docs/..."
 mkdir -p "$REPO_DIR/public/cursor"
 cp "$REPO_DIR/public/index.html" "$REPO_DIR/public/cursor/index.html"
 cp "$REPO_DIR/public/results.json" "$REPO_DIR/public/cursor/results.json"
+rm -rf "$REPO_DIR/docs"
+cp -r "$REPO_DIR/public" "$REPO_DIR/docs"
 
 # Step 6: Push dashboard to GitHub Pages
 log "Pushing dashboard to GitHub Pages..."
 cd "$REPO_DIR"
-git add public/index.html public/results.json public/history.html public/history.json public/runs/ public/cursor/ 2>/dev/null
+git add public/index.html public/results.json public/history.html public/history.json public/runs/ public/cursor/ docs/ 2>/dev/null
 if git diff --cached --quiet; then
     log "No dashboard changes to push"
 else
