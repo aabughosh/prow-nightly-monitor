@@ -36,7 +36,7 @@ export SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
 export OUTPUT_DIR="$REPO_DIR/public"
 export SKIP_AI="true"
 
-pip3 install requests -q 2>/dev/null
+pip3 install requests -q 2>/dev/null || true
 if ! python3 monitor.py >> "$LOG_FILE" 2>&1; then
     log "ERROR: monitor.py failed — aborting"
     exit 1
@@ -59,11 +59,13 @@ else
 fi
 
 # Step 3: Verify Cursor CLI auth before running agent on each failure
+cd /tmp
 if ! "$CURSOR_CLI" agent status >> "$LOG_FILE" 2>&1; then
     log "WARNING: Cursor CLI not authenticated — skipping AI analysis"
     log "Run: $CURSOR_CLI agent login"
 else
     log "Cursor CLI authenticated — running agent on failures..."
+    cd "$REPO_DIR"
     if ! python3 "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
         log "WARNING: inject_claude.py had errors (see above)"
     fi
