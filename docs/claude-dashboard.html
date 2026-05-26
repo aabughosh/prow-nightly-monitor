@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Investigation — network-flow-matrix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e1e4e8; min-height: 100vh; }
+
+  .header { background: linear-gradient(135deg, #161b22 0%, #1a1e2e 50%, #2d1b4e 100%); padding: 20px 32px; border-bottom: 1px solid #30363d; }
+  .header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; }
+  .header h1 code { background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 6px; font-size: 16px; }
+  .header .meta { color: #8b949e; font-size: 12px; margin-top: 4px; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px 32px; }
+
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; text-align: center; }
+  .stat-num { font-size: 32px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+  .green { color: #3fb950; }
+  .red { color: #f85149; }
+  .blue { color: #58a6ff; }
+  .yellow { color: #d29922; }
+
+  .categories { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .cat-card { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; background: #161b22; border: 1px solid #30363d; cursor: pointer; transition: all 0.2s; min-width: 130px; font: inherit; color: inherit; }
+  .cat-card:hover { border-color: #58a6ff; transform: translateY(-1px); }
+  .cat-card .cat-count { font-size: 22px; font-weight: 700; }
+  .cat-card .cat-name { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; text-align: left; }
+  .cat-card.matrix { border-left: 4px solid #f0883e; }
+  .cat-card.matrix .cat-count { color: #f0883e; }
+  .cat-card.test { border-left: 4px solid #f85149; }
+  .cat-card.test .cat-count { color: #f85149; }
+  .cat-card.infra { border-left: 4px solid #d29922; }
+  .cat-card.infra .cat-count { color: #d29922; }
+  .cat-card.build { border-left: 4px solid #da3633; }
+  .cat-card.build .cat-count { color: #da3633; }
+  .cat-card.unknown { border-left: 4px solid #484f58; }
+  .cat-card.unknown .cat-count { color: #8b949e; }
+
+  .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 12px 16px; background: #161b22; border-radius: 10px; border: 1px solid #30363d; }
+  .filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+  .filter-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 5px 12px; border-radius: 16px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+  .filter-btn:hover { background: #30363d; border-color: #58a6ff; }
+  .filter-btn.active { background: #388bfd26; border-color: #58a6ff; color: #58a6ff; }
+  .filter-sep { width: 1px; height: 20px; background: #30363d; margin: 0 6px; }
+
+  table { width: 100%; border-collapse: separate; border-spacing: 0; background: #161b22; border-radius: 10px; overflow: hidden; border: 1px solid #30363d; }
+  th { background: #1c2128; color: #8b949e; padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; border-bottom: 1px solid #30363d; }
+  td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: top; }
+  tr:hover { background: #1c2128; }
+  tr.row-success td { opacity: 0.7; }
+  tr.row-success:hover td { opacity: 1; }
+  tr.row-pending td { opacity: 0.9; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  details { margin-top: 6px; }
+  summary { cursor: pointer; color: #58a6ff; font-size: 12px; padding: 4px 0; list-style: none; user-select: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '\25B6  '; font-size: 9px; color: #8b949e; }
+  details[open] > summary::before { content: '\25BC  '; }
+  details[open] summary { margin-bottom: 6px; }
+  .detail-inner { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px; font-size: 12px; color: #c9d1d9; margin-top: 4px; max-height: 560px; overflow-y: auto; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: white; }
+  .badge-infra { background: #d29922; }
+  .badge-test { background: #f85149; }
+  .badge-build { background: #da3633; }
+  .badge-matrix { background: #f0883e; }
+  .badge-error { background: #8b949e; }
+  .badge-unknown { background: #484f58; }
+  .badge-fix { background: #3fb950; }
+  .version-badge { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 5px; }
+
+  .fix-box { background: #0d1117; border: 1px solid #238636; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+  .fix-box-title { font-size: 10px; font-weight: 600; color: #3fb950; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .fix-box-content { font-size: 11px; color: #c9d1d9; font-family: 'SF Mono', 'Fira Code', monospace; line-height: 1.4; white-space: pre-wrap; }
+
+  .test-name { color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .test-file { color: #58a6ff; font-size: 11px; }
+  .test-msg { color: #8b949e; font-size: 11px; margin-top: 2px; white-space: pre-wrap; }
+
+  code { background: #21262d; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; }
+
+  .footer { margin-top: 32px; padding: 16px; text-align: center; color: #484f58; font-size: 11px; border-top: 1px solid #21262d; }
+  .footer a { color: #58a6ff; }
+
+  @media (max-width: 768px) {
+    .stats { grid-template-columns: repeat(3, 1fr); }
+    .categories { flex-direction: column; }
+    .container { padding: 12px; }
+    .header { padding: 12px; }
+    table { font-size: 12px; }
+  }
+
+  .nav-row { margin-bottom: 14px; font-size: 13px; }
+  .section-label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .muted { color: #6e7681; font-size: 12px; }
+  .preview { font-size: 12px; color: #c9d1d9; margin-bottom: 6px; line-height: 1.4; }
+  .mono-pre { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; background: #0d1117; padding: 8px; border-radius: 6px; margin-top: 4px; max-height: 240px; overflow-y: auto; }
+  .details-cell { min-width: 260px; max-width: 560px; }
+  .ft-list { margin: 6px 0 0 16px; color: #c9d1d9; }
+  .junit-one { margin-bottom: 12px; border-bottom: 1px solid #21262d; padding-bottom: 8px; }
+  .matrix-diff ul { margin: 4px 0 10px 20px; }
+  .subtable { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px; }
+  .subtable th, .subtable td { border: 1px solid #30363d; padding: 6px 8px; vertical-align: top; }
+  .subtable th { background: #1c2128; }
+  .mono-small { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px; word-break: break-all; }
+  .load-err { background: #3d1311; border: 1px solid #f85149; color: #f0f6fc; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1 id="dashTitle">Claude Investigation — <code id="jobFilterCod">network-flow-matrix</code></h1>
+  <div class="meta">Reads <code>results.json</code> via fetch (same directory) · <span id="genAt">loading…</span></div>
+</div>
+
+<div class="container">
+
+<p class="nav-row">← <a href="index.html">Main dashboard</a> · <a href="history.html">Run history</a></p>
+
+<p class="muted" style="margin-bottom:14px;line-height:1.5;border-left:3px solid #58a6ff;padding-left:12px;">
+  For a <strong>self-contained</strong> copy with all data inlined (no <code>fetch</code>), run from the repo root:
+  <code style="background:#21262d;padding:2px 6px;border-radius:4px;">python3 scripts/embed_claude_dashboard.py</code>.
+  Alternative static layout: <code style="background:#21262d;padding:2px 6px;border-radius:4px;">python3 generate_claude_dashboard.py --from-results public/results.json</code>.
+</p>
+
+<div id="loadError" class="load-err" style="display:none"></div>
+
+<div class="stats" id="statsRow">
+  <div class="stat"><div class="stat-num" id="stTotal">—</div><div class="stat-label">Total Jobs</div></div>
+  <div class="stat"><div class="stat-num green" id="stPass">—</div><div class="stat-label">Passed</div></div>
+  <div class="stat"><div class="stat-num red" id="stFail">—</div><div class="stat-label">Failed</div></div>
+  <div class="stat"><div class="stat-num blue" id="stPend">—</div><div class="stat-label">Pending</div></div>
+  <div class="stat"><div class="stat-num" id="stRate">—</div><div class="stat-label">Pass Rate</div></div>
+</div>
+
+<p class="section-label">Failure types (failed jobs) · <button type="button" class="filter-btn" style="margin-left:4px;padding:2px 10px;font-size:11px" onclick="clearCat()">Clear filter</button></p>
+<div class="categories" id="catBar"></div>
+
+<div class="filters" id="filterBar">
+  <span class="filter-label">Version</span>
+  <button type="button" class="filter-btn active ver-filter" data-ver="">All</button>
+  <span id="verBtns"></span>
+  <div class="filter-sep"></div>
+  <span class="filter-label">Status</span>
+  <button type="button" class="filter-btn active state-filter" data-state="">All</button>
+  <button type="button" class="filter-btn state-filter" data-state="failure">Failed</button>
+  <button type="button" class="filter-btn state-filter" data-state="success">Passed</button>
+  <button type="button" class="filter-btn state-filter" data-state="pending">Pending</button>
+</div>
+
+<table id="jobsTable">
+<thead>
+<tr>
+  <th>Status</th>
+  <th>Ver</th>
+  <th>Job</th>
+  <th>Dur</th>
+  <th>Failure type</th>
+  <th>Investigation / analysis</th>
+</tr>
+</thead>
+<tbody id="jobsBody"></tbody>
+</table>
+
+<p class="muted" style="margin-top:16px;line-height:1.5"><code>results.json</code> is fetched with <code>cache: 'no-store'</code> and a URL cache-buster so the dashboard shows the latest file on disk (HTTP/1 tools may vary). Serve this folder over HTTP alongside <code>results.json</code>.</p>
+
+<div class="footer">
+  <a href="https://github.com/aabughosh/prow-nightly-monitor">prow-nightly-monitor</a> |
+  Data from <a id="prowFoot" href="https://prow.ci.openshift.org/?type=periodic&amp;job=*network-flow-matrix*">Prow</a> |
+  <a href="index.html">Main dashboard</a> |
+  <a href="history.html">Run history</a>
+</div>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  function esc(s) {
+    if (s === null || s === undefined) return '';
+    var d = document.createElement('div');
+    d.textContent = String(s);
+    return d.innerHTML;
+  }
+
+  function catCardClass(cat) {
+    if (cat === 'matrix_mismatch') return 'matrix';
+    if (cat === 'test_failure') return 'test';
+    if (cat === 'infra') return 'infra';
+    if (cat === 'build_failure') return 'build';
+    return 'unknown';
+  }
+
+  function analysisBadge(cat) {
+    if (!cat) return '<span class="badge badge-unknown">—</span>';
+    if (cat === 'matrix_mismatch') return '<span class="badge badge-matrix">MATRIX</span>';
+    if (cat === 'test_failure') return '<span class="badge badge-test">TEST</span>';
+    if (cat === 'infra') return '<span class="badge badge-infra">INFRA</span>';
+    if (cat === 'build_failure') return '<span class="badge badge-build">BUILD</span>';
+    return '<span class="badge badge-unknown">' + esc(cat) + '</span>';
+  }
+
+  function badgeState(state) {
+    if (state === 'success') return '<span class="badge badge-fix">PASSED</span>';
+    if (state === 'failure') return '<span class="badge badge-test">FAILED</span>';
+    if (state === 'pending') return '<span class="badge badge-infra">PENDING</span>';
+    return '<span class="badge badge-unknown">' + esc(state || '') + '</span>';
+  }
+
+  function matrixDiffHtml(md, cat) {
+    if (cat !== 'matrix_mismatch' || !md || typeof md !== 'object') return '';
+    var keys = ['summary', 'stale_ports', 'no_endpointslice_ports', 'undocumented_ports'];
+    var has = keys.some(function (k) { return md[k] && (Array.isArray(md[k]) ? md[k].length : String(md[k]).length); });
+    if (!has) return '';
+
+    var h = '<div class="matrix-diff"><h4 style="margin:8px 0 4px;color:#f0883e;">Matrix diff</h4>';
+    if (md.summary) h += '<p><strong>Summary</strong>: ' + esc(md.summary) + '</p>';
+
+    [['Stale / documented but not open', 'stale_ports'], ['No EndpointSlice match', 'no_endpointslice_ports'], ['Undocumented ports', 'undocumented_ports']].forEach(function (pair) {
+      var lbl = pair[0], key = pair[1];
+      var arr = md[key];
+      if (!Array.isArray(arr) || !arr.length) return;
+      h += '<p><strong>' + esc(lbl) + '</strong></p><ul>';
+      arr.forEach(function (item) { h += '<li><code>' + esc(item) + '</code></li>'; });
+      h += '</ul>';
+    });
+    h += '</div>';
+    return h;
+  }
+
+  function ssFindingsTable(ff) {
+    if (!ff || !ff.length) return '';
+    var h = '<div class="ss-wrap"><h4 style="margin:8px 0 4px;color:#58a6ff;">artifacts.ss_findings</h4>';
+    h += '<table class="subtable"><thead><tr><th>Port</th><th>Process</th><th>Matrix entry</th><th><code>ss</code> line</th></tr></thead><tbody>';
+    ff.forEach(function (f) {
+      h += '<tr><td><code>' + esc(f.port || '') + '</code></td><td><code>' + esc(f.proc || '') + '</code> <small>(pid ' + esc(f.pid || '') + ')</small></td>';
+      h += '<td>' + esc(f.entry || '') + '</td><td class="mono-small">' + esc(f.ss_line || '') + '</td></tr>';
+    });
+    h += '</tbody></table></div>';
+    return h;
+  }
+
+  function failedTestsHtml(fts) {
+    if (!fts || !fts.length) return '';
+    var h = '<ul class="ft-list">';
+    fts.forEach(function (ft) {
+      h += '<li><span class="test-file">' + esc(ft.step || '') + '</span> — <span class="test-name">' + esc(ft.name || '') + '</span>';
+      if (ft.message) h += '<div class="test-msg">' + esc(ft.message) + '</div>';
+      h += '</li>';
+    });
+    h += '</ul>';
+    return h;
+  }
+
+  function junitHtml(jf) {
+    if (!jf || !jf.length) return '';
+    var h = '<div class="junit-stack">';
+    jf.forEach(function (t) {
+      h += '<div class="junit-one"><div class="test-name">' + esc(t.name || '') + '</div><pre class="mono-pre">' + esc(t.message || '') + '</pre></div>';
+    });
+    h += '</div>';
+    return h;
+  }
+
+  var filterStateVals = { ver: '', state: '', cat: '' };
+
+  function applyAllFilters() {
+    var fv = filterStateVals;
+    document.querySelectorAll('#jobsTable tbody tr').forEach(function (row) {
+      var okV = !fv.ver || row.dataset.version === fv.ver;
+      var okS = !fv.state || row.dataset.state === fv.state;
+      var okC = true;
+      if (fv.cat) {
+        okC = row.dataset.state === 'failure' && row.dataset.category === fv.cat;
+      }
+      row.style.display = okV && okS && okC ? '' : 'none';
+    });
+  }
+
+  function render(data) {
+    var jobs = data.jobs || [];
+    var gen = data.generated_at || '(unknown)';
+    var jf = data.job_filter || 'network-flow-matrix';
+    document.getElementById('genAt').textContent = gen;
+    document.getElementById('jobFilterCod').textContent = jf;
+    document.getElementById('prowFoot').href = 'https://prow.ci.openshift.org/?type=periodic&job=*' + encodeURIComponent(jf) + '*';
+
+    var total = data.total_jobs != null ? data.total_jobs : jobs.length;
+    var passed = data.passed != null ? data.passed : jobs.filter(function (j) { return j.state === 'success'; }).length;
+    var failed = data.failed != null ? data.failed : jobs.filter(function (j) { return j.state === 'failure'; }).length;
+    var pending = jobs.filter(function (j) { return j.state === 'pending'; }).length;
+    var finished = passed + failed;
+    var passRate = finished ? Math.round(1000 * passed / finished) / 10 : 0;
+
+    document.getElementById('stTotal').textContent = total;
+    document.getElementById('stPass').textContent = passed;
+    document.getElementById('stFail').textContent = failed;
+    document.getElementById('stPend').textContent = pending;
+    document.getElementById('stRate').textContent = passRate + '%';
+    document.getElementById('stRate').className = 'stat-num ' + (passRate >= 50 ? 'green' : 'yellow');
+
+    /* category counts */
+    var catCounts = {};
+    jobs.forEach(function (j) {
+      if (j.state !== 'failure') return;
+      var cat = ((j.analysis || {}).category) || '(no_category)';
+      catCounts[cat] = (catCounts[cat] || 0) + 1;
+    });
+    var catKeys = Object.keys(catCounts).sort(function (a, b) { return catCounts[b] - catCounts[a] || a.localeCompare(b); });
+    var bar = document.getElementById('catBar');
+    bar.innerHTML = '';
+    if (!catKeys.length) {
+      bar.innerHTML = '<span class="muted">No failures in this run.</span>';
+    } else {
+      catKeys.forEach(function (cat) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'cat-card ' + catCardClass(cat === '(no_category)' ? '' : cat);
+        btn.dataset.cat = cat;
+        btn.onclick = function () { window.filterCat(this.dataset.cat); };
+        btn.innerHTML = '<span class="cat-count">' + catCounts[cat] + '</span><span class="cat-name">' + esc(cat === '(no_category)' ? 'no category' : cat) + '</span>';
+        bar.appendChild(btn);
+      });
+    }
+
+    /* version buttons */
+    var versions = {};
+    jobs.forEach(function (j) { if (j.version) versions[String(j.version)] = 1; });
+    var vb = Object.keys(versions).sort();
+    var verBtns = document.getElementById('verBtns');
+    verBtns.innerHTML = '';
+    vb.forEach(function (v) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'filter-btn ver-filter';
+      b.dataset.ver = v;
+      b.textContent = v;
+      verBtns.appendChild(b);
+    });
+
+    var tbody = document.getElementById('jobsBody');
+    tbody.innerHTML = '';
+    jobs.forEach(function (j, idx) {
+      var an = j.analysis || {};
+      var cat = an.category || '';
+      var row = document.createElement('tr');
+      var state = j.state || '';
+      row.dataset.state = state;
+      row.dataset.category = state === 'failure' ? (cat || '(no_category)') : '';
+      row.dataset.version = String(j.version || '');
+      if (state === 'success') row.className = 'row-success';
+      else if (state === 'pending') row.className = 'row-pending';
+
+      var inv = an.investigation || {};
+      var previewText = String(an.reason || inv.summary || '—');
+
+      var detailsCell = '';
+      if (state !== 'failure') {
+        detailsCell = '<span class="muted">No investigation (job did not fail).</span>';
+      } else if (!Object.keys(an).length) {
+        detailsCell = '<span class="muted">No analysis captured.</span>';
+      } else {
+        var pr = previewText.length > 220 ? previewText.slice(0, 220) + '…' : previewText;
+        var invBlock = '';
+        invBlock += '<details class="detail-block"><summary>Investigation</summary><div class="detail-inner">';
+        invBlock += '<p><strong>Summary</strong></p><pre class="mono-pre">' + esc(inv.summary || '') + '</pre>';
+        invBlock += '<p><strong>Root cause</strong></p><pre class="mono-pre">' + esc(inv.root_cause || '') + '</pre>';
+        invBlock += '<p><strong>Suggested fix</strong></p><div class="fix-box"><div class="fix-box-title">Suggested fix</div><div class="fix-box-content">' + esc(inv.suggested_fix || '') + '</div></div>';
+        var ftHtml = failedTestsHtml(inv.failed_tests || []);
+        invBlock += '<p><strong>Failed tests</strong>' + (ftHtml || ' — <span class="muted">(none parsed)</span>') + '</p>';
+        var ju = junitHtml(an.junit_failures || []);
+        invBlock += '<p><strong>JUnit / error messages</strong>' + (ju || ' — <span class="muted">(none)</span>') + '</p>';
+        invBlock += matrixDiffHtml(an.matrix_diff || {}, cat);
+        var art = an.artifacts || {};
+        invBlock += ssFindingsTable(art.ss_findings || []);
+        invBlock += '</div></details>';
+
+        invBlock += '<details class="detail-block"><summary>AI Analysis</summary><div class="detail-inner">';
+        invBlock += '<p><strong>reason</strong></p><pre class="mono-pre">' + esc(an.reason || '') + '</pre>';
+        invBlock += '<p><strong>layer</strong>: <code>' + esc(an.layer_label || an.layer || '') + '</code></p>';
+        var ai = String(an.ai_summary || '').trim();
+        invBlock += '<p><strong>ai_summary</strong></p><pre class="mono-pre">' + (ai ? esc(ai) : '(empty)') + '</pre>';
+        invBlock += '</div></details>';
+
+        detailsCell = '<div class="preview">' + esc(pr) + '</div>' + invBlock;
+      }
+
+      row.innerHTML =
+        '<td>' + badgeState(state) + '</td>' +
+        '<td><span class="version-badge">' + esc(j.version || '') + '</span></td>' +
+        '<td><a href="' + esc(j.url || '#') + '" target="_blank" rel="noopener noreferrer">' + esc(j.name || '') + '</a></td>' +
+        '<td>' + esc(j.duration || '') + '</td>' +
+        '<td>' + (state === 'failure' ? analysisBadge(cat) : '—') + '</td>' +
+        '<td class="details-cell">' + detailsCell + '</td>';
+
+      tbody.appendChild(row);
+    });
+
+    filterStateVals = { ver: '', state: '', cat: '' };
+    document.querySelectorAll('.ver-filter').forEach(function (b) {
+      b.classList.toggle('active', (b.dataset.ver || '') === '');
+    });
+    document.querySelectorAll('.state-filter').forEach(function (b) {
+      b.classList.toggle('active', (b.dataset.state || '') === '');
+    });
+    applyAllFilters();
+  }
+
+  function attachFilterDelegates() {
+    var bar = document.getElementById('filterBar');
+    if (!bar || bar.dataset.bound) return;
+    bar.dataset.bound = '1';
+    bar.addEventListener('click', function (ev) {
+      var tgt = ev.target;
+      if (!tgt || tgt.tagName !== 'BUTTON') return;
+      if (tgt.classList.contains('ver-filter')) {
+        filterStateVals.ver = tgt.dataset.ver || '';
+        bar.querySelectorAll('.ver-filter').forEach(function (b) { b.classList.remove('active'); });
+        tgt.classList.add('active');
+        applyAllFilters();
+      }
+      if (tgt.classList.contains('state-filter')) {
+        filterStateVals.state = tgt.dataset.state || '';
+        bar.querySelectorAll('.state-filter').forEach(function (b) { b.classList.remove('active'); });
+        tgt.classList.add('active');
+        applyAllFilters();
+      }
+    });
+  }
+
+  attachFilterDelegates();
+
+  window.filterCat = function (cat) {
+    filterStateVals.cat = cat || '';
+    applyAllFilters();
+  };
+
+  window.clearCat = function () {
+    filterStateVals.cat = '';
+    applyAllFilters();
+  };
+
+  var bust = '?t=' + Date.now();
+  fetch('results.json' + bust, { cache: 'no-store' })
+    .then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' loading results.json');
+      return r.json();
+    })
+    .then(render)
+    .catch(function (e) {
+      var el = document.getElementById('loadError');
+      el.style.display = '';
+      el.textContent = 'Could not load results.json — ' + (e.message || String(e));
+    });
+})();
+</script>
+</body>
+</html>
