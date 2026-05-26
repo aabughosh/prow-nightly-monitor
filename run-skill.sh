@@ -8,7 +8,7 @@ REPO_DIR="$HOME/Documents/GitHub/prow-nightly-monitor"
 LOG_FILE="$REPO_DIR/skill-run.log"
 MAX_LOG_SIZE=$((5 * 1024 * 1024))  # 5 MB
 
-export PATH="/Applications/Cursor.app/Contents/Resources/app/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+export PATH="/opt/homebrew/bin:/Applications/Cursor.app/Contents/Resources/app/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 # Rotate log if it gets too large
 if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || echo 0)" -gt "$MAX_LOG_SIZE" ]; then
@@ -77,10 +77,16 @@ else
     unset RENDER_ONLY
 fi
 
-# Step 5: Push dashboard to GitHub Pages
+# Step 5: Copy Cursor AI dashboard to dedicated path
+log "Copying dashboard to public/cursor/..."
+mkdir -p "$REPO_DIR/public/cursor"
+cp "$REPO_DIR/public/index.html" "$REPO_DIR/public/cursor/index.html"
+cp "$REPO_DIR/public/results.json" "$REPO_DIR/public/cursor/results.json"
+
+# Step 6: Push dashboard to GitHub Pages
 log "Pushing dashboard to GitHub Pages..."
 cd "$REPO_DIR"
-git add public/index.html public/results.json public/history.html public/history.json public/runs/ 2>/dev/null
+git add public/index.html public/results.json public/history.html public/history.json public/runs/ public/cursor/ 2>/dev/null
 if git diff --cached --quiet; then
     log "No dashboard changes to push"
 else
@@ -88,12 +94,12 @@ else
     git push origin main >> "$LOG_FILE" 2>&1 && log "Dashboard pushed to GitHub Pages" || log "WARNING: git push failed"
 fi
 
-# Step 6: Send Slack summary
+# Step 7: Send Slack summary
 if [ -n "$SLACK_WEBHOOK_URL" ]; then
     log "Sending Slack summary..."
     python3 -c "import sys; sys.path.insert(0,'$REPO_DIR'); from inject_claude import send_slack_summary; send_slack_summary()" >> "$LOG_FILE" 2>&1 || true
 fi
 
-# Step 7: Open the dashboard
+# Step 8: Open the dashboard
 open "$REPO_DIR/public/index.html"
 log "=== Done ==="

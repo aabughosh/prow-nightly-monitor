@@ -30,7 +30,7 @@ MAX_RESULTS_SIZE = 50 * 1024 * 1024
 AGENT_TIMEOUT = 300  # 5 minutes per job
 OPEN_PRS = os.environ.get("OPEN_PRS", "true").lower() == "true"
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
-DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/")
+DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/cursor/")
 
 
 def check_auth() -> bool:
@@ -649,7 +649,7 @@ def main():
 
 
 def send_slack_summary():
-    """Send a daily summary to Slack via Incoming Webhook."""
+    """Send a daily summary to Slack via Incoming Webhook using Block Kit."""
     from datetime import datetime
     import urllib.request
 
@@ -663,62 +663,87 @@ def send_slack_summary():
 
     data = json.load(open(RESULTS))
     jobs = data.get("jobs", [])
-    total = len(jobs)
     passed = sum(1 for j in jobs if j["state"] == "success")
     failed_jobs = [j for j in jobs if j["state"] in ("failure", "error")]
     failed = len(failed_jobs)
 
     today = datetime.now().strftime("%B %d, %Y")
-    lines = [
-        f"*Prow Nightly Monitor — {today}*",
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f":white_check_mark: {passed} passed  :x: {failed} failed",
+
+    blocks: list = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"Prow Nightly Monitor — {today}"},
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f":white_check_mark: *{passed}* passed"},
+                {"type": "mrkdwn", "text": f":x: *{failed}* failed"},
+            ],
+        },
+        {"type": "divider"},
     ]
 
-    if failed_jobs:
-        lines.append("")
-        lines.append("*Failures:*")
-        for j in failed_jobs:
-            analysis = j.get("analysis", {})
-            category = analysis.get("category", "unknown").upper()
-            severity = analysis.get("investigation", {}).get("severity", "?")
-            ai = analysis.get("ai_summary", "")
-            pr_url = analysis.get("pr_url", "")
+    for j in failed_jobs:
+        analysis = j.get("analysis", {})
+        category = analysis.get("category", "unknown").upper()
+        severity = analysis.get("investigation", {}).get("severity", "?")
+        ai = analysis.get("ai_summary", "")
+        pr_url = analysis.get("pr_url", "")
 
-            short_name = re.sub(
-                r"periodic-ci-openshift-release-main-nightly-", "", j["name"]
-            )
-            first_line = ""
-            if ai:
+        short_name = re.sub(
+            r"periodic-ci-openshift-release-main-nightly-", "", j["name"]
+        )
+
+        root_cause = ""
+        if ai:
+            for al in ai.split("\n"):
+                stripped = al.strip()
+                if stripped.startswith("**Root Cause"):
+                    root_cause = re.sub(r"\*\*Root Cause[^*]*\*\*:?\s*", "", stripped)
+                    break
+                if stripped.startswith("## Root Cause"):
+                    root_cause = stripped.replace("## Root Cause", "").strip()
+                    break
+            if not root_cause:
                 for al in ai.split("\n"):
                     stripped = al.strip()
-                    if stripped.startswith("**Root Cause:**"):
-                        first_line = stripped.replace("**Root Cause:**", "").strip()
+                    if stripped and not stripped.startswith(("#", "---", "```")):
+                        root_cause = stripped[:150]
                         break
-                if not first_line:
-                    first_line = ai[:120].split("\n")[0]
 
-            entry = f"• `{short_name}` — {category} ({severity})"
-            if first_line:
-                entry += f" — {first_line[:100]}"
-            lines.append(entry)
+        status_emoji = ":red_circle:" if severity in ("HIGH", "CRITICAL") else ":large_orange_circle:" if severity == "MEDIUM" else ":white_circle:"
 
-            if pr_url:
-                lines.append(f"  :wrench: PR: {pr_url}")
+        job_text = f"{status_emoji} *`{short_name}`*\n>{category} | Severity: *{severity}*"
+        if root_cause:
+            job_text += f"\n>_{root_cause[:200]}_"
 
-    lines.append("")
-    lines.append(f":bar_chart: <{DASHBOARD_URL}|Dashboard>")
+        block: dict = {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": job_text},
+        }
+        if pr_url:
+            block["accessory"] = {
+                "type": "button",
+                "text": {"type": "plain_text", "text": ":wrench: View PR"},
+                "url": pr_url,
+            }
+        blocks.append(block)
 
-    pr_urls = [
-        j.get("analysis", {}).get("pr_url", "")
-        for j in failed_jobs if j.get("analysis", {}).get("pr_url")
-    ]
-    if pr_urls:
-        for url in pr_urls:
-            lines.append(f":wrench: <{url}|PR opened>")
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "actions",
+        "elements": [
+            {
+                "type": "button",
+                "text": {"type": "plain_text", "text": ":bar_chart: Open Dashboard"},
+                "url": DASHBOARD_URL,
+                "style": "primary",
+            }
+        ],
+    })
 
-    message = "\n".join(lines)
-    payload = json.dumps({"text": message}).encode("utf-8")
+    payload = json.dumps({"blocks": blocks}).encode("utf-8")
 
     req = urllib.request.Request(
         SLACK_WEBHOOK_URL,
