@@ -1,6 +1,7 @@
 #!/bin/bash
-# Daily Prow Monitor — Cursor CLI agent investigates nightly failures
-# Cron: 0 12 * * 1-5
+# Daily Prow Monitor + Weekly AI Analysis
+# Daily (Mon-Fri noon): fetch data + basic analysis + Slack
+# Weekly (Monday noon): also run Cursor CLI for deep AI analysis (no PRs)
 set -euo pipefail
 
 CURSOR_CLI="/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
@@ -17,14 +18,25 @@ fi
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S'): $*" >> "$LOG_FILE"; }
 
-log "=== Starting daily run ==="
+# Determine if this is the weekly AI run (Monday or WEEKLY_AI=true)
+DAY_OF_WEEK=$(date +%u)  # 1=Monday
+WEEKLY_AI="${WEEKLY_AI:-false}"
+if [ "$DAY_OF_WEEK" = "1" ]; then
+    WEEKLY_AI="true"
+fi
+
+if [ "$WEEKLY_AI" = "true" ]; then
+    log "=== Starting WEEKLY run (with AI analysis) ==="
+else
+    log "=== Starting daily run ==="
+fi
 cd "$REPO_DIR" || exit 1
 
 # Clean stale results so they don't accumulate across runs
 rm -f "$REPO_DIR/public/results.json"
 log "Cleaned previous results.json"
 
-# Step 1: Fetch Prow data + generate dashboard (no AI — Cursor agent handles that)
+# Step 1: Fetch Prow data + generate dashboard
 log "Fetching Prow data..."
 export JOB_FILTER="${JOB_FILTER:-network-flow-matrix}"
 export MIN_VERSION="${MIN_VERSION:-4.21}"
@@ -49,45 +61,45 @@ fi
 
 log "Dashboard generated (without AI). results.json size: $(du -h "$REPO_DIR/public/results.json" | cut -f1)"
 
-# Step 2: Clone target repo for Cursor agent context
-log "Cloning $TARGET_REPO for agent context..."
-rm -rf /tmp/ci-investigate 2>/dev/null
-if [ -n "$TARGET_REPO" ]; then
-    git clone --depth=1 "$TARGET_REPO" /tmp/ci-investigate >> "$LOG_FILE" 2>&1 || true
-else
-    mkdir -p /tmp/ci-investigate
-fi
-
-# Step 3: Verify Cursor CLI auth before running agent on each failure
-cd /tmp
-if ! "$CURSOR_CLI" agent status >> "$LOG_FILE" 2>&1; then
-    log "WARNING: Cursor CLI not authenticated — skipping AI analysis"
-    log "Run: $CURSOR_CLI agent login"
-else
-    log "Cursor CLI authenticated — running agent on failures..."
-    cd "$REPO_DIR"
-    if ! python3 "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
-        log "WARNING: inject_claude.py had errors (see above)"
+# Step 2: Run Cursor CLI AI analysis (weekly only)
+if [ "$WEEKLY_AI" = "true" ]; then
+    log "Cloning $TARGET_REPO for agent context..."
+    rm -rf /tmp/ci-investigate 2>/dev/null
+    if [ -n "$TARGET_REPO" ]; then
+        git clone --depth=1 "$TARGET_REPO" /tmp/ci-investigate >> "$LOG_FILE" 2>&1 || true
+    else
+        mkdir -p /tmp/ci-investigate
     fi
 
-    # Step 4: Regenerate dashboard HTML from the updated results.json
-    #   inject_claude.py already wrote AI summaries into results.json.
-    #   Now re-render the HTML using the --render-only flag.
-    log "Regenerating dashboard with AI analysis..."
-    export RENDER_ONLY="true"
-    python3 monitor.py >> "$LOG_FILE" 2>&1 || true
-    unset RENDER_ONLY
+    cd /tmp
+    if ! "$CURSOR_CLI" agent status >> "$LOG_FILE" 2>&1; then
+        log "WARNING: Cursor CLI not authenticated — skipping AI analysis"
+        log "Run: $CURSOR_CLI agent login"
+    else
+        log "Cursor CLI authenticated — running AI analysis (no PRs)..."
+        cd "$REPO_DIR"
+        if ! python3 "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
+            log "WARNING: inject_claude.py had errors (see above)"
+        fi
+
+        log "Regenerating dashboard with AI analysis..."
+        export RENDER_ONLY="true"
+        python3 monitor.py >> "$LOG_FILE" 2>&1 || true
+        unset RENDER_ONLY
+    fi
+else
+    log "Skipping AI analysis (daily run — AI runs on Mondays only)"
 fi
 
-# Step 5: Copy Cursor AI dashboard to dedicated path
-log "Copying dashboard to public/cursor/ and docs/..."
+# Step 3: Copy dashboard to docs/ for GitHub Pages
+log "Copying dashboard to docs/..."
 mkdir -p "$REPO_DIR/public/cursor"
 cp "$REPO_DIR/public/index.html" "$REPO_DIR/public/cursor/index.html"
-cp "$REPO_DIR/public/results.json" "$REPO_DIR/public/cursor/results.json"
+cp "$REPO_DIR/public/results.json" "$REPO_DIR/public/cursor/results.json" 2>/dev/null || true
 rm -rf "$REPO_DIR/docs"
 cp -r "$REPO_DIR/public" "$REPO_DIR/docs"
 
-# Step 6: Push dashboard to GitHub Pages
+# Step 4: Push dashboard to GitHub Pages
 log "Pushing dashboard to GitHub Pages..."
 cd "$REPO_DIR"
 git add public/index.html public/results.json public/history.html public/history.json public/runs/ public/cursor/ docs/ 2>/dev/null
@@ -98,12 +110,12 @@ else
     git push origin main >> "$LOG_FILE" 2>&1 && log "Dashboard pushed to GitHub Pages" || log "WARNING: git push failed"
 fi
 
-# Step 7: Send Slack summary
+# Step 5: Send Slack summary
 if [ -n "$SLACK_WEBHOOK_URL" ]; then
     log "Sending Slack summary..."
     python3 -c "import sys; sys.path.insert(0,'$REPO_DIR'); from inject_claude import send_slack_summary; send_slack_summary()" >> "$LOG_FILE" 2>&1 || true
 fi
 
-# Step 8: Open the dashboard
+# Step 6: Open the dashboard
 open "$REPO_DIR/public/index.html"
 log "=== Done ==="
