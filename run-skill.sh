@@ -61,8 +61,39 @@ fi
 
 log "Dashboard generated (without AI). results.json size: $(du -h "$REPO_DIR/public/results.json" | cut -f1)"
 
-# Step 2: Run Cursor CLI AI analysis (weekly only)
+# Step 2: Run Cursor CLI AI analysis (weekly only — covers full week's failures)
 if [ "$WEEKLY_AI" = "true" ]; then
+    # Merge failures from the past 7 days into current results.json
+    log "Merging weekly failures from past 7 days..."
+    python3 -c "
+import json, os, glob
+from datetime import datetime, timedelta
+
+results_file = '$REPO_DIR/public/results.json'
+runs_dir = '$REPO_DIR/public/runs'
+data = json.load(open(results_file))
+current_jobs = {j['name']: j for j in data.get('jobs', [])}
+
+# Collect failures from past 7 days
+week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+for run_dir in sorted(glob.glob(f'{runs_dir}/*/results.json')):
+    date = os.path.basename(os.path.dirname(run_dir))
+    if date < week_ago:
+        continue
+    try:
+        run_data = json.load(open(run_dir))
+        for job in run_data.get('jobs', []):
+            name = job.get('name', '')
+            if job.get('state') == 'failure' and name not in current_jobs:
+                current_jobs[name] = job
+    except: pass
+
+data['jobs'] = list(current_jobs.values())
+with open(results_file, 'w') as f:
+    json.dump(data, f, indent=2)
+print(f'Merged: {len(data[\"jobs\"])} total jobs ({sum(1 for j in data[\"jobs\"] if j.get(\"state\")==\"failure\")} failures from past week)')
+" >> "$LOG_FILE" 2>&1 || true
+
     log "Cloning $TARGET_REPO for agent context..."
     rm -rf /tmp/ci-investigate 2>/dev/null
     if [ -n "$TARGET_REPO" ]; then
@@ -76,7 +107,7 @@ if [ "$WEEKLY_AI" = "true" ]; then
         log "WARNING: Cursor CLI not authenticated — skipping AI analysis"
         log "Run: $CURSOR_CLI agent login"
     else
-        log "Cursor CLI authenticated — running AI analysis (no PRs)..."
+        log "Cursor CLI authenticated — running weekly AI analysis..."
         cd "$REPO_DIR"
         if ! python3 "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
             log "WARNING: inject_claude.py had errors (see above)"
