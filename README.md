@@ -5,22 +5,24 @@ deep investigation using Cursor CLI agent. Analyzes failures, identifies
 root causes, writes code fixes, and opens PRs automatically.
 
 **Dashboard:** https://aabughosh.github.io/prow-nightly-monitor/
+**AI Dashboard:** https://aabughosh.github.io/prow-nightly-monitor/cursor/
 **Run History:** https://aabughosh.github.io/prow-nightly-monitor/history.html
 
 ## What it does
 
-Every weekday at noon, the cron runs a full pipeline:
+**Daily (Mon-Fri at noon):**
+1. Fetches Prow data — all nightly jobs matching the filter, with step-specific logs from GCS
+2. Downloads relevant artifacts — JUnit results, matrix diffs, ss dumps, gather-extra resources
+3. Classifies failures — matrix mismatch, test failure, build error, or infrastructure issue
+4. Generates a dashboard and pushes to GitHub Pages
+5. Sends a Slack summary with failure details
 
-1. **Fetches Prow data** — all nightly jobs matching the filter, with step-specific logs from GCS
-2. **Downloads relevant artifacts** — JUnit results, matrix diffs, ss dumps, gather-extra resources (pods, endpoints, services, nodes)
-3. **Classifies failures** — matrix mismatch, test failure, build error, or infrastructure issue
-4. **Runs Cursor CLI agent** on each failure with full tool access:
-   - Reads the source code alongside CI evidence files
-   - Searches the codebase (`grep`, `find`)
-   - Fetches full step logs from Prow via `curl`
-   - Writes code fixes directly to files
-5. **Opens PRs** on the upstream repo for real error fixes (skips warnings/infra)
-6. **Generates a dashboard** with formatted AI analysis, fix patches, and PR links
+**Weekly (Monday only) — AI deep analysis:**
+6. Merges all failures from the past 7 days (Mon-Sun)
+7. Clones the target repo for code context
+8. Runs Cursor CLI agent on each failure — the agent reads the repo's README and docs first, then investigates
+9. Opens PRs on the upstream repo for real error fixes (skips duplicates, warnings, infra)
+10. Regenerates the dashboard with AI analysis included
 
 ## Architecture
 
@@ -34,21 +36,27 @@ Every weekday at noon, the cron runs a full pipeline:
                      (artifacts)        (prompt + artifacts)
 ```
 
-**Cron entry** (`run-skill.sh`):
+**Schedule** (`run-skill.sh` via macOS `launchd`):
 1. `monitor.py` → fetch + classify + generate `results.json` (no AI)
-2. Clone target repo → `/tmp/ci-investigate`
-3. `inject_claude.py` → run Cursor agent per failure → write AI summaries + open PRs
-4. `monitor.py --render-only` → re-render HTML with AI data
+2. *[Monday only]* Merge past week's failures into results
+3. *[Monday only]* Clone target repo → `/tmp/ci-investigate`
+4. *[Monday only]* `inject_claude.py` → Cursor agent per failure → AI summaries + PRs
+5. *[Monday only]* `monitor.py --render-only` → re-render HTML with AI data
+6. Copy output to `docs/` for GitHub Pages
+7. Git push to `main`
+8. Send Slack notification
 
 ## Cursor CLI Agent
 
 Each failure gets a deep investigation via `cursor agent --trust --yolo --print`:
 
-- **Evidence files** dumped to `ci-evidence/` (logs, junit, matrix diffs, ss dumps, port map)
-- **Prompt** tailored to failure category (matrix mismatch, test, infra, build)
-- **Full tool access** — the agent reads files, runs shell commands, searches code, writes fixes
-- **Fix patches** captured via `git diff > ci-evidence/fix.patch`
-- **PRs** opened on upstream via fork (push to fork → PR against upstream)
+- **Step 1:** Reads the target repo's README and docs to understand the project
+- **Step 2:** Reviews CI evidence files (logs, junit, matrix diffs, ss dumps)
+- **Step 3:** Decides what to do — fix code, report flake, or flag infra issue
+- **Step 4:** Writes fixes directly and saves patch (`git diff > ci-evidence/fix.patch`)
+- **Step 5:** Reports root cause, severity, and whether a fix was written
+
+The agent is generic — it reads the repo docs and autonomously decides the right action based on the failure type and project structure.
 
 ### PR Rules
 
@@ -58,8 +66,11 @@ Each failure gets a deep investigation via `cursor agent --trust --yolo --print`
 | Warning or infra issue | Analyze only, no PR |
 | LOW severity | Analyze only, no PR |
 | Duplicate patch (same fix as another job) | Skip PR |
+| Similar PR already open for same issue | Skip PR |
 
-## Quick Start — Local Cron
+PRs exclude `ci-evidence/` files — only actual code fixes are included.
+
+## Quick Start — Local Setup (macOS)
 
 ### 1. Clone
 
@@ -79,6 +90,8 @@ Edit `run-skill.sh` or set environment variables:
 | `UPSTREAM_REPO` | `openshift-kni/commatrix` | Where PRs are opened |
 | `FORK_OWNER` | `aabughosh` | Your GitHub username (PRs pushed here) |
 | `OPEN_PRS` | `true` | Set to `false` to disable PR creation |
+| `SLACK_WEBHOOK_URL` | *(empty)* | Slack incoming webhook URL |
+| `WEEKLY_AI` | `false` (auto `true` on Mondays) | Force AI analysis run |
 
 ### 3. Prerequisites
 
@@ -86,19 +99,63 @@ Edit `run-skill.sh` or set environment variables:
 - **Cursor CLI authenticated**: `cursor agent login`
 - **GitHub CLI authenticated**: `gh auth login`
 - **Python 3.9+** with `requests`: `pip3 install requests`
+- **Full Disk Access** granted to `/bin/bash` (System Settings → Privacy)
 
-### 4. Register cron
+### 4. Register with launchd (macOS)
+
+Create `~/Library/LaunchAgents/com.prow-nightly-monitor.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.prow-nightly-monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/path/to/prow-nightly-monitor/run-skill.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Applications/Cursor.app/Contents/Resources/app/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/youruser</string>
+        <key>SLACK_WEBHOOK_URL</key>
+        <string>https://hooks.slack.com/services/...</string>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>/tmp</string>
+    <key>StandardOutPath</key>
+    <string>/path/to/prow-nightly-monitor/launchd-out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/path/to/prow-nightly-monitor/launchd-err.log</string>
+</dict>
+</plist>
+```
+
+Then load it:
 
 ```bash
-crontab -e
-# Add:
-0 12 * * 1-5 /bin/bash ~/Documents/GitHub/prow-nightly-monitor/run-skill.sh
+launchctl load ~/Library/LaunchAgents/com.prow-nightly-monitor.plist
 ```
 
 ### 5. Run manually
 
 ```bash
 ./run-skill.sh
+# Or force AI analysis on any day:
+WEEKLY_AI=true ./run-skill.sh
 # Or just the monitor (no AI):
 python3 monitor.py
 open public/index.html
@@ -108,21 +165,22 @@ open public/index.html
 
 | Category | Badge | Meaning |
 |----------|-------|---------|
-| MATRIX MISMATCH | 🟠 HIGH | Documented matrix doesn't match actual ports |
-| TEST FAILURE | 🔴 MEDIUM | A specific test failed — shows test name, file, error |
-| BUILD ERROR | 🔴 HIGH | Code does not compile |
-| INFRA | 🟡 LOW | Cluster setup, timeout, node issues — likely transient |
-| UNKNOWN | ⚫ MEDIUM | Could not classify |
+| MATRIX MISMATCH | HIGH | Documented matrix doesn't match actual ports |
+| TEST FAILURE | MEDIUM | A specific test failed — shows test name, file, error |
+| BUILD ERROR | HIGH | Code does not compile |
+| INFRA | LOW | Cluster setup, timeout, node issues — likely transient |
+| UNKNOWN | MEDIUM | Could not classify |
 
 ## Dashboard Features
 
 - **Formatted AI Analysis** — markdown rendered as HTML (tables, headers, code blocks)
 - **Fix Patches** — expandable diff view of agent-generated fixes
-- **PR Links** — direct links to opened PRs (green badge)
+- **PR Links** — direct links to opened PRs
 - **Matrix Diff** — ports to add/remove with ss socket state
 - **JUnit Failures** — test case details from JUnit XML
 - **Trend Chart** — pass/fail history across runs
 - **Run History** — archived daily dashboards at `/runs/<date>/`
+- **Slack Notifications** — daily summary with failure details and AI analysis (when available)
 
 ## Using it for other projects
 
@@ -135,22 +193,27 @@ Change `JOB_FILTER` and `TARGET_REPO` to monitor any Prow job:
 | CNF | `cnf-features` | `openshift-kni/cnf-features-deploy` |
 | SR-IOV | `sriov` | `k8snetworkplumbingwg/sriov-network-operator` |
 
-## Cursor Skill
-
-A Cursor skill is included at `skill/SKILL.md` for on-demand interactive analysis.
+The AI agent is generic — it reads each repo's README/docs first and adapts its investigation accordingly.
 
 ## File Structure
 
 ```
 prow-nightly-monitor/
-  run-skill.sh            # Cron entry point — orchestrates the full pipeline
+  run-skill.sh            # launchd entry point — orchestrates the full pipeline
   monitor.py              # Fetches Prow data, classifies failures, generates dashboard
-  inject_claude.py         # Runs Cursor CLI agent per failure, opens PRs
+  inject_claude.py        # Runs Cursor CLI agent per failure, opens PRs
   skill/SKILL.md          # Cursor skill for on-demand analysis
   public/                 # Generated output
     index.html            # Latest dashboard
+    cursor/index.html     # AI-enhanced dashboard
     results.json          # Latest results (with AI summaries)
     history.html          # Run history index
     history.json          # Trend data
     runs/<date>/          # Archived daily dashboards
+  docs/                   # GitHub Pages source (copy of public/)
 ```
+
+## Cost
+
+- **Daily runs (Tue-Fri):** Free — no AI, just Prow API calls
+- **Weekly AI run (Monday):** ~$0.50-2.00 depending on number of failures (Cursor CLI usage)

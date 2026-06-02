@@ -65,34 +65,36 @@ log "Dashboard generated (without AI). results.json size: $(du -h "$REPO_DIR/pub
 if [ "$WEEKLY_AI" = "true" ]; then
     # Merge failures from the past 7 days into current results.json
     log "Merging weekly failures from past 7 days..."
-    python3 -c "
+    REPO_DIR="$REPO_DIR" python3 <<'PYEOF' >> "$LOG_FILE" 2>&1 || true
 import json, os, glob
 from datetime import datetime, timedelta
 
-results_file = '$REPO_DIR/public/results.json'
-runs_dir = '$REPO_DIR/public/runs'
+repo_dir = os.environ['REPO_DIR']
+results_file = os.path.join(repo_dir, 'public', 'results.json')
+runs_dir = os.path.join(repo_dir, 'public', 'runs')
 data = json.load(open(results_file))
 current_jobs = {j['name']: j for j in data.get('jobs', [])}
 
-# Collect failures from past 7 days
 week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-for run_dir in sorted(glob.glob(f'{runs_dir}/*/results.json')):
-    date = os.path.basename(os.path.dirname(run_dir))
+for run_file in sorted(glob.glob(os.path.join(runs_dir, '*', 'results.json'))):
+    date = os.path.basename(os.path.dirname(run_file))
     if date < week_ago:
         continue
     try:
-        run_data = json.load(open(run_dir))
+        run_data = json.load(open(run_file))
         for job in run_data.get('jobs', []):
             name = job.get('name', '')
             if job.get('state') == 'failure' and name not in current_jobs:
                 current_jobs[name] = job
-    except: pass
+    except:
+        pass
 
 data['jobs'] = list(current_jobs.values())
 with open(results_file, 'w') as f:
     json.dump(data, f, indent=2)
-print(f'Merged: {len(data[\"jobs\"])} total jobs ({sum(1 for j in data[\"jobs\"] if j.get(\"state\")==\"failure\")} failures from past week)')
-" >> "$LOG_FILE" 2>&1 || true
+failures = sum(1 for j in data['jobs'] if j.get('state') == 'failure')
+print(f'Merged: {len(data["jobs"])} total jobs ({failures} failures from past week)')
+PYEOF
 
     log "Cloning $TARGET_REPO for agent context..."
     rm -rf /tmp/ci-investigate 2>/dev/null
@@ -144,7 +146,12 @@ fi
 # Step 5: Send Slack summary
 if [ -n "$SLACK_WEBHOOK_URL" ]; then
     log "Sending Slack summary..."
-    python3 -c "import sys; sys.path.insert(0,'$REPO_DIR'); from inject_claude import send_slack_summary; send_slack_summary()" >> "$LOG_FILE" 2>&1 || true
+    REPO_DIR="$REPO_DIR" python3 <<'PYEOF' >> "$LOG_FILE" 2>&1 || true
+import sys, os
+sys.path.insert(0, os.environ['REPO_DIR'])
+from inject_claude import send_slack_summary
+send_slack_summary()
+PYEOF
 fi
 
 # Step 6: Open the dashboard

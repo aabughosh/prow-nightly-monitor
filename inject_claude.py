@@ -264,7 +264,7 @@ def _build_port_map(matrix_diff: dict, ss_findings: list[dict]) -> str:
 
 
 def build_prompt(job: dict, evidence_files: list[str]) -> str:
-    """Build an evidence-based prompt adapted to the failure category."""
+    """Build a generic prompt — agent reads repo docs and decides what to do."""
     analysis = job.get("analysis", {})
     inv = analysis.get("investigation", {})
     category = analysis.get("category", "")
@@ -278,203 +278,60 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
 
     evidence_listing = "\n".join(f"  - {f}" for f in evidence_files)
 
-    prompt = f"""You are a senior CI failure investigator. You have FULL tool access:
+    prompt = f"""You are a senior engineer investigating a CI failure. You have FULL tool access:
 - You can READ any file in this repo
 - You can RUN shell commands (curl, grep, etc.)
 - You can WRITE code fixes directly to files
 - You can FETCH full CI logs from Prow URLs
 
-IMPORTANT: Only write a fix (and fix.patch) for REAL ERRORS that cause test failures.
-Do NOT write fixes for warnings, informational messages, or transient infra issues.
-If the issue is a warning or infra-level, just analyze and report — no code changes.
+## Step 1: Understand the Project
+First, read the repo's documentation to understand what this project does:
+- Read README.md, CONTRIBUTING.md, and any docs/ folder
+- Look at the project structure (ls the root, key directories)
+- Understand the test framework, CI setup, and how failures relate to the code
 
-The source repo is checked out here. CI evidence files are in ./ci-evidence/.
-If the evidence files are not enough, use the URLs in ./ci-evidence/prow-urls.txt
-to curl the full step logs yourself.
+## Step 2: Investigate the Failure
+CI evidence files are in ./ci-evidence/. If they're not enough, use the URLs
+in ./ci-evidence/prow-urls.txt to curl full logs from Prow.
 
-## Evidence Files
+Evidence files:
 {evidence_listing}
 
-## Failure Summary
-Job: {job['name']}
-Prow URL: {job.get('url', 'N/A')}
-Category: {category}
-Reason: {reason}
+Failure details:
+- Job: {job['name']}
+- Prow URL: {job.get('url', 'N/A')}
+- Category: {category}
+- Reason: {reason}
 
-## Failed Tests
+Failed tests:
 {failed_tests or '(none extracted)'}
 
-## Log Snippet
+Log snippet:
 {analysis.get('log_snippet', '(no log)')[:500]}
-"""
 
-    if category == "matrix_mismatch":
-        prompt += _matrix_mismatch_task(matrix_diff, analysis)
-    elif category == "test_failure":
-        prompt += _test_failure_task(inv)
-    elif category == "infra":
-        prompt += _infra_task()
-    elif category == "build":
-        prompt += _build_failure_task()
-    else:
-        prompt += _generic_task()
+## Step 3: Decide What To Do
+Based on your understanding of the project and the failure evidence, decide:
+1. Is this a real bug that needs a code fix? → Write the fix directly to the files.
+2. Is this a flake/transient issue? → Just report it, no code changes.
+3. Is this an infra/environment problem? → Report it, no code changes.
+4. Is this a test/config that needs updating? → Write the update.
+
+IMPORTANT: Only write fixes for REAL issues. Do NOT fix warnings or transient problems.
+
+## Step 4: Write Fix (if applicable)
+If you write a fix, save the patch: git diff > ./ci-evidence/fix.patch
+
+## Step 5: Report
+Respond with:
+**Root Cause:** what specifically caused this failure
+**Is it a flake?** yes/no — and why
+**Suggested Fix:** what you did or what should be done
+**Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
+**Severity:** CRITICAL / HIGH / MEDIUM / LOW
+"""
 
     return prompt
 
-
-def _matrix_mismatch_task(matrix_diff: dict, analysis: dict) -> str:
-    """Task instructions for matrix mismatch failures."""
-    no_ep = matrix_diff.get("no_endpointslice_ports", [])
-    stale = matrix_diff.get("stale_ports", [])
-    undoc = matrix_diff.get("undocumented_ports", [])
-    ss_lines = "\n".join(
-        f"  Port {sf['port']}: {sf['ss_line']}"
-        for sf in analysis.get("artifacts", {}).get("ss_findings", [])
-    )
-
-    task = "\n## Matrix Diff\n"
-    if no_ep:
-        task += "Ports open but NO EndpointSlice (test fails on these):\n"
-        task += "\n".join(f"  {p}" for p in no_ep) + "\n"
-    if stale:
-        task += "Ports in matrix but NOT in use on node:\n"
-        task += "\n".join(f"  {p}" for p in stale) + "\n"
-    if undoc:
-        task += "Ports in use but NOT documented:\n"
-        task += "\n".join(f"  {p}" for p in undoc) + "\n"
-    if ss_lines:
-        task += f"\nSocket state (ss) for failing ports:\n{ss_lines}\n"
-
-    task += """
-## Deep Investigation Steps
-1. Read ALL evidence files in ./ci-evidence/ — especially raw-ss-tcp, matrix-diff-ss, port-map.txt
-2. Read the test code to understand what it checks — grep for the assertion that fails
-3. If the log snippet is not enough, curl the full step log from prow-urls.txt
-4. Search the source code: grep for port numbers, process names, filter functions
-5. Match ports across the different lists — same port in multiple places = ONE issue
-6. Check existing static/custom entries for patterns
-
-## For EACH port, decide one action:
-- **ADD** — port is a known daemon that always listens but has no EndpointSlice.
-  Show the exact entry to add (format depends on project).
-- **REMOVE** — port is documented but no longer in use. Show what to remove.
-- **SKIP** — port is ephemeral and changes on every reboot, can't be statically listed.
-  Show what code change filters it out.
-- **INVESTIGATE** — can't determine the right action, explain why.
-- **IGNORE** — transient issue, not a real matrix problem.
-
-## Write a Fix
-If you can determine the right fix, WRITE it directly to the files in this repo.
-Create or modify the appropriate file (custom-entries CSV, test code, filter code).
-Save the patch to ./ci-evidence/fix.patch by running: git diff > ./ci-evidence/fix.patch
-
-## Respond with:
-**Root Cause:** what specifically caused this failure
-
-**Port-by-Port Analysis:**
-| Port | Process | Ephemeral? | Has Endpoint? | Action | Detail |
-|------|---------|-----------|---------------|--------|--------|
-
-**Suggested Fix:** exact file paths and changes you made (or would make)
-**Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
-
-**Severity:** CRITICAL / HIGH / MEDIUM / LOW
-"""
-    return task
-
-
-def _test_failure_task(inv: dict) -> str:
-    """Task instructions for test failures (not matrix-related)."""
-    suggested = inv.get("suggested_fix", "")
-    return f"""
-## Deep Investigation Steps
-1. Read ALL evidence files in ./ci-evidence/
-2. Find the failing test file in the source code and read it
-3. If the log snippet is not enough, curl the full step log from prow-urls.txt
-4. Grep the codebase for the failing function, assertion, or error message
-5. Check git log for recent changes to the failing test or its dependencies
-6. Determine: is this a flake, a real regression, or a test bug?
-
-Pre-analysis suggestion: {suggested or 'N/A'}
-
-## Write a Fix
-If you identify a code bug, WRITE the fix directly to the file.
-Save the patch: git diff > ./ci-evidence/fix.patch
-
-## Respond with:
-**Root Cause:** what specifically caused this test to fail
-**Is it a flake?** yes/no — and why
-**Code Path:** the exact function/line that failed and why
-**Suggested Fix:** exact code change, or "retry" if flaky
-**Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
-**Severity:** CRITICAL / HIGH / MEDIUM / LOW
-"""
-
-
-def _infra_task() -> str:
-    """Task instructions for infrastructure failures."""
-    return """
-## Deep Investigation Steps
-1. Read ALL evidence files in ./ci-evidence/
-2. If the log snippet is not enough, curl the full build log from prow-urls.txt
-3. Determine: cluster provisioning issue, cloud quota, network problem, or timeout?
-4. Check if the test ever got to run or failed during setup
-5. Look for specific error patterns: "no route to host", "context deadline exceeded",
-   "node not ready", "cluster operator degraded"
-
-## Respond with:
-**Root Cause:** what infrastructure issue caused the failure
-**Is it transient?** yes/no — does retrying likely fix it?
-**Error Chain:** the sequence of events that led to failure
-**Suggested Fix:** what to check (quotas, config, network) or just "retry"
-**Severity:** CRITICAL / HIGH / MEDIUM / LOW
-"""
-
-
-def _build_failure_task() -> str:
-    """Task instructions for build/compile failures."""
-    return """
-## Deep Investigation Steps
-1. Read ALL evidence files in ./ci-evidence/
-2. If the log snippet is not enough, curl the full build log from prow-urls.txt
-3. Find the exact compilation error, file, and line
-4. Read the failing source file to understand the error
-5. Check if a dependency changed or if there's a syntax/type error
-
-## Write a Fix
-If you can fix the build error, WRITE the fix directly to the file.
-Save the patch: git diff > ./ci-evidence/fix.patch
-
-## Respond with:
-**Root Cause:** exact compilation/build error
-**Failing File:** file path and line
-**Suggested Fix:** the code change needed to fix the build
-**Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
-**Severity:** CRITICAL / HIGH / MEDIUM / LOW
-"""
-
-
-def _generic_task() -> str:
-    """Task instructions when category is unknown."""
-    return """
-## Deep Investigation Steps
-1. Read ALL evidence files in ./ci-evidence/
-2. If the log snippet is not enough, curl the full step log from prow-urls.txt
-3. Search the codebase for the error message or failing component
-4. Classify the failure and determine root cause
-5. If you can fix it, write the fix directly
-
-## Write a Fix
-If you identify a fixable issue, WRITE it directly to the files.
-Save the patch: git diff > ./ci-evidence/fix.patch
-
-## Respond with:
-**Root Cause:** what caused this failure
-**Category:** matrix mismatch / test failure / infra / build / other
-**Suggested Fix:** what should be done (exact file + change if possible)
-**Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
-**Severity:** CRITICAL / HIGH / MEDIUM / LOW
-"""
 
 
 def _similar_pr_exists(job: dict) -> bool:
