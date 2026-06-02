@@ -477,6 +477,27 @@ Save the patch: git diff > ./ci-evidence/fix.patch
 """
 
 
+def _similar_pr_exists(job: dict) -> bool:
+    """Check if an open PR already addresses the same job/issue."""
+    job_name = job["name"]
+    short = re.sub(r"periodic-ci-openshift-release-main-nightly-", "", job_name)
+    short = re.sub(r"[^a-zA-Z0-9-]", "", short)[:40]
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "list", "--repo", UPSTREAM_REPO, "--state", "open",
+             "--search", f"fix {short} in:title", "--json", "title,url", "--limit", "5"],
+            capture_output=True, text=True, timeout=30, cwd=INVESTIGATE_DIR)
+        if result.returncode == 0:
+            import json as _json
+            prs = _json.loads(result.stdout or "[]")
+            if prs:
+                print(f"    Found existing PR: {prs[0].get('url', '')}")
+                return True
+    except Exception as e:
+        print(f"    Warning: could not check existing PRs: {e}")
+    return False
+
+
 def _open_pr(job: dict, patch: str, ai_summary: str) -> str:
     """Create a branch on fork, push, and open a PR against upstream. Returns PR URL."""
     from datetime import datetime
@@ -577,6 +598,8 @@ def analyze_job(job: dict, opened_patches: set[str] | None = None) -> str:
             print(f"    Skipping PR — category '{category}' is warning-level")
         elif severity and severity.upper() in ("LOW",):
             print(f"    Skipping PR — severity is {severity}")
+        elif _similar_pr_exists(job):
+            print(f"    Skipping PR — similar PR already open")
         else:
             import hashlib
             patch_hash = hashlib.sha256(patch.encode()).hexdigest()[:16]
