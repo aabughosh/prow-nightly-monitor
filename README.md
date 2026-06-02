@@ -161,26 +161,17 @@ python3 monitor.py
 open public/index.html
 ```
 
-## Failure Classification
-
-| Category | Badge | Meaning |
-|----------|-------|---------|
-| MATRIX MISMATCH | HIGH | Documented matrix doesn't match actual ports |
-| TEST FAILURE | MEDIUM | A specific test failed — shows test name, file, error |
-| BUILD ERROR | HIGH | Code does not compile |
-| INFRA | LOW | Cluster setup, timeout, node issues — likely transient |
-| UNKNOWN | MEDIUM | Could not classify |
-
 ## Dashboard Features
 
 - **Formatted AI Analysis** — markdown rendered as HTML (tables, headers, code blocks)
 - **Fix Patches** — expandable diff view of agent-generated fixes
 - **PR Links** — direct links to opened PRs
-- **Matrix Diff** — ports to add/remove with ss socket state
-- **JUnit Failures** — test case details from JUnit XML
+- **JUnit Failures** — test case details from JUnit XML (when available)
 - **Trend Chart** — pass/fail history across runs
 - **Run History** — archived daily dashboards at `/runs/<date>/`
 - **Slack Notifications** — daily summary with failure details and AI analysis (when available)
+
+Features shown depend on the project — the agent adapts to whatever the repo provides.
 
 ## Using it for other projects
 
