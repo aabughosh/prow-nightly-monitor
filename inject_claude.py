@@ -299,10 +299,19 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
     project = _load_project_config()
     project_context = ""
     if project:
+        important = project.get('important_files', [])
+        dirs_list = [f for f in important if f.endswith('/')]
+        files_list = [f for f in important if not f.endswith('/')]
+        browse_hint = ""
+        if dirs_list:
+            browse_hint = f"- **Browse ALL code in these directories:** {', '.join(dirs_list)}"
+        if files_list:
+            browse_hint += f"\n- **Specific files:** {', '.join(files_list)}"
+
         project_context = f"""
 ## Project Context (from config)
 - **What this project does:** {project.get('description', 'N/A')}
-- **Key files to look at:** {', '.join(project.get('important_files', [])) or 'Read the README'}
+{browse_hint}
 - **Config directories:** {', '.join(project.get('config_dirs', [])) or 'N/A'}
 """
         hints = project.get("classification_hints", {})
