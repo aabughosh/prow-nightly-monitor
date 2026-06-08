@@ -1,0 +1,84 @@
+{
+  "commatrix": {
+    "job_filter": "network-flow-matrix",
+    "min_version": "4.21",
+    "target_repo": "https://github.com/openshift-kni/commatrix.git",
+    "upstream_repo": "openshift-kni/commatrix",
+    "description": "Communication matrix - validates that node open ports match documented matrix",
+    "artifact_patterns": [
+      "raw-ss-tcp", "raw-ss-udp", "matrix-diff-ss", "doc-diff-commatrix",
+      "communication-matrix.csv", "communication-matrix-master.nft",
+      "mc-master.yaml", "nftables-*"
+    ],
+    "artifact_dirs": ["commatrix-e2e", "network-flow-matrix"],
+    "config_dirs": ["samples/custom-entries"],
+    "important_files": [
+      "test/e2e/validation_test.go",
+      "pkg/endpointslices/endpointslices.go",
+      "pkg/matrix/matrix.go"
+    ],
+    "classification_hints": {
+      "matrix_mismatch": "Ports open on node but not documented in matrix, or documented but not in use",
+      "test_failure": "e2e test assertion failed comparing actual vs expected ports"
+    }
+  },
+  "ptp-operator": {
+    "job_filter": "ptp",
+    "min_version": "4.17",
+    "target_repo": "https://github.com/openshift/ptp-operator.git",
+    "upstream_repo": "openshift/ptp-operator",
+    "description": "PTP operator - deploys and manages Precision Time Protocol on OpenShift nodes",
+    "artifact_patterns": [
+      "junit*.xml", "ptp4l.*", "phc2sys.*", "ts2phc.*",
+      "*.log", "linuxptp-daemon*"
+    ],
+    "artifact_dirs": ["ptp", "e2e", "junit"],
+    "config_dirs": ["config", "test/testdata"],
+    "important_files": [
+      "test/conformance/serial/ptp.go",
+      "test/pkg/ptptesthelper.go",
+      "pkg/daemon/daemon.go"
+    ],
+    "classification_hints": {
+      "test_failure": "PTP sync test failed - clock offset too high or ptp4l not syncing",
+      "infra": "PTP hardware not available or nodes missing PTP-capable NICs"
+    }
+  },
+  "cnf-features-deploy": {
+    "job_filter": "cnf-features",
+    "min_version": "4.17",
+    "target_repo": "https://github.com/openshift-kni/cnf-features-deploy.git",
+    "upstream_repo": "openshift-kni/cnf-features-deploy",
+    "description": "CNF features - validates telco/CNF features (DPDK, SR-IOV, PTP, SCTP, etc.)",
+    "artifact_patterns": [
+      "junit*.xml", "*.log", "cnf-tests-*"
+    ],
+    "artifact_dirs": ["cnf-tests", "e2e", "junit"],
+    "config_dirs": ["cnf-tests/testdata", "config"],
+    "important_files": [],
+    "classification_hints": {
+      "test_failure": "CNF feature validation failed",
+      "infra": "Worker nodes missing required hardware (SR-IOV NICs, hugepages, etc.)"
+    }
+  },
+  "sriov-network-operator": {
+    "job_filter": "sriov",
+    "min_version": "4.17",
+    "target_repo": "https://github.com/k8snetworkplumbingwg/sriov-network-operator.git",
+    "upstream_repo": "k8snetworkplumbingwg/sriov-network-operator",
+    "description": "SR-IOV network operator - manages SR-IOV network devices and VFs on Kubernetes",
+    "artifact_patterns": [
+      "junit*.xml", "*.log", "sriov*"
+    ],
+    "artifact_dirs": ["e2e", "junit", "sriov"],
+    "config_dirs": ["config", "test/testdata"],
+    "important_files": [
+      "test/conformance/tests/sriov_operator.go",
+      "pkg/daemon/daemon.go"
+    ],
+    "classification_hints": {
+      "test_failure": "SR-IOV VF creation or network attachment failed",
+      "infra": "No SR-IOV capable NICs found on worker nodes"
+    }
+  }
+}

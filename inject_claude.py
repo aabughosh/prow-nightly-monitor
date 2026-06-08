@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 CURSOR_CLI = "/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
 REPO_DIR = os.path.expanduser("~/Documents/GitHub/prow-nightly-monitor")
@@ -263,8 +264,25 @@ def _build_port_map(matrix_diff: dict, ss_findings: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _load_project_config() -> dict:
+    """Load the project config for the current JOB_FILTER."""
+    config_path = Path(__file__).parent / "projects.json"
+    if not config_path.exists():
+        return {}
+    import json as _j
+    all_projects = _j.loads(config_path.read_text())
+    job_filter = os.environ.get("JOB_FILTER", "")
+    for pconf in all_projects.values():
+        if pconf.get("job_filter", "") and pconf["job_filter"] in job_filter:
+            return pconf
+    for pconf in all_projects.values():
+        if job_filter in pconf.get("job_filter", ""):
+            return pconf
+    return {}
+
+
 def build_prompt(job: dict, evidence_files: list[str]) -> str:
-    """Build a generic prompt — agent reads repo docs and decides what to do."""
+    """Build a prompt — uses project config for context, agent reads docs and decides."""
     analysis = job.get("analysis", {})
     inv = analysis.get("investigation", {})
     category = analysis.get("category", "")
@@ -278,12 +296,25 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
 
     evidence_listing = "\n".join(f"  - {f}" for f in evidence_files)
 
+    project = _load_project_config()
+    project_context = ""
+    if project:
+        project_context = f"""
+## Project Context (from config)
+- **What this project does:** {project.get('description', 'N/A')}
+- **Key files to look at:** {', '.join(project.get('important_files', [])) or 'Read the README'}
+- **Config directories:** {', '.join(project.get('config_dirs', [])) or 'N/A'}
+"""
+        hints = project.get("classification_hints", {})
+        if category in hints:
+            project_context += f"- **Hint for this failure type:** {hints[category]}\n"
+
     prompt = f"""You are a senior engineer investigating a CI failure. You have FULL tool access:
 - You can READ any file in this repo
 - You can RUN shell commands (curl, grep, etc.)
 - You can WRITE code fixes directly to files
 - You can FETCH full CI logs from Prow URLs
-
+{project_context}
 ## Step 1: Understand the Project
 First, read the repo's documentation to understand what this project does:
 - Read README.md, CONTRIBUTING.md, and any docs/ folder

@@ -57,6 +57,24 @@ TARGET_REPO = os.environ.get("TARGET_REPO", "")
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "./public"))
 GCS_BASE = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs"
 
+# Load project config — tells the tool what's important for each project
+PROJECT_CONFIG: dict = {}
+_projects_file = Path(__file__).parent / "projects.json"
+if _projects_file.exists():
+    import json as _json_loader
+    _all_projects = _json_loader.loads(_projects_file.read_text())
+    for _pname, _pconf in _all_projects.items():
+        if _pconf.get("job_filter", "") and _pconf["job_filter"] in JOB_FILTER:
+            PROJECT_CONFIG = _pconf
+            log.info("Loaded project config: %s", _pname)
+            break
+    if not PROJECT_CONFIG and _all_projects:
+        for _pname, _pconf in _all_projects.items():
+            if JOB_FILTER in _pconf.get("job_filter", ""):
+                PROJECT_CONFIG = _pconf
+                log.info("Loaded project config: %s", _pname)
+                break
+
 
 # ---------------------------------------------------------------------------
 # Prow API
@@ -1380,20 +1398,17 @@ def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
                         start, end_line = 0, min(len(lines), 120)
                     snippet = "\n".join(lines[start:end_line])
                     source_parts.append(
-                        f"--- TEST FUNCTION: {sp} (lines {start+1}-{end_line}) ---\n"
-                        f"This is the test that FAILED. Read it to understand:\n"
-                        f"- What it compares (ss output vs EndpointSlices)\n"
-                        f"- Which ports it expects to have EndpointSlices\n"
-                        f"- Which ports are skipped/static\n\n{snippet}"
+                        f"--- TEST SOURCE: {sp} (lines {start+1}-{end_line}) ---\n"
+                        f"This is the test that FAILED. Read it to understand what it checks.\n\n{snippet}"
                     )
                     log.info("  Fetched test source %s (lines %d-%d)", sp, start+1, end_line)
                     break
             except Exception:
                 continue
 
-    # 2. Fetch ALL static entries to see what's already covered
-    static_dirs = ["samples/custom-entries"]
-    for sd in static_dirs:
+    # 2. Fetch config/data directories that may hold test expectations
+    CONFIG_DIRS = PROJECT_CONFIG.get("config_dirs", ["config", "test/testdata", "testdata"])
+    for sd in CONFIG_DIRS:
         try:
             dir_resp = requests.get(
                 f"https://api.github.com/repos/{repo_slug}/contents/{sd}",
@@ -1401,18 +1416,16 @@ def _fetch_test_source(job: dict, test_files: list[dict]) -> str:
             )
             if dir_resp.status_code == 200:
                 files = dir_resp.json()
-                for f in files:
-                    if f.get("name", "").endswith((".csv", ".json", ".yaml")):
+                for f in files[:5]:
+                    if f.get("name", "").endswith((".csv", ".json", ".yaml", ".yml")):
                         try:
                             fresp = requests.get(f"{raw_base}/{sd}/{f['name']}", timeout=8)
                             if fresp.status_code == 200:
                                 source_parts.append(
-                                    f"--- STATIC ENTRIES: {sd}/{f['name']} ---\n"
-                                    f"These entries are already handled as static (not via EndpointSlice).\n"
-                                    f"If a port is here, the test should not fail on it.\n\n"
+                                    f"--- CONFIG: {sd}/{f['name']} ---\n"
                                     f"{fresp.text[:600]}"
                                 )
-                                log.info("  Fetched static entries %s/%s", sd, f["name"])
+                                log.info("  Fetched config %s/%s", sd, f["name"])
                         except Exception:
                             pass
         except Exception:
@@ -1464,10 +1477,10 @@ def _browse_artifacts(job: dict) -> dict[str, list[str]]:
 def _fetch_artifacts_context(job: dict, category: str,
                              matrix_diff: dict,
                              step_logs: dict[str, str]) -> dict:
-    """Fetch only commatrix-relevant artifacts from GCS.
+    """Fetch relevant artifacts from GCS for any project.
 
-    Targeted downloads: commatrix e2e output (ss data, matrix diffs, CSV),
-    JUnit results, and nftables data. Skips gather bundles, audit logs, etc.
+    Downloads test output, JUnit results, logs, and project-specific artifacts.
+    Skips gather bundles, audit logs, and other infra noise.
     """
     result: dict = {"ss_findings": [], "stale_info": [], "all_artifacts": {}, "text_summary": ""}
     url = job.get("url", "")
@@ -1479,14 +1492,22 @@ def _fetch_artifacts_context(job: dict, category: str,
 
     parts = []
 
-    COMMATRIX_FILES = {
+    project_patterns = PROJECT_CONFIG.get("artifact_patterns", [])
+    project_dirs = [d.lower() for d in PROJECT_CONFIG.get("artifact_dirs", [])]
+
+    KNOWN_USEFUL_FILES = {
         "raw-ss-tcp", "raw-ss-udp", "matrix-diff-ss", "doc-diff-commatrix",
         "communication-matrix.csv", "communication-matrix-master.nft",
         "mc-master.yaml",
     }
+    for pat in project_patterns:
+        if "*" not in pat:
+            KNOWN_USEFUL_FILES.add(pat)
+
+    USEFUL_EXTENSIONS = (".xml", ".json", ".log", ".txt", ".csv", ".yaml", ".yml", ".nft")
     SKIP_STEPS = {
         "gather-audit-logs", "gather-must-gather", "gather-core-dump",
-        "gather-network", "gather-extra", "ipi-install-hosted-loki",
+        "gather-network", "ipi-install-hosted-loki",
         "ipi-install-rbac", "observers-resource-watch",
     }
 
@@ -1506,9 +1527,15 @@ def _fetch_artifacts_context(job: dict, category: str,
             if wf_resp.status_code != 200:
                 continue
             all_steps = re.findall(r'href="[^"]*?/([^/"]+)/"', wf_resp.text)
-            steps = [s for s in all_steps
-                     if s not in ("..", "artifacts")
-                     and any(k in s.lower() for k in ("matrix", "network-flow", "e2e-test"))]
+            all_valid = [s for s in all_steps
+                         if s not in ("..", "artifacts") and s not in SKIP_STEPS]
+            if project_dirs:
+                prioritized = [s for s in all_valid
+                               if any(d in s.lower() for d in project_dirs)]
+                others = [s for s in all_valid if s not in prioritized]
+                steps = (prioritized + others)[:8]
+            else:
+                steps = all_valid[:8]
             log.info("  Target steps in %s: %s (from %d total)", wf, steps, len(all_steps))
 
             for step in steps:
@@ -1522,13 +1549,22 @@ def _fetch_artifacts_context(job: dict, category: str,
                         subdirs = re.findall(r'href="[^"]*?/([^/"]+)/"', aresp.text)
                         afiles = re.findall(r'href="[^"]*?/([^/"]+)"', aresp.text)
 
-                        useful_files = [f for f in afiles
-                                       if f in COMMATRIX_FILES
-                                       or f.endswith((".xml",))
-                                       and "junit" in f.lower()]
+                        def _matches_project(fname):
+                            if fname in KNOWN_USEFUL_FILES:
+                                return True
+                            if fname.endswith(USEFUL_EXTENSIONS):
+                                return True
+                            for pat in project_patterns:
+                                if "*" in pat:
+                                    import fnmatch
+                                    if fnmatch.fnmatch(fname, pat):
+                                        return True
+                            return False
+
+                        useful_files = [f for f in afiles if _matches_project(f)]
 
                         for sd in subdirs:
-                            if not any(k in sd.lower() for k in ("commatrix", "e2e", "junit")):
+                            if sd in ("..", "gsutil", "install"):
                                 continue
                             try:
                                 sd_resp = requests.get(f"{artifacts_dir}{sd}/", timeout=5)
@@ -2165,15 +2201,23 @@ def attempt_auto_fix(job: dict, category: str, log_text: str,
 
 
 def _guess_repo_from_job(job_name: str) -> str:
-    """Guess the GitHub repo from the Prow job name."""
-    if "network-flow-matrix" in job_name:
-        return "https://github.com/openshift-kni/commatrix"
-    if "ptp" in job_name:
-        return "https://github.com/openshift/ptp-operator"
-    if "cnf-features" in job_name:
-        return "https://github.com/openshift-kni/cnf-features-deploy"
-    if "sriov" in job_name:
-        return "https://github.com/k8snetworkplumbingwg/sriov-network-operator"
+    """Guess the GitHub repo from the Prow job name.
+
+    Uses TARGET_REPO env var first, falls back to pattern matching.
+    """
+    target = os.environ.get("TARGET_REPO", "")
+    if target:
+        return target
+
+    REPO_MAP = {
+        "network-flow-matrix": "https://github.com/openshift-kni/commatrix",
+        "ptp": "https://github.com/openshift/ptp-operator",
+        "cnf-features": "https://github.com/openshift-kni/cnf-features-deploy",
+        "sriov": "https://github.com/k8snetworkplumbingwg/sriov-network-operator",
+    }
+    for pattern, repo in REPO_MAP.items():
+        if pattern in job_name:
+            return repo
     return ""
 
 
