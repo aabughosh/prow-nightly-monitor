@@ -204,7 +204,7 @@ for name, conf in projects.items():
             pass
 
     html += f"""<div class="project-card">
-<h2><a href="projects/{name}/">{name}</a> <span class="badge badge-filter">{conf['job_filter']}</span></h2>
+<h2><a href="/prow-nightly-monitor/projects/{name}/">{name}</a> <span class="badge badge-filter">{conf['job_filter']}</span></h2>
 <p>{conf.get('description', '')}</p>
 {status}
 </div>
