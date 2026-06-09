@@ -52,14 +52,8 @@ for name in projects:
     print(name)
 PYEOF
 
-# Get project list
-PROJECT_LIST=$(REPO_DIR="$REPO_DIR" python3 -c "
-import json, os
-repo_dir = os.environ['REPO_DIR']
-projects = json.load(open(os.path.join(repo_dir, 'projects.json')))
-for name in projects:
-    print(name)
-")
+# Only run commatrix (other projects can be added later)
+PROJECT_LIST="commatrix"
 
 for PROJECT_NAME in $PROJECT_LIST; do
     log "--- Processing project: $PROJECT_NAME ---"
