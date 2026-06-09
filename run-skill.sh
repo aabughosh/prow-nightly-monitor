@@ -46,20 +46,24 @@ for PROJECT_NAME in $PROJECT_LIST; do
     log "--- Processing project: $PROJECT_NAME ---"
 
     # Read project config
-    eval "$(REPO_DIR="$REPO_DIR" PROJECT_NAME="$PROJECT_NAME" python3 <<'PYEOF'
-import json, os
+    _cfg_file=$(mktemp)
+    REPO_DIR="$REPO_DIR" PROJECT_NAME="$PROJECT_NAME" python3 - "$_cfg_file" <<'PYEOF'
+import json, os, sys
 
 repo_dir = os.environ['REPO_DIR']
 project_name = os.environ['PROJECT_NAME']
+out_file = sys.argv[1]
 projects = json.load(open(os.path.join(repo_dir, 'projects.json')))
 p = projects[project_name]
 
-print(f'export JOB_FILTER="{p["job_filter"]}"')
-print(f'export MIN_VERSION="{p.get("min_version", "")}"')
-print(f'export TARGET_REPO="{p["target_repo"]}"')
-print(f'export UPSTREAM_REPO="{p["upstream_repo"]}"')
+with open(out_file, 'w') as f:
+    f.write(f'export JOB_FILTER="{p["job_filter"]}"\n')
+    f.write(f'export MIN_VERSION="{p.get("min_version", "")}"\n')
+    f.write(f'export TARGET_REPO="{p["target_repo"]}"\n')
+    f.write(f'export UPSTREAM_REPO="{p["upstream_repo"]}"\n')
 PYEOF
-    )"
+    source "$_cfg_file"
+    rm -f "$_cfg_file"
 
     PROJECT_OUTPUT="$REPO_DIR/public/projects/$PROJECT_NAME"
     mkdir -p "$PROJECT_OUTPUT"
