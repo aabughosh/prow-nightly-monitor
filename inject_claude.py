@@ -25,7 +25,8 @@ FORK_OWNER = os.environ.get("FORK_OWNER", "aabughosh")
 UPSTREAM_REPO = os.environ.get("UPSTREAM_REPO", "openshift-kni/commatrix")
 INVESTIGATE_DIR = "/tmp/ci-investigate"
 EVIDENCE_DIR = os.path.join(INVESTIGATE_DIR, "ci-evidence")
-RESULTS = f"{REPO_DIR}/public/results.json"
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR", f"{REPO_DIR}/public")
+RESULTS = os.path.join(OUTPUT_DIR, "results.json")
 
 MAX_RESULTS_SIZE = 50 * 1024 * 1024
 AGENT_TIMEOUT = 300  # 5 minutes per job

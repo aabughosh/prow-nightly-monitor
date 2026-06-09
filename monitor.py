@@ -1577,13 +1577,15 @@ def _fetch_artifacts_context(job: dict, category: str,
                                 pass
 
                         for uf in useful_files[:10]:
+                            if len(result["all_artifacts"]) >= 30:
+                                break
                             try:
                                 fresp = requests.get(f"{artifacts_dir}{uf}", timeout=8, stream=True)
                                 size = int(fresp.headers.get("content-length", 0))
-                                if size > 200000:
+                                if size > 50000:
                                     continue
                                 if fresp.status_code == 200 and len(fresp.text) > 10:
-                                    content = fresp.text
+                                    content = fresp.text[:20000]
                                     key = f"{step}/{uf}"
                                     result["all_artifacts"][key] = content
                                     log.info("  Downloaded: %s (%d bytes)", key, len(content))
@@ -1634,7 +1636,7 @@ def _fetch_artifacts_context(job: dict, category: str,
                 try:
                     gfresp = requests.get(f"{gather_url}{gf}", timeout=8, stream=True)
                     size = int(gfresp.headers.get("content-length", 0))
-                    if size > 500000:
+                    if size > 50000:
                         log.info("  Skipping gather-extra/%s (%d bytes, too large)", gf, size)
                         continue
                     if gfresp.status_code == 200:
