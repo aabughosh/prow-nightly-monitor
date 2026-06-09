@@ -159,13 +159,20 @@ PYEOF
     fi
 done
 
-# Also keep the main commatrix dashboard at root for backward compatibility
+# Also keep the main commatrix dashboard at root + cursor/ for backward compatibility
 if [ -d "$REPO_DIR/public/projects/commatrix" ]; then
     cp "$REPO_DIR/public/projects/commatrix/index.html" "$REPO_DIR/public/index.html" 2>/dev/null || true
     cp "$REPO_DIR/public/projects/commatrix/results.json" "$REPO_DIR/public/results.json" 2>/dev/null || true
     cp "$REPO_DIR/public/projects/commatrix/history.html" "$REPO_DIR/public/history.html" 2>/dev/null || true
     cp "$REPO_DIR/public/projects/commatrix/history.json" "$REPO_DIR/public/history.json" 2>/dev/null || true
     cp -r "$REPO_DIR/public/projects/commatrix/runs" "$REPO_DIR/public/runs" 2>/dev/null || true
+    # Copy to cursor/ so relative links work
+    mkdir -p "$REPO_DIR/public/cursor"
+    cp "$REPO_DIR/public/projects/commatrix/index.html" "$REPO_DIR/public/cursor/index.html" 2>/dev/null || true
+    cp "$REPO_DIR/public/projects/commatrix/results.json" "$REPO_DIR/public/cursor/results.json" 2>/dev/null || true
+    cp "$REPO_DIR/public/projects/commatrix/history.html" "$REPO_DIR/public/cursor/history.html" 2>/dev/null || true
+    cp "$REPO_DIR/public/projects/commatrix/history.json" "$REPO_DIR/public/cursor/history.json" 2>/dev/null || true
+    cp -r "$REPO_DIR/public/projects/commatrix/runs" "$REPO_DIR/public/cursor/runs" 2>/dev/null || true
 fi
 
 # Generate index page linking all projects
