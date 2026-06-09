@@ -39,19 +39,6 @@ export OPEN_PRS="${OPEN_PRS:-true}"
 export SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
 export SKIP_AI="true"
 
-# Read all projects from projects.json and run each one
-REPO_DIR="$REPO_DIR" python3 <<'PYEOF'
-import json, os, subprocess, sys
-
-repo_dir = os.environ['REPO_DIR']
-projects_file = os.path.join(repo_dir, 'projects.json')
-projects = json.load(open(projects_file))
-
-# Output project names, one per line
-for name in projects:
-    print(name)
-PYEOF
-
 # Only run commatrix (other projects can be added later)
 PROJECT_LIST="commatrix"
 
