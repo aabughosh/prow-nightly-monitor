@@ -7,9 +7,22 @@ set -euo pipefail
 CURSOR_CLI="/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
 REPO_DIR="$HOME/Documents/GitHub/prow-nightly-monitor"
 LOG_FILE="$REPO_DIR/skill-run.log"
+LOCK_FILE="/tmp/prow-nightly-monitor.lock"
 MAX_LOG_SIZE=$((5 * 1024 * 1024))  # 5 MB
 
 export PATH="/opt/homebrew/bin:/Applications/Cursor.app/Contents/Resources/app/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+# Prevent concurrent runs
+if [ -f "$LOCK_FILE" ]; then
+    lock_pid=$(cat "$LOCK_FILE" 2>/dev/null)
+    if kill -0 "$lock_pid" 2>/dev/null; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S'): SKIPPED — another run (pid $lock_pid) is active" >> "$LOG_FILE"
+        exit 0
+    fi
+    rm -f "$LOCK_FILE"
+fi
+echo $$ > "$LOCK_FILE"
+trap 'rm -f "$LOCK_FILE"' EXIT
 
 # Rotate log if it gets too large
 if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || echo 0)" -gt "$MAX_LOG_SIZE" ]; then
@@ -123,7 +136,7 @@ PYEOF
 
         log "  Cloning $TARGET_REPO for agent context..."
         rm -rf /tmp/ci-investigate 2>/dev/null
-        git clone --depth=1 "$TARGET_REPO" /tmp/ci-investigate >> "$LOG_FILE" 2>&1 || true
+        git clone --depth=50 "$TARGET_REPO" /tmp/ci-investigate >> "$LOG_FILE" 2>&1 || true
 
         cd /tmp
         if "$CURSOR_CLI" agent status >> "$LOG_FILE" 2>&1; then
@@ -240,13 +253,49 @@ fi
 # Send Slack summary (for the primary project)
 if [ -n "$SLACK_WEBHOOK_URL" ]; then
     log "Sending Slack summary..."
-    export JOB_FILTER="network-flow-matrix"
-    export OUTPUT_DIR="$REPO_DIR/public/projects/commatrix"
-    REPO_DIR="$REPO_DIR" python3 <<'PYEOF' >> "$LOG_FILE" 2>&1 || true
-import sys, os
-sys.path.insert(0, os.environ['REPO_DIR'])
-from inject_claude import send_slack_summary
-send_slack_summary()
+    SLACK_WEBHOOK_URL="$SLACK_WEBHOOK_URL" REPO_DIR="$REPO_DIR" python3 <<'PYEOF' >> "$LOG_FILE" 2>&1 || true
+import json, os, urllib.request
+
+repo_dir = os.environ['REPO_DIR']
+webhook = os.environ['SLACK_WEBHOOK_URL']
+results_file = os.path.join(repo_dir, 'public', 'projects', 'commatrix', 'results.json')
+
+try:
+    data = json.load(open(results_file))
+except Exception as e:
+    print(f"Cannot read results: {e}")
+    raise SystemExit(0)
+
+jobs = data.get('jobs', [])
+passed = sum(1 for j in jobs if j.get('state') == 'success')
+failed = sum(1 for j in jobs if j.get('state') == 'failure')
+total = len(jobs)
+from datetime import date
+today = date.today().strftime('%B %d, %Y')
+
+blocks = []
+blocks.append({"type": "header", "text": {"type": "plain_text", "text": f"Prow Nightly Monitor \u2014 {today}"}})
+summary = f":white_check_mark: {passed} passed  :x: {failed} failed  ({total} total)"
+blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": summary}})
+
+failures = [j for j in jobs if j.get('state') == 'failure']
+if failures:
+    lines = []
+    for j in failures[:5]:
+        name = j.get('name', 'unknown').split('nightly-')[-1] if 'nightly-' in j.get('name', '') else j.get('name', 'unknown')
+        cat = j.get('category', 'UNKNOWN').upper()
+        sev = j.get('severity', 'MEDIUM')
+        ai = j.get('ai_analysis', '')
+        snippet = (ai[:120] + '...') if len(ai) > 120 else ai
+        lines.append(f":large_orange_circle: *{name}*\n{cat} | Severity: {sev}\n_{snippet}_" if snippet else f":large_orange_circle: *{name}*\n{cat} | Severity: {sev}")
+    blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "\n\n".join(lines)}})
+
+blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": ":bar_chart: <https://aabughosh.github.io/prow-nightly-monitor/projects/commatrix/|Dashboard>"}})
+
+payload = json.dumps({"blocks": blocks}).encode()
+req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})
+resp = urllib.request.urlopen(req, timeout=10)
+print(f"Slack notification sent ({resp.status})")
 PYEOF
 fi
 

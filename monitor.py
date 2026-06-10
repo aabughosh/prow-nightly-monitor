@@ -1091,7 +1091,7 @@ def generate_trend_html(history: dict) -> str:
 
     versions = sorted(set(
         v for r in runs for v in r.get("by_version", {})
-    ))
+    ), key=lambda v: [int(x) for x in v.split(".")], reverse=True)
 
     bars_html = ""
     for run in runs:
