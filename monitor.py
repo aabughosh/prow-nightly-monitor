@@ -2566,6 +2566,9 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                     tname = t.get("name", t.get("step", "?"))
                     tfile = t.get("test_file", "")
                     tmsg = t.get("message", "")
+                    # Skip generic/unhelpful messages
+                    if tmsg in ("result: error/fail", "result: error", "result: fail", "from AI analysis"):
+                        tmsg = ""
                     analysis_html += f'<div style="margin-top:4px"><span class="test-name">{tname}</span>'
                     if tfile:
                         analysis_html += f' <span class="test-file">({tfile})</span>'
@@ -2685,8 +2688,6 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
 
                 # Show structured summary above the expandable details
                 _structured_html = '<div style="margin-top:6px;font-size:12px;line-height:1.6">'
-                if _root_cause_short:
-                    _structured_html += f'<div><strong style="color:#f0883e">Root Cause:</strong> {_md_to_html(_root_cause_short)}</div>'
                 if _breaking_pr:
                     # Extract just the URL(s) from the text for a clean display
                     import re as _re_mod
