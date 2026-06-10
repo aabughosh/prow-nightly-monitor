@@ -2477,6 +2477,8 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
         cls_order = {"test_regression": 0, "build_error": 1, "test_failure": 2, "test_flake": 3, "infra_other": 4, "infra_timeout": 5, "unknown": 6}
         return (1, cls_order.get(cls, 6), j["name"])
 
+    # Filter out rehearsal jobs (PR rehearsals duplicate periodic jobs)
+    jobs = [j for j in jobs if "rehearse-" not in j["name"]]
     jobs = sorted(jobs, key=_job_sort_key)
 
     rows = []
