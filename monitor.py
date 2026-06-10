@@ -2562,21 +2562,9 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                     for t in _ai_tests[:3]:
                         real_tests.append({"name": t.strip().strip("`"), "message": "from AI analysis"})
 
-                for t in real_tests[:3]:
+                for t in real_tests:
                     tname = t.get("name", t.get("step", "?"))
-                    tfile = t.get("test_file", "")
-                    tmsg = t.get("message", "")
-                    # Skip generic/unhelpful messages
-                    if tmsg in ("result: error/fail", "result: error", "result: fail", "from AI analysis"):
-                        tmsg = ""
-                    analysis_html += f'<div style="margin-top:4px"><span class="test-name">{tname}</span>'
-                    if tfile:
-                        analysis_html += f' <span class="test-file">({tfile})</span>'
-                    if tmsg:
-                        analysis_html += f'<div class="test-msg">{tmsg[:200]}</div>'
-                    analysis_html += '</div>'
-                if len(real_tests) > 3:
-                    analysis_html += f'<div style="color:#8b949e;font-size:11px;margin-top:2px">+{len(real_tests)-3} more</div>'
+                    analysis_html += f'<div style="margin-top:3px"><span class="test-name">{tname}</span></div>'
 
             # Only show Suggested Fix + Investigation when there's NO AI analysis
             # (AI structured display already covers Root Cause, Breaking PR, Class, Flake)
@@ -2686,31 +2674,8 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                     elif _line.strip().startswith("**Related Source Files:**"):
                         _related_files = _line.replace("**Related Source Files:**", "").strip()
 
-                # Show structured summary above the expandable details
-                _structured_html = '<div style="margin-top:6px;font-size:12px;line-height:1.6">'
-                if _breaking_pr:
-                    # Extract just the URL(s) from the text for a clean display
-                    import re as _re_mod
-                    _urls = _re_mod.findall(r'https://github\.com/[^\s,)]+', _breaking_pr)
-                    if _urls:
-                        _pr_links = " ".join(f'<a href="{u}" target="_blank" style="color:#f85149">{u.split("/")[-1]}</a>' for u in _urls[:3])
-                        _structured_html += f'<div><strong style="color:#f85149">Breaking PR:</strong> {_pr_links}</div>'
-                    elif "Not identifiable" not in _breaking_pr and "not identifiable" not in _breaking_pr.lower():
-                        _structured_html += f'<div><strong style="color:#f85149">Breaking PR:</strong> {_md_to_html(_breaking_pr[:120])}</div>'
-                if _issue_class:
-                    _cls_colors = {"infra_timeout": "#8b949e", "infra_other": "#8b949e", "test_regression": "#f85149", "test_failure": "#f0883e", "test_flake": "#d29922", "build_error": "#da3633", "unknown": "#484f58"}
-                    _cls_color = _cls_colors.get(_issue_class.strip().strip("`"), "#8b949e")
-                    _structured_html += f'<div><strong>Class:</strong> <span style="color:{_cls_color};font-weight:600">{_issue_class}</span></div>'
-                if _is_flake:
-                    _flake_icon = "⚡" if _is_flake.lower().startswith("yes") else "🔴"
-                    _structured_html += f'<div><strong>Flake?</strong> {_flake_icon} {_is_flake[:80]}</div>'
-                if _related_files:
-                    _file_urls = _re_mod.findall(r'https://github\.com/[^\s,)]+', _related_files)
-                    if _file_urls:
-                        _file_links = " ".join(f'<a href="{u}" target="_blank" style="color:#58a6ff;font-size:11px">{u.split("/blob/")[-1][:50] if "/blob/" in u else u.split("/")[-1]}</a>' for u in _file_urls[:3])
-                        _structured_html += f'<div><strong>Source:</strong> {_file_links}</div>'
-                _structured_html += '</div>'
-                analysis_html += _structured_html
+                # Structured summary is now inside Full AI Analysis only
+                pass
 
                 # Fingerprint/recurrence info
                 _fp_info = analysis.get("fingerprint", "")
