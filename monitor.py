@@ -179,6 +179,10 @@ def compute_duration(job: dict) -> str:
     start = job.get("start_time", "")
     end = job.get("completion_time", "")
     if not start or not end:
+        # Use cached duration from results.json if available
+        cached = job.get("duration_cached", "")
+        if cached and cached != "?":
+            return cached
         return "running..." if job.get("state") == "pending" else "?"
     try:
         s = datetime.fromisoformat(start.replace("Z", "+00:00"))
@@ -2786,6 +2790,7 @@ def _render_only():
             "url": j.get("url", ""),
             "start_time": j.get("start_time", ""),
             "completion_time": j.get("completion_time", ""),
+            "duration_cached": j.get("duration", ""),
             "spec": {"job": j["name"]},
         }
         jobs.append(job)
@@ -3042,6 +3047,8 @@ def main():
                 "name": j["name"],
                 "version": extract_version(j["name"]),
                 "state": j["state"],
+                "start_time": j.get("start_time", ""),
+                "completion_time": j.get("completion_time", ""),
                 "duration": compute_duration(j),
                 "url": j["url"],
                 "analysis": analyses.get(j["name"], {}),
