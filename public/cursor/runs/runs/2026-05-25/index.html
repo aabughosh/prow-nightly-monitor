@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prow Nightly Monitor — network-flow-matrix</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e1e4e8; min-height: 100vh; }
+
+  .header { background: linear-gradient(135deg, #161b22 0%, #1a1e2e 50%, #2d1b4e 100%); padding: 20px 32px; border-bottom: 1px solid #30363d; }
+  .header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; }
+  .header h1 code { background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 6px; font-size: 16px; }
+  .header .meta { color: #8b949e; font-size: 12px; margin-top: 4px; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px 32px; }
+
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; text-align: center; }
+  .stat-num { font-size: 32px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+  .green { color: #3fb950; }
+  .red { color: #f85149; }
+  .blue { color: #58a6ff; }
+  .yellow { color: #d29922; }
+
+  .categories { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .cat-card { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; background: #161b22; border: 1px solid #30363d; cursor: pointer; transition: all 0.2s; min-width: 130px; }
+  .cat-card:hover { border-color: #58a6ff; transform: translateY(-1px); }
+  .cat-card .cat-count { font-size: 22px; font-weight: 700; }
+  .cat-card .cat-name { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; }
+  .cat-card.matrix { border-left: 4px solid #f0883e; }
+  .cat-card.matrix .cat-count { color: #f0883e; }
+  .cat-card.test { border-left: 4px solid #f85149; }
+  .cat-card.test .cat-count { color: #f85149; }
+  .cat-card.infra { border-left: 4px solid #d29922; }
+  .cat-card.infra .cat-count { color: #d29922; }
+  .cat-card.build { border-left: 4px solid #da3633; }
+  .cat-card.build .cat-count { color: #da3633; }
+  .cat-card.unknown { border-left: 4px solid #484f58; }
+  .cat-card.unknown .cat-count { color: #8b949e; }
+
+  .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 12px 16px; background: #161b22; border-radius: 10px; border: 1px solid #30363d; }
+  .filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+  .filter-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 5px 12px; border-radius: 16px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+  .filter-btn:hover { background: #30363d; border-color: #58a6ff; }
+  .filter-btn.active { background: #388bfd26; border-color: #58a6ff; color: #58a6ff; }
+  .filter-sep { width: 1px; height: 20px; background: #30363d; margin: 0 6px; }
+
+  table { width: 100%; border-collapse: separate; border-spacing: 0; background: #161b22; border-radius: 10px; overflow: hidden; border: 1px solid #30363d; }
+  th { background: #1c2128; color: #8b949e; padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; border-bottom: 1px solid #30363d; }
+  td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: top; }
+  tr:hover { background: #1c2128; }
+  tr.row-success td { opacity: 0.7; }
+  tr.row-success:hover td { opacity: 1; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  details { margin-top: 6px; }
+  summary { cursor: pointer; color: #58a6ff; font-size: 12px; padding: 4px 0; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '\25B6  '; font-size: 9px; color: #8b949e; }
+  details[open] > summary::before { content: '\25BC  '; }
+  details[open] summary { margin-bottom: 6px; }
+  details > div { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px; font-size: 12px; color: #c9d1d9; margin-top: 4px; max-height: 500px; overflow-y: auto; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: white; }
+  .badge-infra { background: #d29922; }
+  .badge-test { background: #f85149; }
+  .badge-build { background: #da3633; }
+  .badge-matrix { background: #f0883e; }
+  .badge-error { background: #8b949e; }
+  .badge-unknown { background: #484f58; }
+  .badge-fix { background: #3fb950; }
+  .sev-critical { background: #f85149; color: white; }
+  .sev-high { background: #f0883e; color: white; }
+  .sev-medium { background: #d29922; color: white; }
+  .sev-low { background: #8b949e; color: white; }
+  .version-badge { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 5px; }
+
+  .fix-box { background: #0d1117; border: 1px solid #238636; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+  .fix-box-title { font-size: 10px; font-weight: 600; color: #3fb950; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .fix-box-content { font-size: 11px; color: #c9d1d9; font-family: 'SF Mono', 'Fira Code', monospace; line-height: 1.4; white-space: pre-wrap; }
+
+  .test-name { color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .test-file { color: #58a6ff; font-size: 11px; }
+  .test-msg { color: #8b949e; font-size: 11px; margin-top: 2px; }
+
+  code { background: #21262d; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; }
+
+  .footer { margin-top: 32px; padding: 16px; text-align: center; color: #484f58; font-size: 11px; border-top: 1px solid #21262d; }
+  .footer a { color: #58a6ff; }
+
+  @media (max-width: 768px) {
+    .stats { grid-template-columns: repeat(3, 1fr); }
+    .categories { flex-direction: column; }
+    .container { padding: 12px; }
+    .header { padding: 12px; }
+    table { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Prow Nightly Monitor — <code>network-flow-matrix</code></h1>
+  <div class="meta">Last updated: 2026-05-25 13:40 UTC | AI: disabled | <a href="../../history.html" style="color:#8b949e">Run History</a></div>
+</div>
+
+<div class="container">
+
+<div class="stats">
+  <div class="stat"><div class="stat-num">28</div><div class="stat-label">Total Jobs</div></div>
+  <div class="stat"><div class="stat-num green">7</div><div class="stat-label">Passed</div></div>
+  <div class="stat"><div class="stat-num red">3</div><div class="stat-label">Failed</div></div>
+  <div class="stat"><div class="stat-num blue">18</div><div class="stat-label">Pending</div></div>
+  <div class="stat"><div class="stat-num yellow">70%</div><div class="stat-label">Pass Rate</div></div>
+</div>
+
+<div class="categories"><div class="cat-card test" onclick="filterCategory('test_failure')"><div class="cat-count">2</div><div class="cat-name">Test Failure</div></div><div class="cat-card unknown" onclick="filterCategory('error')"><div class="cat-count">1</div><div class="cat-name">Error</div></div><div class="cat-card" onclick="filterCategory('')" style="border-left:4px solid #58a6ff"><div class="cat-count" style="color:#58a6ff">3</div><div class="cat-name">All</div></div></div>
+
+
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:20px;margin-bottom:24px">
+      <h2 style="font-size:16px;color:#f0f6fc;margin-bottom:16px">Trend (last 14 days)</h2>
+      <div style="display:flex;align-items:flex-end;gap:4px;margin-bottom:24px;padding:12px;background:#0d1117;border-radius:8px">
+        <a href="https://prow.ci.openshift.org/?type=periodic&job=*network-flow-matrix*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">5/28</div><div style="width:28px;background:#f85149;height:10px;border-radius:3px 3px 0 0" title="3 failed"></div><div style="width:28px;background:#3fb950;height:17px;border-radius:0 0 3px 3px" title="5 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">05-10</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*network-flow-matrix*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">9/28</div><div style="width:28px;background:#f85149;height:57px;border-radius:3px 3px 0 0" title="16 failed"></div><div style="width:28px;background:#3fb950;height:32px;border-radius:0 0 3px 3px" title="9 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">05-19</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*network-flow-matrix*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">15/28</div><div style="width:28px;background:#f85149;height:46px;border-radius:3px 3px 0 0" title="13 failed"></div><div style="width:28px;background:#3fb950;height:53px;border-radius:0 0 3px 3px" title="15 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">05-20</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*network-flow-matrix*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">7/28</div><div style="width:28px;background:#f85149;height:10px;border-radius:3px 3px 0 0" title="3 failed"></div><div style="width:28px;background:#3fb950;height:25px;border-radius:0 0 3px 3px" title="7 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">05-25</div></a>
+      </div>
+      <h3 style="font-size:14px;color:#8b949e;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Daily Status by Version</h3>
+      <div style="display:flex;gap:16px;margin-bottom:12px;font-size:11px;color:#8b949e">
+        <span><span style="display:inline-block;width:10px;height:10px;background:#3fb950;border-radius:50%;margin-right:4px"></span>All passed</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#f85149;border-radius:50%;margin-right:4px"></span>Has failures</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin-right:4px"></span>No data</span>
+        <span style="color:#484f58">← Each dot = one day (newest on right)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.21</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-10: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-19: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-20: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-05-25: 2 passed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.22</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-10: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-19: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-20: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-05-25: 2 passed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.23</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-10: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-19: 6 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-20: 6 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-25: 1 failed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">5.0</span><div><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-05-10: 2 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-19: 6 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-20: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-25: 2 failed"></span></div></div>
+    </div>
+
+<div class="filters">
+  <span class="filter-label">Version</span>
+  <button class="filter-btn active" onclick="filterVersion('', this)">All</button>
+  <button class="filter-btn" onclick="filterVersion('4.21', this)">4.21</button> <button class="filter-btn" onclick="filterVersion('4.22', this)">4.22</button> <button class="filter-btn" onclick="filterVersion('4.23', this)">4.23</button> <button class="filter-btn" onclick="filterVersion('5.0', this)">5.0</button>
+  <div class="filter-sep"></div>
+  <span class="filter-label">Status</span>
+  <button class="filter-btn active" onclick="filterState('', this)">All</button>
+  <button class="filter-btn" onclick="filterState('failure', this)">Failed</button>
+  <button class="filter-btn" onclick="filterState('success', this)">Passed</button>
+  <button class="filter-btn" onclick="filterState('pending', this)">Running</button>
+</div>
+
+<table id="jobsTable">
+<thead>
+<tr>
+  <th>Status</th>
+  <th>Ver</th>
+  <th>Job</th>
+  <th>Dur</th>
+  <th>Analysis</th>
+  <th>Started</th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.21</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix/2058896014516948992" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix">4.21-aws-ovn-network-flow-matrix</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.21</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2058896017037725696" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node">4.21-aws-ovn-network-flow-matrix-single-node</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.21</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-metal-ovn-network-flow-matrix-bm/2058896019545919488" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.21-metal-ovn-network-flow-matrix-bm">4.21-metal-ovn-network-flow-matrix-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.21</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-bm/2058896022087667712" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-bm">4.21-telco5g-network-flow-matrix-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.21</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm/2058896026269388800" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm">4.21-telco5g-network-flow-matrix-single-node-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-success" data-state="success" data-category=""><td>✅ success</td><td><span class="version-badge">4.21</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2058624189102821376" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-aws-upgrade-ovn-single-node-network-flow-matrix">4.21-upgrade-from-stable-4.20-e2e-aws-upgrade-ovn-single-node-network-flow-matrix</a></td><td>?</td><td></td><td></td></tr>
+<tr class="row-success" data-state="success" data-category=""><td>✅ success</td><td><span class="version-badge">4.21</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2058624191615209472" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix">4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a></td><td>?</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.22</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix/2058896028777582592" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix">4.22-aws-ovn-network-flow-matrix</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.22</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix-single-node/2058896031298359296" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix-single-node">4.22-aws-ovn-network-flow-matrix-single-node</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.22</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-metal-ovn-network-flow-matrix-bm/2058896033835913216" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.22-metal-ovn-network-flow-matrix-bm">4.22-metal-ovn-network-flow-matrix-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.22</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm/2058896036578988032" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm">4.22-telco5g-network-flow-matrix-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.22</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-single-node-bm/2058896038848106496" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-single-node-bm">4.22-telco5g-network-flow-matrix-single-node-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-success" data-state="success" data-category=""><td>✅ success</td><td><span class="version-badge">4.22</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2058624193292931072" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-aws-upgrade-ovn-single-node-network-flow-matrix">4.22-upgrade-from-stable-4.21-e2e-aws-upgrade-ovn-single-node-network-flow-matrix</a></td><td>?</td><td></td><td></td></tr>
+<tr class="row-success" data-state="success" data-category=""><td>✅ success</td><td><span class="version-badge">4.22</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2058624195805319168" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-metal-ipi-ovn-upgrade-network-flow-matrix">4.22-upgrade-from-stable-4.21-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a></td><td>?</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.23</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix/2058896041364688896" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix">4.23-aws-ovn-network-flow-matrix</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.23</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2058896044720132096" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node">4.23-aws-ovn-network-flow-matrix-single-node</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.23</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2058896046397853696" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm">4.23-metal-ovn-network-flow-matrix-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-failure" data-state="failure" data-category="test_failure"><td>❌ failure</td><td><span class="version-badge">4.23</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2058896048910241792" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm">4.23-telco5g-network-flow-matrix-bm</a></td><td>?</td><td><span class="badge badge-test">TEST</span> <span class="badge sev-medium">MEDIUM</span><div style="margin-top:4px"><span class="test-name">Storage volume not found: no storage vol with matching name 'boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso'</span></div><div style="margin-top:4px"><span class="test-name">! => {"ansible_facts": {"discovered_interpreter_python": "/usr/bin/python3"}, "changed": true, "cmd": "kcli delete plan -y cnfdu8_ci", "delta": "0:00:00.617278", "end": "2026-05-25 09:12:20.191845", "</span></div><div class="fix-box"><div class="fix-box-title">Suggested Fix</div><div class="fix-box-content">2 test(s) failed:
+  - Storage volume not found: no storage vol with matching name 'boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso'
+  - ! => {"ansible_facts": {"discovered_interpreter_python": "/usr/bin/python3"}, "changed": true, "cmd": "kcli delete plan -y cnfdu8_ci", "delta": "0:00:00.617278", "end": "2026-05-25 09:12:20.191845", "
+
+Source references: mustgather.go:480, memcache.go:265, /tmp/secret/get-cluster-name.yml:6, /tmp/secret/get-cluster-name.yml:14, /tmp/secret/get-cluster-name.yml:19
+Check if this is a flake (retry the job) or a real regression from a recent commit.</div></div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Investigation</summary><div><strong style="color:#f0883e">Root Cause:</strong> Storage volume not found: no storage vol with matching name 'boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso'; ! => {"ansible_facts": {"discovered_interpreter_python": "/usr/bin/python3"}, "changed": true, "cmd": "kcli delete plan -y cnfdu8_ci", "delta": "0:00:00.617278", "end": "2026-05-25 09:12:20.191845", "<br><br><pre style="font-size:11px;color:#f0883e;white-space:pre-wrap">libvirt.libvirtError: Storage volume not found: no storage vol with matching name 'boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso'
+XXXXXXXXXXXX               : ok=3    changed=2    unreachable=0    failed=1    skipped=0    rescued=0    ignored=1
+XXXXXXXXXXXX               : ok=5    changed=4    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+XXXXXXXXXXXX               : ok=3    changed=3    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+<XXXXXXXXXXXX> (0, b'ansible-tmp-1779714733.3785763-35-13357458077913=/home/XXXXXXXXXX/.ansible/tmp/ansible-tmp-1779714733.3785763-35-13357458077913\n', b"OpenSSH_8.7p1, OpenSSL 3.0.7 1 Nov 2022\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebug3: /etc/ssh/ssh_config line 55: Includi
+<XXXXXXXXXXXX> (0, b'sftp> put /output/.ansible/tmp/ansible-local-31g1_m735q/tmplykwu_cw /home/XXXXXXXXXX/.ansible/tmp/ansible-tmp-1779714733.3785763-35-13357458077913/AnsiballZ_command.py\n', b'OpenSSH_8.7p1, OpenSSL 3.0.7 1 Nov 2022\r\ndebug1: Reading configuration data /etc/ssh/ssh_config\r\ndebu
+</pre></div></details><details><summary>AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">CI failure analysis (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm</code> / build <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2058896048910241792</code>)</h3>
+<br>
+<p style="margin:4px 0"><strong>Root Cause:</strong></p>
+<p style="margin:4px 0">The job fails in <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code></strong> when Ansible runs <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code></strong>, task <strong>“Run deployment”</strong>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli create plan … cnfdu8_ci …</code> exits with <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rc</code>: 1</strong>. Inside <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kvirt.providers.kvm</code> → <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">create</code></strong>, <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">virStorageVolGetPath()</code></strong> fails because <strong>libvirt has no storage volume</strong> named <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso</code></strong> in the expected pool. That is a <strong>bare-metal libvirt/KVM provisioning error</strong> (missing or already-removed ISO, stale plan/volume bookkeeping, or host pool drift), not a failure in this checked-out <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix</code></strong> codebase.</p>
+<br>
+<p style="margin:4px 0">Earlier, <strong>“Remove last run”</strong> runs <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli delete plan</code> with <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rc</code>: 4</strong> (“No objects found”) but is <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">...ignoring</code></strong>, so it does <strong>not</strong> stop the playbook.</p>
+<br>
+<p style="margin:4px 0">The <strong>JUnit “storage volume not found”</strong> line corresponds to this <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli create plan</code></strong> traceback.</p>
+<br>
+<p style="margin:4px 0">A <strong>follow-on failure</strong> appears in <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">destroy-cluster.yml</code></strong>: <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli delete plan -y cnfdu8_ci</code></strong> returns <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rc</code>: 4</strong> when the plan was <strong>never successfully created</strong>. That task <strong>does not</strong> ignore errors, so teardown <strong>hard-fails</strong> even though deletion is effectively a <strong>no-op</strong>—this <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-release-cluster</code></strong> step failure is downstream of the aborted install.</p>
+<br>
+<p style="margin:4px 0"><strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">memcache.go:265</code></strong> in <strong>client-go discovery</strong> only logs <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">couldn't get current server API group list</code></strong> when the <strong>API server</strong> is slow/unreachable (<strong>TLS handshake / timeout</strong>). That matches <strong>gather / must-gather</strong> steps in <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">junit-failures.txt</code></strong> and reflects <strong>cluster/API or network instability</strong> during artifact collection—not the initial <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli</code> / libvirt</strong> install break.</p>
+<br>
+<p style="margin:4px 0">References to <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">mustgather.go</code></strong> and <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/tmp/secret/get-cluster-name.yml</code></strong> match <strong>CI/pod-side scripts and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc</code>/must-gather</strong>, which are <strong>not</strong> present in this repo.</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Is it a flake?</strong></p>
+<p style="margin:4px 0"><strong>Mixed.</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Dominant:</strong> <strong>Environment / infra</strong> on the <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu8</code></strong> bare-metal runner (missing *<em><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">boot-</em>.iso</code><strong> in libvirt) can be </strong>intermittent*<em> (</em>retry may pass*) but also may <strong>repeat</strong> if the host or image sync is systematically wrong—not a deterministic “one bad commit” in <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix</code></strong>.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Secondary:</strong> <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">destroy-cluster.yml</code></strong> treating <strong>“nothing to delete”</strong> as fatal is <strong>repeatable whenever install never creates the plan</strong>.</div>
+<br>
+<p style="margin:4px 0"><strong>Code Path:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Install failure:</strong> Ansible <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/output/ocp-install.yml</code></strong> → task <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Run deployment</code></strong> → shell <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli create plan … cnfdu8_ci</code></strong> → Python <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kvirt/config.py:create_vm</code></strong> → <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kvirt/providers/kvm/__init__.py:create</code></strong> → <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">libvirt</code> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">virStorageVolGetPath()</code></strong> → <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">libvirt.libvirtError</code></strong> for missing <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">boot-5902d6b4-805c-43c9-92ff-bc3c0cc75808.iso</code></strong>.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Gather noise:</strong> <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">k8s.io/client-go/discovery/cached/memory/memcache.go</code></strong> (e.g. around <strong>line 265</strong>) <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">HandleError</code></strong> on discovery when <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Get https://…:64415/api</code></strong> times out (<strong>TLS</strong>/deadline).</div>
+<br>
+<p style="margin:4px 0"><strong>Suggested Fix:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Infra / kcli-KVM:</strong> On the <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu8</code></strong> side, confirm the <strong>openshift/installer ISO</strong> (or <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">boot-<uuid>.iso</code></strong>) exists in the configured <strong>storage pool</strong>, fix <strong>stale volumes/plans</strong>, and ensure <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli</code> plan</strong>/params align with deployed images (<strong>not</strong> actionable inside this <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix</code></strong> tree).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>CI playbook hardening:</strong> In <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">destroy-cluster.yml</code></strong> (in the <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco-runner</code> / openshift/release</strong> workflow asset that ships it), make <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli delete plan</code></strong> <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failed_when: false</code></strong> or treat <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rc</code> 4</strong> / “No objects found” as <strong>success</strong>, so teardown does not fail when the plan never existed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Optional retry:</strong> One <strong>job rerun</strong> is reasonable if this is isolated <strong>runner drift</strong>; recurring failures need <strong>infra</strong> fixes.</div>
+<br>
+<p style="margin:4px 0"><strong>Fix Written:</strong> <strong>no</strong> — the failing Ansible and <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli</code></strong> assets live <strong>outside</strong> this <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix</code></strong> checkout; patching <strong>vendored</strong> <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">client-go</code></strong> would not address <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli</code>/libvirt</strong>. No <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-evidence/fix.patch</code></strong> was produced.</p>
+<br>
+<p style="margin:4px 0"><strong>Severity:</strong> <strong>HIGH</strong> for the nightly <strong>telco5g bm</strong> lane (blocking install); <strong>gather</strong> timeouts are <strong>MEDIUM</strong> aggravation (<strong>symptom</strong> of API stress/unreachability after/during instability).</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><em>Workspace note: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">./ci-evidence/</code> was read fully; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">./ci-evidence/prow-urls.txt</code> <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build-log.txt</code></strong> was curled for the full <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code></strong> / <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">destroy-cluster.yml</code></strong> context. This repo has <strong>no</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code>, <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fetch-information.yml</code></strong>, or <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">destroy-cluster.yml</code></strong>, and <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">git log</code></strong> applies only to <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix</code></strong>, not the CI job’s container paths (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/output/</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/tmp/secret/</code>).</em></p></div></details></div></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.23</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2058896051431018496" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm">4.23-telco5g-network-flow-matrix-single-node-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-success" data-state="success" data-category=""><td>✅ success</td><td><span class="version-badge">4.23</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2058624198321901568" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.23-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix">4.23-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix</a></td><td>?</td><td></td><td></td></tr>
+<tr class="row-success" data-state="success" data-category=""><td>✅ success</td><td><span class="version-badge">4.23</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2058624200003817472" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.23-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix">4.23-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a></td><td>?</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix/2058896053951795200" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix">5.0-aws-ovn-network-flow-matrix</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-failure" data-state="failure" data-category="test_failure"><td>❌ failure</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2058896056464183296" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node">5.0-aws-ovn-network-flow-matrix-single-node</a></td><td>?</td><td><span class="badge badge-test">TEST</span> <span class="badge sev-medium">MEDIUM</span><div class="fix-box"><div class="fix-box-title">Suggested Fix</div><div class="fix-box-content">Check if this is a flake (retry the job) or a real regression from a recent commit.</div></div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Investigation</summary><div><strong style="color:#f0883e">Root Cause:</strong> Test failed: Import the release payload "latest" from an external source<br><br><pre style="font-size:11px;color:#f0883e;white-space:pre-wrap">ERRO[2026-05-25T13:01:09Z] Some steps failed:
+* could not run steps: step [release:latest] failed: failed to get CLI image: unable to wait for the 'cli' image in the stable stream to populate: failed to import tag(s) [cli] on image stream ci-op-rgrf29g9/stable because of missing definition in the spec
+INFO[2026-05-25T13:01:09Z] Reporting job state 'failed' with reason 'executing_graph:step_failed:importing_release'
+</pre></div></details><details><summary>AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><p style="margin:4px 0"><strong>Root Cause:</strong> The job stopped in the openshift CI provisioning step <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release:latest</code></strong>, not while running repo tests. Ci-operator imported nightly payload <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release-5:5.0.0-0.nightly-2026-05-25-010342</code> into the build namespace, then tried to ensure the <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cli</code></strong> image existed on <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ImageStream/ci-op-rgrf29g9/stable</code></strong>. Kubernetes reported that the <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cli</code></strong> tag could not be imported because <strong>that tag did not appear in (or lacked a usable reference in) the import spec</strong>. So the CLI image dependency for the assembled “stable” stream never became available within the allotted wait. Typical drivers are a <strong>broken or incomplete nightly release payload</strong> (metadata missing/hiding the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cli</code> image), <strong>registry/metadata inconsistency</strong>, or occasionally <strong>temporary cluster/registry/API flakes</strong> during that import/wait phase.</p>
+<br>
+<p style="margin:4px 0"><strong>Is it a flake?</strong> <strong>Either way is plausible.</strong> From a single failing run alone you cannot distinguish a <strong>retry-friendly infra flake</strong> from a <strong>systematic problem with that nightly</strong>. If retries on the <strong>same nightly</strong> consistently fail while <strong>other nightly tags</strong> succeed, treat it as a <strong>payload/ci-operator compatibility</strong> issue rather than flake. Per-run retry is reasonable for <strong>transitory</strong> infra only.</p>
+<br>
+<p style="margin:4px 0"><strong>Code Path:</strong> There is <strong>no failing test or function in this workspace</strong> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">github.com/openshift-kni/commatrix</code>). The stack is <strong>ci-operator</strong> (build log shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-operator version v20260525-46d397526</code>) during <strong>release image import</strong> → <strong>wait for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cli</code> on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">stable</code> stream</strong> → <strong>ImageStream tag import</strong> error: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failed to import tag(s) [cli] ... because of missing definition in the spec</code>. The JUnit entry “Import the release payload latest from an external source” is how that <strong>CI step</strong> is surfaced, not an e2e test under <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/</code> here.</p>
+<br>
+<p style="margin:4px 0"><strong>Suggested Fix:</strong> <strong>No code change in commatrix applies.</strong> Actionable next steps: <strong>re-run the job</strong> once to rule out transient failure; if it persists, <strong>inspect that nightly’s payload and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cli</code> image availability</strong> (openshift/release / release-controller / payload promotion) and <strong>ci-operator</strong> behavior for 5.0 nightlies with the team that owns <strong>ci-operator</strong> and <strong>OCP 5.0 nightly composition</strong>.</p>
+<br>
+<p style="margin:4px 0"><strong>Fix Written:</strong> <strong>no</strong> (no <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fix.patch</code>; this is <strong>CI/payload/infra-level</strong>, not an application or test bug in this repository).</p>
+<br>
+<p style="margin:4px 0"><strong>Severity:</strong> <strong>MEDIUM</strong> for this repository (no product defect); <strong>HIGH</strong> for <strong>CI signal</strong> on that job until the <strong>release import</strong> path succeeds again.</p></div></details></div></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2058896059815432192" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm">5.0-metal-ovn-network-flow-matrix-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2058896063166681088" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm">5.0-telco5g-network-flow-matrix-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2058896065687457792" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm">5.0-telco5g-network-flow-matrix-single-node-bm</a></td><td>running...</td><td></td><td></td></tr>
+<tr class="row-success" data-state="success" data-category=""><td>✅ success</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2058624201681539072" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix">5.0-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix</a></td><td>?</td><td></td><td></td></tr>
+<tr class="row-failure" data-state="failure" data-category="error"><td>❌ failure</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2058624204198121472" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix">5.0-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a></td><td>?</td><td><span class="badge badge-error">ERROR</span> <span class="badge sev-medium">MEDIUM</span><div style="margin-top:4px"><span class="test-name">baremetalds-e2e-test</span><div class="test-msg">om = 2026-05-24 19:17:08 +0000 UTC; To = 2026-05-24 22:07:00.017230273 +0000 UTC m=+219.786679040   last interval time: From = 2026-05-24 23:36:56.783419796 +0000 UTC m=+5616.552868563; To = 2026-05-2</div></div><div style="margin-top:4px"><span class="test-name">unknown</span><div class="test-msg">"e2e-metal-ipi-ovn-upgrade-network-flow-matrix" pod "e2e-metal-ipi-ovn-upgrade-network-flow-matrix-baremetalds-e2e-test" failed: could not watch pod: the pod ci-op-9kgk7w24/e2e-metal-ipi-ovn-upgrade-n</div></div><div class="fix-box"><div class="fix-box-title">Suggested Fix</div><div class="fix-box-content">Manual investigation required.
+Check the full Prow logs and error output below for details.</div></div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Investigation</summary><div><strong style="color:#f0883e">Root Cause:</strong> Errors found: Suite run returned error: 1 blocking fail, 0 informing fail, 1984 pass, 0 flaky, 2072 skip (1h33m8s); error: error running a test suite: 1 blocking fail, 0 informing fail, 1984 pass, 0 flaky, 2072 skip <br><br><pre style="font-size:11px;color:#f0883e;white-space:pre-wrap">time="2026-05-24T23:38:14Z" level=info msg="duplicated event allowed by KubeletUnhealthyReadinessProbeFailed" locator="{Kind map[hmsg:e7a751a213 namespace:e2e-port-forwarding-9230 node:worker-2 pod:pfpod]}" message="{Unhealthy  Readiness probe failed:  map[count:21 firstTimestamp:2026-05-24T22:10:49
+time="2026-05-24T23:38:14Z" level=info msg="duplicated event allowed by KubeletUnhealthyReadinessProbeFailed" locator="{Kind map[hmsg:e7a751a213 namespace:e2e-port-forwarding-9230 node:worker-2 pod:pfpod]}" message="{Unhealthy  Readiness probe failed:  map[count:22 firstTimestamp:2026-05-24T22:10:49
+time="2026-05-24T23:38:14Z" level=info msg="duplicated event allowed by KubeletUnhealthyReadinessProbeFailed" locator="{Kind map[hmsg:e7a751a213 namespace:e2e-port-forwarding-9230 node:worker-2 pod:pfpod]}" message="{Unhealthy  Readiness probe failed:  map[count:23 firstTimestamp:2026-05-24T22:10:49
+time="2026-05-24T23:38:14Z" level=info msg="duplicated event allowed by KubeletUnhealthyReadinessProbeFailed" locator="{Kind map[hmsg:e7a751a213 namespace:e2e-port-forwarding-9230 node:worker-2 pod:pfpod]}" message="{Unhealthy  Readiness probe failed:  map[count:24 firstTimestamp:2026-05-24T22:10:49
+time="2026-05-24T23:38:14Z" level=info msg="duplicated event allowed by KubeletUnhealthyReadinessProbeFailed" locator="{Kind map[hmsg:e7a751a213 namespace:e2e-port-forwarding-9230 node:worker-2 pod:pfpod]}" message="{Unhealthy  Readiness probe failed:  map[count:25 firstTimestamp:2026-05-24T22:10:49
+time="2026-05-24T23:38:14Z" level=info msg="duplicated event allowed by KubeletUnhealthyReadinessProbeFailed" locator="{Kind map[hmsg:773222eaca namespace:e2e-services-312 node:worker-0 pod:webserver-pod]}" message="{Unhealthy  Readiness probe failed: HTTP probe failed with statuscode: 503 map[count
+</pre></div></details><details><summary>AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><p style="margin:4px 0"><strong>Root Cause:</strong> The job failed exactly one blocking e2e: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[sig-olmv1][OCPFeatureGate:NewOLM][Skipped:Disconnected] OLMv1 operator installation should install an openshift catalog cluster extension</code>. During the scenario, ClusterExtension <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">install-test-ce-*</code> stayed in retry with errors like <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error walking catalogs: error getting package "quay-operator" from catalog "openshift-community-operators": cache for ca…</code> until it timed out (~10 minutes) at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/build/openshift/tests-extension/pkg/helpers/cluster_extension.go:170</code>. ClusterCatalog CRs (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-community-operators</code>, etc.) looked healthy (Progressing/Serving True), but catalog resolution failed for package <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">quay-operator</code>. That is a <strong>Conformance / OLMv1</strong> failure; the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-evidence</code> network-matrix nftables/MC/gather artefacts do not explain it.</p>
+<br>
+<p style="margin:4px 0"><strong>Category:</strong> test failure (OLMv1 / openshift catalog path and tests-extension helpers), not matrix mismatch.</p>
+<br>
+<p style="margin:4px 0"><strong>Suggested Fix:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; In <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift/tests-extension</code></strong> and/or <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">olmv1-tests-ext</code></strong>: diagnose the catalog walk/cache error for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">quay-operator</code> on this profile (baremetal, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">--external-connectivity=Proxied</code>); broaden skip rules if mirrored/proxy clusters should not run this <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[Skipped:Disconnected]</code> test only when labeled “Disconnected”.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; If the bug is elsewhere, <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">catalogd</code> / OLM backend</strong> owns cache consistency versus Serving status.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>openshift/release</strong> may temporarily tune the periodic’s test suite while the above is fixed.</div>
+<br>
+<p style="margin:4px 0"><strong>Fix Written:</strong> no — workspace is <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">github.com/openshift-kni/commatrix</code></strong>; fixes belong in openshift tests-extension / OLM, not here (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">./ci-evidence/fix.patch</code> not created).</p>
+<br>
+<p style="margin:4px 0"><strong>Severity:</strong> HIGH — one blocking failure turns the entire lane red despite ~1984 passes.</p>
+<br>
+<p style="margin:4px 0">Evidence path: blocking failure quoted in CI <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build-log.txt</code> (“Blocking test failures”); detailed failure lines came from curling the artefacts URL listed in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">./ci-evidence/prow-urls.txt</code> (baremetalds-e2e-test step log). The same summary was printed to the terminal stdout via a here-doc.</p></div></details></div></td><td></td></tr>
+</tbody>
+</table>
+
+<div class="footer">
+  <a href="https://github.com/aabughosh/prow-nightly-monitor">prow-nightly-monitor</a> |
+  Data from <a href="https://prow.ci.openshift.org/?type=periodic&job=*network-flow-matrix*">Prow</a> |
+  <a href="../../history.html">Run History</a> |
+  <a href="claude-report.html">Claude Report</a>
+</div>
+
+</div>
+
+<script>
+function filterVersion(v, btn) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    const version = row.cells[1].textContent.trim();
+    row.style.display = (!v || version === v) ? '' : 'none';
+  });
+  if (btn) {
+    btn.closest('.filters').querySelectorAll('.filter-btn').forEach(b => {
+      if (b.onclick && b.onclick.toString().includes('filterVersion'))
+        b.classList.remove('active');
+    });
+    btn.classList.add('active');
+  }
+}
+function filterState(s, btn) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    const state = row.dataset.state || '';
+    row.style.display = (!s || state === s) ? '' : 'none';
+  });
+  if (btn) {
+    btn.closest('.filters').querySelectorAll('.filter-btn').forEach(b => {
+      if (b.onclick && b.onclick.toString().includes('filterState'))
+        b.classList.remove('active');
+    });
+    btn.classList.add('active');
+  }
+}
+function filterCategory(cat) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    if (!cat) { row.style.display = ''; return; }
+    const rowCat = row.dataset.category || '';
+    const state = row.dataset.state || '';
+    if (state !== 'failure' && state !== 'error') { row.style.display = 'none'; return; }
+    row.style.display = (rowCat === cat) ? '' : 'none';
+  });
+}
+</script>
+</body>
+</html>

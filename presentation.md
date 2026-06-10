@@ -154,16 +154,48 @@ Show an example PR if available.
 
 ---
 
-## Slide 11: Cost & Schedule
+## Slide 11: Why Local Cron (launchd) — Not GitHub Actions?
 
-| | Daily (Tue-Fri) | Weekly (Monday) |
+**GitHub Actions can't do this:**
+- No access to Cursor CLI agent (needs local install + auth)
+- AI agent needs to clone repos, run commands, browse code — needs a real machine
+- GitHub Actions would need expensive self-hosted runners for AI
+- Rate limits on GitHub Actions for long-running AI tasks (~20 min per project)
+
+**Local cron (macOS launchd) gives us:**
+- Runs on your laptop every weekday at noon — fully autonomous
+- Direct access to Cursor CLI (already authenticated)
+- No CI minutes consumed, no runner costs
+- Survives reboots (launchd restarts it)
+- Can run even when you're in meetings — fires and forgets
+
+**The daily run (no AI) COULD run in GitHub Actions** — but we keep it local for simplicity and to have everything in one place.
+
+**Speaker notes:** "Why not GitHub Actions? Because the AI agent needs Cursor CLI which requires a local install and login. It also needs to clone repos, run shell commands, and write fixes — things that would need expensive self-hosted runners. With launchd, it just runs on my machine every day while I'm in meetings."
+
+---
+
+## Slide 12: Cost Breakdown
+
+| | Daily (Tue-Fri) | Weekly AI (Monday) |
 |---|---|---|
-| What runs | Fetch + classify + Slack | + AI deep analysis + PRs |
-| Duration | ~5 minutes | ~20-30 minutes |
-| Cost | Free | ~$0.50-2.00 (Cursor CLI) |
-| Output | Dashboard + Slack alert | + AI summaries + fix patches + PRs |
+| **What runs** | Fetch + classify + Slack | + AI deep analysis + PRs |
+| **Duration** | ~5 minutes | ~20-30 min per project |
+| **Cost** | Free (just API calls) | ~$0.50-2.00 per project |
+| **Output** | Dashboard + Slack alert | + AI summaries + fix patches + PRs |
 
-Runs automatically via macOS launchd — zero maintenance.
+**Monthly cost estimate (4 projects):**
+- Daily runs (20 days): $0
+- Weekly AI (4 Mondays × 4 projects): ~$8-32/month
+- **Total: ~$8-32/month** for automated investigation of ALL nightly failures
+
+**Compare to engineer time:**
+- 30 min/day × 20 days = 10 hours/month investigating failures manually
+- At $80/hr engineer cost = **$800/month of saved time**
+
+**ROI: 25-100x return on AI cost**
+
+**Speaker notes:** "The AI runs once a week per project. That's about $0.50-2 per project per week. For 4 projects that's maybe $30/month. Compare that to 10 hours a month of engineer time spent digging through Prow logs — the ROI is massive."
 
 ---
 

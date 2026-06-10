@@ -218,6 +218,10 @@ with open(os.path.join(repo_dir, 'public', 'cursor', 'index.html'), 'w') as f:
 print(f'Generated project index with {len(projects)} projects')
 PYEOF
 
+# Scrub secrets from results before pushing
+find "$REPO_DIR/public" -name "results.json" -exec \
+  sed -i '' 's|https://hooks.slack.com/services/[A-Za-z0-9/]*|REDACTED|g' {} \;
+
 # Copy to docs/ for GitHub Pages
 log "Copying to docs/..."
 rm -rf "$REPO_DIR/docs"
