@@ -493,16 +493,8 @@ def main():
 
     print(f"Found {len(failed)} failure(s) to analyze")
 
-    # Detect if this is commatrix (use per-issue mode) or PTP (legacy per-job mode)
-    job_filter = os.environ.get("JOB_FILTER", "")
-    use_per_issue = "commatrix" in job_filter or "network-flow-matrix" in job_filter
-
     fp_db = load_db()
-
-    if use_per_issue:
-        _analyze_per_issue(data, failed, fp_db)
-    else:
-        _analyze_per_job(data, failed, fp_db)
+    _analyze_per_issue(data, failed, fp_db)
 
     save_db(fp_db)
 
