@@ -2553,24 +2553,27 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                         if real_tests:
                             break
 
-                # Last resort: extract test names from AI summary text
-                if not real_tests and ai_summary:
+                # Also extract test names from AI summary to augment (artifacts may be truncated)
+                if ai_summary:
+                    import re as _re_art2
+                    _existing_names = {t.get("name", "") for t in real_tests}
                     # Match [mode-serial/parallel] test name patterns
-                    _ai_matches = _re_art.findall(
+                    _ai_matches = _re_art2.findall(
                         r'\[(\w+-(?:serial|parallel))\]\s+([^—`\n\[]+)', ai_summary)
                     for mode, name in _ai_matches:
-                        # Clean: stop at backtick or dash delimiter
                         clean_name = name.split('`')[0].split(' — ')[0].strip().rstrip('*')
                         if len(clean_name) > 5:
                             full_name = f"[{mode}] {clean_name}"
-                            if full_name not in [t.get("name", "") for t in real_tests]:
+                            if full_name not in _existing_names:
                                 real_tests.append({"name": full_name})
+                                _existing_names.add(full_name)
                     # Fallback: backtick-quoted names
                     if not real_tests:
-                        _ai_tests = _re_art.findall(r'`(\[(?:It|[a-z]+-(?:serial|parallel))\][^`]+)`', ai_summary)
+                        _ai_tests = _re_art2.findall(r'`(\[(?:It|[a-z]+-(?:serial|parallel))\][^`]+)`', ai_summary)
                         for t in _ai_tests:
-                            if t not in [x.get("name", "") for x in real_tests]:
+                            if t not in _existing_names:
                                 real_tests.append({"name": t})
+                                _existing_names.add(t)
 
                 for t in real_tests:
                     tname = t.get("name", t.get("step", "?"))
