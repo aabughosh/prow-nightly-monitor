@@ -2515,7 +2515,7 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
         if state in ("failure", "error") and ai_summary:
             for _cl in ai_summary.split("\n"):
                 if _cl.strip().startswith("**Issue Class:**"):
-                    _current_class = _cl.replace("**Issue Class:**", "").strip().strip("`").split("(")[0].strip()
+                    _current_class = _cl.replace("**Issue Class:**", "").strip().strip("`").strip("*").split("(")[0].split(" ")[0].strip().strip("`")
                     break
             if _current_class == "unknown":
                 _current_class = category or "unknown"
