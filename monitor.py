@@ -2553,31 +2553,23 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                         if real_tests:
                             break
 
-                # Also extract test names from AI summary to augment (artifacts may be truncated)
+                # Also extract test names from AI summary (often more complete than truncated artifacts)
                 if ai_summary:
                     import re as _re_art2
-                    # Build a set of short names for dedup (strip [It] prefix and [Serial]/[Parallel] suffix)
-                    def _short_name(n):
-                        return _re_art2.sub(r'^\[It\]\s*', '', n).rstrip().rstrip(']').split(' [Serial')[0].split(' [Parallel')[0].strip()
-                    _existing_short = {_short_name(t.get("name", "")) for t in real_tests}
-                    # Match [mode-serial/parallel] test name patterns
+                    _ai_tests_list = []
+                    _seen_ai = set()
                     _ai_matches = _re_art2.findall(
                         r'\[(\w+-(?:serial|parallel))\]\s+([^—`\n\[]+)', ai_summary)
                     for mode, name in _ai_matches:
                         clean_name = name.split('`')[0].split(' — ')[0].strip().rstrip('*')
                         if len(clean_name) > 5:
                             full_name = f"[{mode}] {clean_name}"
-                            short = _short_name(full_name)
-                            if short not in _existing_short:
-                                real_tests.append({"name": full_name})
-                                _existing_short.add(short)
-                    # Fallback: backtick-quoted names
-                    if not real_tests:
-                        _ai_tests = _re_art2.findall(r'`(\[(?:It|[a-z]+-(?:serial|parallel))\][^`]+)`', ai_summary)
-                        for t in _ai_tests:
-                            if t not in _existing_names:
-                                real_tests.append({"name": t})
-                                _existing_names.add(t)
+                            if full_name not in _seen_ai:
+                                _ai_tests_list.append({"name": full_name})
+                                _seen_ai.add(full_name)
+                    # If AI found more tests, use AI list (it's authoritative and cleaner)
+                    if len(_ai_tests_list) > len(real_tests):
+                        real_tests = _ai_tests_list
 
                 for t in real_tests:
                     tname = t.get("name", t.get("step", "?"))
