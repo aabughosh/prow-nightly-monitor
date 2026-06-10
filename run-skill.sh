@@ -219,8 +219,7 @@ print(f'Generated project index with {len(projects)} projects')
 PYEOF
 
 # Scrub secrets from results before pushing
-find "$REPO_DIR/public" -name "results.json" -exec \
-  sed -i '' 's|https://hooks.slack.com/services/[A-Za-z0-9/]*|REDACTED|g' {} \;
+find "$REPO_DIR/public" -name "results.json" -exec sed -i '' 's|https://hooks.slack.com/services/[A-Za-z0-9/]*|REDACTED|g' {} + || true
 
 # Copy to docs/ for GitHub Pages
 log "Copying to docs/..."
@@ -230,11 +229,11 @@ cp -r "$REPO_DIR/public" "$REPO_DIR/docs"
 # Push to GitHub Pages
 log "Pushing to GitHub Pages..."
 cd "$REPO_DIR"
-git add public/ docs/ 2>/dev/null
-if git diff --cached --quiet; then
+git add public/ docs/ 2>/dev/null || true
+if git diff --cached --quiet 2>/dev/null; then
     log "No changes to push"
 else
-    git commit -m "dashboard: $(date '+%Y-%m-%d') nightly results (all projects)" >> "$LOG_FILE" 2>&1
+    git commit -m "dashboard: $(date '+%Y-%m-%d') nightly results (all projects)" >> "$LOG_FILE" 2>&1 || true
     git push origin main >> "$LOG_FILE" 2>&1 && log "Pushed to GitHub Pages" || log "WARNING: git push failed"
 fi
 
