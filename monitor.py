@@ -2555,12 +2555,22 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
 
                 # Last resort: extract test names from AI summary text
                 if not real_tests and ai_summary:
-                    _ai_tests = _re_art.findall(
-                        r'\[(?:It|dualnicbcha|bc|dualnicbc|dualfollower|oc|tgm)[^\]]*\][^`\n]{10,150}', ai_summary)
-                    if not _ai_tests:
-                        _ai_tests = _re_art.findall(r'`([^`]*(?:serial|parallel)\][^`]*)`', ai_summary)
-                    for t in _ai_tests[:3]:
-                        real_tests.append({"name": t.strip().strip("`"), "message": "from AI analysis"})
+                    # Match [mode-serial/parallel] test name patterns
+                    _ai_matches = _re_art.findall(
+                        r'\[(\w+-(?:serial|parallel))\]\s+([^—`\n\[]+)', ai_summary)
+                    for mode, name in _ai_matches:
+                        # Clean: stop at backtick or dash delimiter
+                        clean_name = name.split('`')[0].split(' — ')[0].strip().rstrip('*')
+                        if len(clean_name) > 5:
+                            full_name = f"[{mode}] {clean_name}"
+                            if full_name not in [t.get("name", "") for t in real_tests]:
+                                real_tests.append({"name": full_name})
+                    # Fallback: backtick-quoted names
+                    if not real_tests:
+                        _ai_tests = _re_art.findall(r'`(\[(?:It|[a-z]+-(?:serial|parallel))\][^`]+)`', ai_summary)
+                        for t in _ai_tests:
+                            if t not in [x.get("name", "") for x in real_tests]:
+                                real_tests.append({"name": t})
 
                 for t in real_tests:
                     tname = t.get("name", t.get("step", "?"))
