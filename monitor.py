@@ -256,6 +256,31 @@ def fetch_junit_results(job: dict) -> list[dict]:
         f"{GCS_BASE}/{job_path}/{build_id}/artifacts/test-results/junit.xml",
     ]
 
+    # Dynamically discover JUnit files inside workflow step artifact dirs
+    base_url = f"{GCS_BASE}/{job_path}/{build_id}/artifacts"
+    project_dirs = [d.lower() for d in PROJECT_CONFIG.get("artifact_dirs", [])]
+    try:
+        resp = requests.get(f"{base_url}/", timeout=8)
+        if resp.status_code == 200:
+            wf_dirs = re.findall(r'href="[^"]*?/artifacts/([^/"]+)/"', resp.text)
+            for wf in wf_dirs[:2]:
+                wf_resp = requests.get(f"{base_url}/{wf}/", timeout=6)
+                if wf_resp.status_code != 200:
+                    continue
+                steps = re.findall(r'href="[^"]*?/([^/"]+)/"', wf_resp.text)
+                # Prioritize steps matching project config
+                if project_dirs:
+                    prioritized = [s for s in steps if any(d in s.lower() for d in project_dirs)]
+                else:
+                    prioritized = [s for s in steps if "test" in s.lower()]
+                for step in prioritized:
+                    for jpath in [f"{base_url}/{wf}/{step}/artifacts/junit.xml",
+                                  f"{base_url}/{wf}/{step}/artifacts/test_results_all.xml",
+                                  f"{base_url}/{wf}/{step}/junit.xml"]:
+                        junit_paths.append(jpath)
+    except Exception:
+        pass
+
     for junit_url in junit_paths:
         try:
             resp = requests.get(junit_url, timeout=15)
@@ -839,6 +864,14 @@ def investigate_failure(job: dict, category: str, reason: str,
                 error_lines.append(clean)
     report["error_output"] = error_lines[-10:]
 
+    # --- Filter out garbled/non-test entries (Go struct dumps like Data:{ResultType:vector...}) ---
+    report["failed_tests"] = [
+        t for t in report["failed_tests"]
+        if not t.get("name", "").startswith("Data:{")
+        and "Result:0x" not in t.get("name", "")
+        and t.get("name", "") != "?"
+    ]
+
     # --- Category-specific analysis (all from the logs, nothing hardcoded) ---
 
     if category == "matrix_mismatch" and matrix_diff.get("is_matrix_mismatch"):
@@ -927,10 +960,12 @@ def investigate_failure(job: dict, category: str, reason: str,
                     fix_parts.append(f"    {msg[:150]}")
             fix_parts.append("")
         if report["source_files"]:
-            fix_parts.append(
-                "Source references: "
-                + ", ".join(f"{s['file']}:{s['line']}" for s in report["source_files"][:5])
-            )
+            # Show just filenames, not full /tmp/... paths
+            refs = []
+            for s in report["source_files"][:5]:
+                fname = s["file"].split("/")[-1] if "/" in s["file"] else s["file"]
+                refs.append(f"{fname}:{s['line']}")
+            fix_parts.append("Source: " + ", ".join(refs))
         fix_parts.append(
             "Check if this is a flake (retry the job) or a real regression "
             "from a recent commit."
@@ -2427,7 +2462,25 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
         )
     category_cards += '</div>'
 
+    # Sort jobs: failures first (grouped by issue class), then successes
+    def _job_sort_key(j):
+        s = j["state"]
+        if s == "success":
+            return (2, "", j["name"])
+        a = analyses.get(j["name"], {})
+        ai = a.get("ai_summary", "")
+        cls = "unknown"
+        for line in ai.split("\n"):
+            if line.strip().startswith("**Issue Class:**"):
+                cls = line.replace("**Issue Class:**", "").strip().strip("`")
+                break
+        cls_order = {"test_regression": 0, "build_error": 1, "test_failure": 2, "test_flake": 3, "infra_other": 4, "infra_timeout": 5, "unknown": 6}
+        return (1, cls_order.get(cls, 6), j["name"])
+
+    jobs = sorted(jobs, key=_job_sort_key)
+
     rows = []
+    _prev_issue_class = None
     for job in jobs:
         state = job["state"]
         emoji = STATE_EMOJI.get(state, "?")
@@ -2463,7 +2516,51 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
 
             failed_tests = inv.get("failed_tests", [])
             if failed_tests:
-                for t in failed_tests[:2]:
+                # Filter out garbled/non-test entries (Go struct dumps, etc.)
+                real_tests = [t for t in failed_tests
+                              if not t.get("name", "").startswith("Data:{")
+                              and "Result:0x" not in t.get("name", "")
+                              and len(t.get("name", "")) > 3]
+
+                # If all entries were garbled, try to extract real names from test_results.json artifact
+                if not real_tests:
+                    import json as _json_mod
+                    import re as _re_art
+                    art_data = analysis.get("artifacts", {})
+                    # Look in all_artifacts (where fetched files are stored) and top-level
+                    search_dicts = [art_data.get("all_artifacts", {}), art_data]
+                    for search_dict in search_dicts:
+                        if not isinstance(search_dict, dict):
+                            continue
+                        for art_key, art_val in search_dict.items():
+                            if "test_results.json" in art_key and isinstance(art_val, str):
+                                try:
+                                    tr = _json_mod.loads(art_val)
+                                    tests_dict = tr.get("tests", {})
+                                    for tname, tinfo in tests_dict.items():
+                                        if tinfo.get("result") in ("error", "fail") and tname != "[BeforeSuite]":
+                                            real_tests.append({"name": tname, "message": f"result: {tinfo.get('result')}"})
+                                except (ValueError, AttributeError):
+                                    # JSON might be truncated — use regex fallback
+                                    errors = _re_art.findall(
+                                        r'"(\[It\][^"]+)":\s*\{"time":[^}]+"result":\s*"(?:error|fail)"', art_val)
+                                    for e in errors:
+                                        real_tests.append({"name": e, "message": "result: error/fail"})
+                                if real_tests:
+                                    break
+                        if real_tests:
+                            break
+
+                # Last resort: extract test names from AI summary text
+                if not real_tests and ai_summary:
+                    _ai_tests = _re_art.findall(
+                        r'\[(?:It|dualnicbcha|bc|dualnicbc|dualfollower|oc|tgm)[^\]]*\][^`\n]{10,150}', ai_summary)
+                    if not _ai_tests:
+                        _ai_tests = _re_art.findall(r'`([^`]*(?:serial|parallel)\][^`]*)`', ai_summary)
+                    for t in _ai_tests[:3]:
+                        real_tests.append({"name": t.strip().strip("`"), "message": "from AI analysis"})
+
+                for t in real_tests[:3]:
                     tname = t.get("name", t.get("step", "?"))
                     tfile = t.get("test_file", "")
                     tmsg = t.get("message", "")
@@ -2473,28 +2570,55 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                     if tmsg:
                         analysis_html += f'<div class="test-msg">{tmsg[:200]}</div>'
                     analysis_html += '</div>'
-                if len(failed_tests) > 2:
-                    analysis_html += f'<div style="color:#8b949e;font-size:11px;margin-top:2px">+{len(failed_tests)-2} more</div>'
+                if len(real_tests) > 3:
+                    analysis_html += f'<div style="color:#8b949e;font-size:11px;margin-top:2px">+{len(real_tests)-3} more</div>'
 
             if inv.get("suggested_fix"):
+                import re as _re_fix
                 fix_text = inv["suggested_fix"]
-                analysis_html += (
-                    f'<div class="fix-box">'
-                    f'<div class="fix-box-title">Suggested Fix</div>'
-                    f'<div class="fix-box-content">{fix_text}</div>'
-                    f'</div>'
+                # Remove garbled Data:{...} lines from fix text
+                fix_text = "\n".join(
+                    l for l in fix_text.split("\n")
+                    if "Data:{ResultType:" not in l and "Result:0x" not in l
                 )
+                # Clean /tmp/cnf-xxxxx/... paths to just filenames
+                fix_text = _re_fix.sub(r'/tmp/cnf-[^/]+/ptp-operator-conformance-test/', '', fix_text)
+                fix_text = _re_fix.sub(r'/tmp/[^/]+/', '', fix_text)
+                # Only show first 2 lines as summary; hide rest in details
+                fix_lines_list = [l for l in fix_text.split("\n") if l.strip()]
+                if len(fix_lines_list) > 2:
+                    fix_short = "\n".join(fix_lines_list[:2])
+                    fix_rest = "\n".join(fix_lines_list[2:])
+                    analysis_html += (
+                        f'<div class="fix-box">'
+                        f'<div class="fix-box-title">Suggested Fix</div>'
+                        f'<div class="fix-box-content">{fix_short}'
+                        f'<details><summary style="font-size:11px;color:#8b949e;cursor:pointer">more...</summary>{fix_rest}</details>'
+                        f'</div></div>'
+                    )
+                else:
+                    analysis_html += (
+                        f'<div class="fix-box">'
+                        f'<div class="fix-box-title">Suggested Fix</div>'
+                        f'<div class="fix-box-content">{fix_text}</div>'
+                        f'</div>'
+                    )
 
             detail_buttons = []
 
             if inv and (inv.get("root_cause") or inv.get("error_output")):
                 inv_html = ''
                 if inv.get("root_cause"):
-                    inv_html += f'<strong style="color:#f0883e">Root Cause:</strong> {inv["root_cause"]}<br><br>'
+                    rc_text = inv["root_cause"]
+                    # Skip garbled Go struct dumps
+                    if "Data:{ResultType:" in rc_text or "Result:0x" in rc_text:
+                        rc_text = "See AI analysis below for details."
+                    rc_short = rc_text[:150].rsplit(" ", 1)[0] + "..." if len(rc_text) > 150 else rc_text
+                    inv_html += f'<strong style="color:#f0883e">Root Cause:</strong> {rc_short}<br><br>'
                 if inv.get("error_output"):
                     inv_html += '<pre style="font-size:11px;color:#f0883e;white-space:pre-wrap">'
-                    for err in inv["error_output"][:6]:
-                        inv_html += f'{err}\n'
+                    for err in inv["error_output"][:4]:
+                        inv_html += f'{err[:200]}\n'
                     inv_html += '</pre>'
                 detail_buttons.append(f'<details><summary>Investigation</summary><div>{inv_html}</div></details>')
 
@@ -2540,9 +2664,61 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
 
             if ai_summary:
                 cleaned = _strip_agent_thinking(ai_summary)
+                # Extract structured fields for prominent display
+                _breaking_pr = ""
+                _issue_class = ""
+                _is_flake = ""
+                _root_cause_short = ""
+                _related_files = ""
+                for _line in cleaned.split("\n"):
+                    if _line.strip().startswith("**Breaking PR/Commit:**"):
+                        _breaking_pr = _line.replace("**Breaking PR/Commit:**", "").strip()
+                    elif _line.strip().startswith("**Issue Class:**"):
+                        _issue_class = _line.replace("**Issue Class:**", "").strip()
+                    elif _line.strip().startswith("**Is it a flake?**"):
+                        _is_flake = _line.replace("**Is it a flake?**", "").strip()
+                    elif _line.strip().startswith("**Root Cause:**"):
+                        _root_cause_short = _line.replace("**Root Cause:**", "").strip()[:200]
+                    elif _line.strip().startswith("**Related Source Files:**"):
+                        _related_files = _line.replace("**Related Source Files:**", "").strip()
+
+                # Show structured summary above the expandable details
+                _structured_html = '<div style="margin-top:6px;font-size:12px;line-height:1.6">'
+                if _root_cause_short:
+                    _structured_html += f'<div><strong style="color:#f0883e">Root Cause:</strong> {_md_to_html(_root_cause_short)}</div>'
+                if _breaking_pr:
+                    # Extract just the URL(s) from the text for a clean display
+                    import re as _re_mod
+                    _urls = _re_mod.findall(r'https://github\.com/[^\s,)]+', _breaking_pr)
+                    if _urls:
+                        _pr_links = " ".join(f'<a href="{u}" target="_blank" style="color:#f85149">{u.split("/")[-1]}</a>' for u in _urls[:3])
+                        _structured_html += f'<div><strong style="color:#f85149">Breaking PR:</strong> {_pr_links}</div>'
+                    elif "Not identifiable" not in _breaking_pr and "not identifiable" not in _breaking_pr.lower():
+                        _structured_html += f'<div><strong style="color:#f85149">Breaking PR:</strong> {_md_to_html(_breaking_pr[:120])}</div>'
+                if _issue_class:
+                    _cls_colors = {"infra_timeout": "#8b949e", "infra_other": "#8b949e", "test_regression": "#f85149", "test_failure": "#f0883e", "test_flake": "#d29922", "build_error": "#da3633", "unknown": "#484f58"}
+                    _cls_color = _cls_colors.get(_issue_class.strip().strip("`"), "#8b949e")
+                    _structured_html += f'<div><strong>Class:</strong> <span style="color:{_cls_color};font-weight:600">{_issue_class}</span></div>'
+                if _is_flake:
+                    _flake_icon = "⚡" if _is_flake.lower().startswith("yes") else "🔴"
+                    _structured_html += f'<div><strong>Flake?</strong> {_flake_icon} {_is_flake[:80]}</div>'
+                if _related_files:
+                    _file_urls = _re_mod.findall(r'https://github\.com/[^\s,)]+', _related_files)
+                    if _file_urls:
+                        _file_links = " ".join(f'<a href="{u}" target="_blank" style="color:#58a6ff;font-size:11px">{u.split("/blob/")[-1][:50] if "/blob/" in u else u.split("/")[-1]}</a>' for u in _file_urls[:3])
+                        _structured_html += f'<div><strong>Source:</strong> {_file_links}</div>'
+                _structured_html += '</div>'
+                analysis_html += _structured_html
+
+                # Fingerprint/recurrence info
+                _fp_info = analysis.get("fingerprint", "")
+                _is_recurring = analysis.get("is_recurring", False)
+                if _is_recurring:
+                    analysis_html += '<div style="margin-top:4px;font-size:11px;color:#d29922;font-style:italic">🔁 Recurring issue (cached analysis)</div>'
+
                 rendered = _md_to_html(cleaned)
                 detail_buttons.append(
-                    f'<details><summary>AI Analysis</summary>'
+                    f'<details><summary>Full AI Analysis</summary>'
                     f'<div style="line-height:1.5;color:#c9d1d9;padding:8px 12px">{rendered}</div></details>'
                 )
 
