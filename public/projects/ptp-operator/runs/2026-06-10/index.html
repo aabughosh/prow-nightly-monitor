@@ -104,7 +104,7 @@
 
 <div class="header">
   <h1>Prow Nightly Monitor — <code>e2e-telco5g-ptp</code></h1>
-  <div class="meta">Last updated: 2026-06-10 19:36 UTC | AI: disabled | <a href="history.html" style="color:#8b949e">Run History</a></div>
+  <div class="meta">Last updated: 2026-06-10 19:51 UTC | AI: disabled | <a href="history.html" style="color:#8b949e">Run History</a></div>
 </div>
 
 <div class="container">
@@ -199,45 +199,7 @@
 <br>
 <p style="margin:4px 0"><strong>Fix Written:</strong> yes — see <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">./ci-evidence/fix.patch</code></p>
 <br>
-<p style="margin:4px 0"><strong>Severity:</strong> MEDIUM — conformance test failures on OCP 4.17; PMC confirms ptp4l clock-class behavior is correct, but test assertions against stale node-level metrics and NM link auto-recovery cause false failures. No evidence of a production PTP sync regression.</p></div></details><details><summary>Fix Patch</summary><pre style="background:#161b22;padding:10px;border-radius:6px;font-size:11px;overflow-x:auto;max-height:400px;overflow-y:auto">diff --git a/test/pkg/ptptesthelper/ptptesthelper.go b/test/pkg/ptptesthelper/ptptesthelper.go
-index a0d28183..7897415e 100644
---- a/test/pkg/ptptesthelper/ptptesthelper.go
-+++ b/test/pkg/ptptesthelper/ptptesthelper.go
-@@ -439,6 +439,8 @@ func (p *PortEngine) TurnAllPortsDown(skippedInterfaces map[string]bool) error {
- 			logrus.Infof(&quot;Skipping interface: %s (in skip list)&quot;, port)
- 			continue
- 		}
-+		p.nmSetManaged(port, false)
-+		DeferCleanup(p.nmSetManaged, port, true)
- 		stdout, stderr, err := pods.ExecCommand(client.Client, true, p.ClockPod, pkg.RecoveryNetworkOutageDaemonSetContainerName,
- 			[]string{&quot;ip&quot;, &quot;link&quot;, &quot;set&quot;, port, &quot;down&quot;})
- 		if err != nil {
-@@ -461,6 +463,7 @@ func (p *PortEngine) TurnAllPortsUp() error {
- 		if err != nil {
- 			return err
- 		}
-+		p.nmSetManaged(port, true)
- 
- 		logrus.Infof(&quot;Turning interface: %s in pod %s up, stdout: %s, stderr: %s&quot;, port, p.ClockPod.Name, stdout.String(), stderr.String())
- 	}
-@@ -758,13 +761,15 @@ func verifyNodeClockClassWithMetrics(fullConfig testconfig.TestConfig, expectedC
- // VerifyNICClockClass checks the expected clock class for a NIC via PMC and metrics.
- // isDualNIC controls the metric check on OCP &lt; 4.18:
- //   - On OCP &gt;= 4.18: always verifies via per-config metric (config label available).
--//   - On OCP &lt; 4.18, single NIC: verifies via node-level metric (no config label).
-+//   - On OCP &lt; 4.18, single NIC: verifies via node-level metric only for locked (6).
-+//     The node-level gauge on 4.16/4.17 does not reliably track BC clock-class transitions
-+//     (e.g. freerun 248); PMC and event API are authoritative for those states.
- //   - On OCP &lt; 4.18, dual NIC: metrics skipped (single metric can&#x27;t distinguish NICs).
- func VerifyNICClockClass(fullConfig testconfig.TestConfig, nic NICInfo, expectedClass int, isDualNIC bool) {
- 	VerifyClockClassViaPMC(fullConfig, nic.ConfigFile, expectedClass)
- 	if ptphelper.IsPTPOperatorVersionAtLeast(&quot;4.18&quot;) {
- 		VerifyPerConfigClockClassWithMetrics(fullConfig, nic.ConfigName, expectedClass)
--	} else if !isDualNIC {
-+	} else if !isDualNIC &amp;&amp; expectedClass == 6 {
- 		verifyNodeClockClassWithMetrics(fullConfig, expectedClass)
- 	}
- }</pre></details></div></td><td></td></tr>
+<p style="margin:4px 0"><strong>Severity:</strong> MEDIUM — conformance test failures on OCP 4.17; PMC confirms ptp4l clock-class behavior is correct, but test assertions against stale node-level metrics and NM link auto-recovery cause false failures. No evidence of a production PTP sync regression.</p></div></details></div></td><td></td></tr>
 <tr class="group-header"><td colspan="6" style="padding:12px 8px 4px;font-weight:700;font-size:13px;color:#da3633;border-bottom:1px solid #da363330">🔧 Build Errors</td></tr>
 <tr class="row-failure" data-state="failure" data-category="test_failure"><td>❌ failure</td><td><span class="version-badge">4.16</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.16-e2e-telco5g-ptp/2064422376107413504" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.16-e2e-telco5g-ptp">4.16-e2e-telco5g-ptp</a></td><td>121m</td><td><span class="badge badge-test">TEST</span> <span class="badge sev-medium">MEDIUM</span><div style="margin-top:3px"><span class="test-name">telco5g-ptp-tests</span></div><div style="margin-top:3px"><span class="test-name">unknown</span></div><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><p style="margin:4px 0"><strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">periodic-ci-openshift-release-main-nightly-4.16-e2e-telco5g-ptp</code> job failed because the PTP operator container image was never built or pushed to the cluster registry. During the in-cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman</code> build step, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">make docker-build</code> on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.16</code> failed pulling the Dockerfile base image:</p>
 <br>
@@ -431,45 +393,7 @@ Error: image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operat
 <br>
 <p style="margin:4px 0"><strong>Fix Written:</strong> <strong>yes</strong> — see <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">./ci-evidence/fix.patch</code></p>
 <br>
-<p style="margin:4px 0"><strong>Severity:</strong> <strong>HIGH</strong> — blocks the OpenShift 4.22 nightly upstream PTP conformance pipeline; 6 errors across 4 of 6 test modes, with cluster-state pollution causing downstream mode failures even when individual PTP sync logic may be partially healthy.</p></div></details><details><summary>Fix Patch</summary><pre style="background:#161b22;padding:10px;border-radius:6px;font-size:11px;overflow-x:auto;max-height:400px;overflow-y:auto">diff --git a/test/conformance/serial/ptp.go b/test/conformance/serial/ptp.go
-index a528935c..c6ff7f82 100644
---- a/test/conformance/serial/ptp.go
-+++ b/test/conformance/serial/ptp.go
-@@ -827,8 +827,22 @@ var _ = Describe(&quot;[&quot;+strings.ToLower(DesiredMode.String())+&quot;-serial]&quot;, Serial, f
- 				}, 120*time.Second, 1*time.Second).Should(BeNil())
- 
- 				if !isExternalMaster {
-+					gmConfig := (*ptpv1.PtpConfig)(testconfig.GlobalConfig.DiscoveredGrandMasterPtpConfig)
-+					gmToRestore := gmConfig.DeepCopy()
-+					gmName := gmConfig.Name
-+					DeferCleanup(func() {
-+						_, err := client.Client.PtpV1Interface.PtpConfigs(pkg.PtpLinuxDaemonNamespace).Get(context.Background(), gmName, metav1.GetOptions{})
-+						if kerrors.IsNotFound(err) {
-+							gmToRestore.SetResourceVersion(&quot;&quot;)
-+							_, createErr := client.Client.PtpV1Interface.PtpConfigs(pkg.PtpLinuxDaemonNamespace).Create(context.Background(), gmToRestore, metav1.CreateOptions{})
-+							if createErr != nil {
-+								logrus.Errorf(&quot;failed to restore grandmaster ptpconfig %s: %s&quot;, gmName, createErr)
-+							}
-+						}
-+					})
-+
- 					By(&quot;Remove Grandmaster&quot;)
--					err := client.Client.PtpV1Interface.PtpConfigs(pkg.PtpLinuxDaemonNamespace).Delete(context.Background(), testconfig.GlobalConfig.DiscoveredGrandMasterPtpConfig.Name, metav1.DeleteOptions{})
-+					err := client.Client.PtpV1Interface.PtpConfigs(pkg.PtpLinuxDaemonNamespace).Delete(context.Background(), gmName, metav1.DeleteOptions{})
- 					Expect(err).To(BeNil())
- 					By(&quot;Check clock role&quot;)
- 					Eventually(func() error {
-@@ -988,7 +1002,9 @@ var _ = Describe(&quot;[&quot;+strings.ToLower(DesiredMode.String())+&quot;-serial]&quot;, Serial, f
- 
- 				By(&quot;Deleting the test profile&quot;, func() {
- 					err := client.Client.PtpV1Interface.PtpConfigs(pkg.PtpLinuxDaemonNamespace).Delete(context.Background(), pkg.PtpTempPolicyName, metav1.DeleteOptions{})
--					Expect(err).NotTo(HaveOccurred())
-+					if err != nil &amp;&amp; !kerrors.IsNotFound(err) {
-+						Expect(err).NotTo(HaveOccurred())
-+					}
- 					Eventually(func() bool {
- 						_, err := client.Client.PtpV1Interface.PtpConfigs(pkg.PtpLinuxDaemonNamespace).Get(context.Background(), pkg.PtpTempPolicyName, metav1.GetOptions{})
- 						return kerrors.IsNotFound(err)</pre></details></div></td><td></td></tr>
+<p style="margin:4px 0"><strong>Severity:</strong> <strong>HIGH</strong> — blocks the OpenShift 4.22 nightly upstream PTP conformance pipeline; 6 errors across 4 of 6 test modes, with cluster-state pollution causing downstream mode failures even when individual PTP sync logic may be partially healthy.</p></div></details></div></td><td></td></tr>
 <tr class="group-header"><td colspan="6" style="padding:12px 8px 4px;font-weight:700;font-size:13px;color:#3fb950;border-bottom:1px solid #3fb95030">✅ Passed</td></tr>
 <tr class="row-success" data-state="success" data-category=""><td>✅ success</td><td><span class="version-badge">4.19</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.19-e2e-telco5g-ptp/2064211065343840256" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.19-e2e-telco5g-ptp">4.19-e2e-telco5g-ptp</a></td><td>138m</td><td></td><td></td></tr>
 <tr class="row-success" data-state="success" data-category=""><td>✅ success</td><td><span class="version-badge">4.21</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-e2e-telco5g-ptp/2064498106690441216" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.21-e2e-telco5g-ptp">4.21-e2e-telco5g-ptp</a></td><td>265m</td><td></td><td></td></tr>
@@ -483,6 +407,7 @@ index a528935c..c6ff7f82 100644
 <div class="footer">
   <a href="https://github.com/aabughosh/prow-nightly-monitor">prow-nightly-monitor</a> |
   Data from <a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*">Prow</a> |
+  <a href="issues.html">Known Issues</a> |
   <a href="history.html">Run History</a> |
   <a href="claude-report.html">Claude Report</a>
 </div>

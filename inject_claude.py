@@ -22,12 +22,15 @@ from fingerprint import (
     compute_fingerprint, load_db, save_db, is_known,
     get_previous_analysis, record_fingerprint, mark_seen,
     group_by_class,
+    # Per-issue fingerprinting (for commatrix)
+    compute_issue_fingerprint, extract_issues_from_job,
+    is_known_issue, get_issue, record_issue, mark_issue_seen,
+    _extract_root_cause, _extract_classification, _extract_is_flake,
 )
 
 CURSOR_CLI = "/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
 REPO_DIR = os.path.expanduser("~/Documents/GitHub/prow-nightly-monitor")
 TARGET_REPO = os.environ.get("TARGET_REPO", "")
-FORK_OWNER = os.environ.get("FORK_OWNER", "aabughosh")
 UPSTREAM_REPO = os.environ.get("UPSTREAM_REPO", "openshift-kni/commatrix")
 INVESTIGATE_DIR = "/tmp/ci-investigate"
 EVIDENCE_DIR = os.path.join(INVESTIGATE_DIR, "ci-evidence")
@@ -36,7 +39,6 @@ RESULTS = os.path.join(OUTPUT_DIR, "results.json")
 
 MAX_RESULTS_SIZE = 50 * 1024 * 1024
 AGENT_TIMEOUT = 300  # 5 minutes per job
-OPEN_PRS = os.environ.get("OPEN_PRS", "true").lower() == "true"
 MIN_VERSION = os.environ.get("MIN_VERSION", "")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/cursor/")
@@ -387,19 +389,7 @@ Go beyond the symptoms. Try to identify:
   - Commit: `https://github.com/<org>/<repo>/commit/<sha>`
   - File: `https://github.com/<org>/<repo>/blob/main/<path>#L<line>`
 
-## Step 4: Decide What To Do
-Based on your understanding of the project and the failure evidence, decide:
-1. Is this a real bug that needs a code fix? → Write the fix directly to the files.
-2. Is this a flake/transient issue? → Just report it, no code changes.
-3. Is this an infra/environment problem? → Report it, no code changes.
-4. Is this a test/config that needs updating? → Write the update.
-
-IMPORTANT: Only write fixes for REAL issues. Do NOT fix warnings or transient problems.
-
-## Step 5: Write Fix (if applicable)
-If you write a fix, save the patch: git diff > ./ci-evidence/fix.patch
-
-## Step 6: Report
+## Step 4: Report
 Respond with:
 **Root Cause:** what specifically caused this failure
 **Breaking PR/Commit:** the PR or commit that introduced the issue (if identifiable) — INCLUDE THE FULL GITHUB URL (e.g. https://github.com/org/repo/pull/123 or https://github.com/org/repo/commit/abc123)
@@ -407,8 +397,7 @@ Respond with:
 **Is it a flake?** yes/no — and why
 **Issue Class:** one of: infra_timeout, infra_quota, infra_other, test_regression, test_flake, test_failure, matrix_mismatch, build_error, unknown
 **Related Source Files:** list the source files in the repo (or related repos) that are relevant, with GitHub URLs (e.g. https://github.com/org/repo/blob/main/test/conformance/serial/ptp.go#L100)
-**Suggested Fix:** what you did or what should be done
-**Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
+**Suggested Fix:** what should be done (guidance for the user)
 **Severity:** CRITICAL / HIGH / MEDIUM / LOW
 """
 
@@ -416,140 +405,15 @@ Respond with:
 
 
 
-def _similar_pr_exists(job: dict) -> bool:
-    """Check if an open PR already addresses the same job/issue."""
-    job_name = job["name"]
-    short = re.sub(r"periodic-ci-openshift-release-main-nightly-", "", job_name)
-    short = re.sub(r"[^a-zA-Z0-9-]", "", short)[:40]
-    try:
-        result = subprocess.run(
-            ["gh", "pr", "list", "--repo", UPSTREAM_REPO, "--state", "open",
-             "--search", f"fix {short} in:title", "--json", "title,url", "--limit", "5"],
-            capture_output=True, text=True, timeout=30, cwd=INVESTIGATE_DIR)
-        if result.returncode == 0:
-            import json as _json
-            prs = _json.loads(result.stdout or "[]")
-            if prs:
-                print(f"    Found existing PR: {prs[0].get('url', '')}")
-                return True
-    except Exception as e:
-        print(f"    Warning: could not check existing PRs: {e}")
-    return False
 
 
-def _open_pr(job: dict, patch: str, ai_summary: str) -> str:
-    """Create a branch on fork, push, and open a PR against upstream. Returns PR URL."""
-    from datetime import datetime
-    job_name = job["name"]
-    short = re.sub(r"periodic-ci-openshift-release-main-nightly-", "", job_name)
-    short = re.sub(r"[^a-zA-Z0-9-]", "", short)[:60]
-    branch = f"fix/{short}-{datetime.now().strftime('%m%d')}"
 
-    def _run(cmd, **kw):
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=60,
-                              cwd=INVESTIGATE_DIR, **kw)
-
-    fork_url = f"https://github.com/{FORK_OWNER}/{UPSTREAM_REPO.split('/')[-1]}.git"
-    _run(["git", "remote", "remove", "fork"])
-    _run(["git", "remote", "add", "fork", fork_url])
-
-    _run(["git", "checkout", "-b", branch])
-    _run(["git", "checkout", "."])
-
-    patch_file = os.path.join(EVIDENCE_DIR, "fix.patch")
-    apply = _run(["git", "apply", "--check", patch_file])
-    if apply.returncode != 0:
-        print(f"    Patch doesn't apply cleanly: {apply.stderr[:200]}")
-        _run(["git", "checkout", "main"])
-        _run(["git", "branch", "-D", branch])
-        return ""
-
-    _run(["git", "apply", patch_file])
-
-    _run(["git", "add", "-A", "--", ".", ":!ci-evidence"])
-    commit_msg = (f"fix: address CI failure in {short}\n\n"
-                  f"Auto-generated by prow-nightly-monitor AI analysis.\n"
-                  f"Prow job: {job.get('url', 'N/A')}")
-    _run(["git", "commit", "-m", commit_msg])
-
-    push = _run(["git", "push", "-u", "fork", branch])
-    if push.returncode != 0:
-        print(f"    Push failed: {push.stderr[:300]}")
-        _run(["git", "checkout", "main"])
-        _run(["git", "branch", "-D", branch])
-        return ""
-
-    category = job.get("analysis", {}).get("category", "unknown")
-    body_lines = [
-        "## Summary",
-        f"Automated fix for CI failure in `{job_name}`.",
-        f"- **Category:** {category}",
-        f"- **Prow URL:** {job.get('url', 'N/A')}",
-        "",
-        "## AI Analysis",
-        ai_summary[:3000] if ai_summary else "(no analysis)",
-        "",
-        "## Patch",
-        "```diff",
-        patch[:2000],
-        "```",
-        "",
-        "---",
-        "*Auto-generated by [prow-nightly-monitor](https://github.com/aabughosh/prow-nightly-monitor)*",
-    ]
-    body = "\n".join(body_lines)
-
-    pr = _run(["gh", "pr", "create",
-               "--repo", UPSTREAM_REPO,
-               "--title", f"fix: {short} CI failure",
-               "--body", body,
-               "--head", f"{FORK_OWNER}:{branch}"])
-    if pr.returncode != 0:
-        print(f"    PR creation failed: {pr.stderr[:300]}")
-        return ""
-
-    pr_url = pr.stdout.strip()
-    print(f"    PR opened: {pr_url}")
-    return pr_url
-
-
-def analyze_job(job: dict, opened_patches: set[str] | None = None) -> str:
-    """Deep investigation: dump evidence, build prompt, run agent, capture patch."""
+def analyze_job(job: dict) -> str:
+    """Deep investigation: dump evidence, build prompt, run agent."""
     evidence_files = dump_evidence(job)
     print(f"    Dumped {len(evidence_files)} evidence files")
     prompt = build_prompt(job, evidence_files)
     result = run_cursor_agent(prompt)
-
-    patch_file = os.path.join(EVIDENCE_DIR, "fix.patch")
-    patch = ""
-    if os.path.exists(patch_file):
-        with open(patch_file) as f:
-            patch = f.read().strip()
-        if patch:
-            job.setdefault("analysis", {})["fix_patch"] = patch[:4000]
-            print(f"    Fix patch captured ({len(patch)} bytes)")
-
-    if patch and OPEN_PRS:
-        category = job.get("analysis", {}).get("category", "")
-        severity = job.get("analysis", {}).get("investigation", {}).get("severity", "")
-        skip_pr_categories = ("infra", "warning")
-        if category in skip_pr_categories:
-            print(f"    Skipping PR — category '{category}' is warning-level")
-        elif severity and severity.upper() in ("LOW",):
-            print(f"    Skipping PR — severity is {severity}")
-        elif _similar_pr_exists(job):
-            print(f"    Skipping PR — similar PR already open")
-        else:
-            import hashlib
-            patch_hash = hashlib.sha256(patch.encode()).hexdigest()[:16]
-            if opened_patches is not None and patch_hash in opened_patches:
-                print(f"    Duplicate patch — skipping PR (already opened)")
-            else:
-                pr_url = _open_pr(job, patch, result)
-                if pr_url:
-                    job.setdefault("analysis", {})["pr_url"] = pr_url
-                    if opened_patches is not None:
-                        opened_patches.add(patch_hash)
 
     subprocess.run(["git", "checkout", "."], cwd=INVESTIGATE_DIR,
                    capture_output=True)
@@ -629,8 +493,25 @@ def main():
 
     print(f"Found {len(failed)} failure(s) to analyze")
 
-    # --- Fingerprinting: skip known recurring issues ---
+    # Detect if this is commatrix (use per-issue mode) or PTP (legacy per-job mode)
+    job_filter = os.environ.get("JOB_FILTER", "")
+    use_per_issue = "commatrix" in job_filter or "network-flow-matrix" in job_filter
+
     fp_db = load_db()
+
+    if use_per_issue:
+        _analyze_per_issue(data, failed, fp_db)
+    else:
+        _analyze_per_job(data, failed, fp_db)
+
+    save_db(fp_db)
+
+    with open(RESULTS, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _analyze_per_job(data: dict, failed: list[dict], fp_db: dict) -> None:
+    """Legacy per-job analysis (for PTP and similar projects)."""
     new_failures = []
     reused_count = 0
 
@@ -656,24 +537,18 @@ def main():
 
     print(f"  {reused_count} recurring (skipped), {len(new_failures)} NEW to investigate")
 
-    # --- Group new failures by class ---
     groups = group_by_class(new_failures)
     if groups:
         print("  Issue classes:")
         for cls, jobs_in_cls in sorted(groups.items(), key=lambda x: -len(x[1])):
             print(f"    {cls}: {len(jobs_in_cls)} failure(s)")
 
-    # --- Investigate only NEW failures ---
-    if OPEN_PRS:
-        print("  PRs enabled — will open PRs for unique fixes")
-
-    opened_patches: set[str] = set()
     success_count = 0
     for i, job in enumerate(new_failures, 1):
         name = job["name"].split("-")[-5:] if len(job["name"]) > 50 else [job["name"]]
         short_name = "-".join(name)
         print(f"  [{i}/{len(new_failures)}] {short_name}...")
-        ai = analyze_job(job, opened_patches)
+        ai = analyze_job(job)
         if ai:
             job.setdefault("analysis", {})["ai_summary"] = ai[:8000]
             fp = job["analysis"].get("fingerprint", compute_fingerprint(job))
@@ -683,12 +558,132 @@ def main():
         else:
             print(f"    No analysis returned")
 
-    save_db(fp_db)
-
-    with open(RESULTS, "w") as f:
-        json.dump(data, f, indent=2)
-
     print(f"Results updated: {success_count}/{len(new_failures)} new failures analyzed, "
+          f"{reused_count} recurring reused")
+
+
+def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
+    """Per-issue analysis for commatrix: fingerprint each test/error individually."""
+    # Extract all individual issues from all failed jobs
+    all_issues: list[dict] = []
+    for job in failed:
+        issues = extract_issues_from_job(job)
+        all_issues.extend(issues)
+
+    print(f"  Extracted {len(all_issues)} individual issues from {len(failed)} failed jobs")
+
+    # Deduplicate: group issues by fingerprint
+    unique_issues: dict[str, dict] = {}  # fp -> first issue dict + list of jobs
+    for issue in all_issues:
+        fp = compute_issue_fingerprint(
+            issue["test_name"], issue["error_msg"], issue["category"]
+        )
+        if fp not in unique_issues:
+            unique_issues[fp] = {
+                "test_name": issue["test_name"],
+                "error_msg": issue["error_msg"],
+                "category": issue["category"],
+                "jobs": [],
+            }
+        unique_issues[fp]["jobs"].append({
+            "name": issue["job_name"],
+            "url": issue["job_url"],
+        })
+
+    print(f"  {len(unique_issues)} unique issues (deduplicated across jobs)")
+
+    # Check which are known vs new
+    new_issues: dict[str, dict] = {}
+    reused_count = 0
+    for fp, issue_data in unique_issues.items():
+        if is_known_issue(fp_db, fp):
+            prev = get_issue(fp_db, fp)
+            # Update affected_jobs for each job this issue appears in
+            for j in issue_data["jobs"]:
+                mark_issue_seen(fp_db, fp, j["name"], j["url"])
+            reused_count += 1
+            short = issue_data["test_name"][:60]
+            print(f"  SKIP (recurring #{prev.get('occurrences',1)+1}): {short}")
+
+            # Tag the affected jobs with recurring info
+            for j in issue_data["jobs"]:
+                for job in failed:
+                    if job["name"] == j["name"]:
+                        job.setdefault("analysis", {}).setdefault("issues", []).append({
+                            "fingerprint": fp,
+                            "test_name": issue_data["test_name"],
+                            "is_recurring": True,
+                            "first_seen": prev.get("first_seen", ""),
+                            "occurrences": prev.get("occurrences", 1) + 1,
+                            "classification": prev.get("classification", "unknown"),
+                            "root_cause": prev.get("root_cause", ""),
+                        })
+        else:
+            new_issues[fp] = issue_data
+
+    print(f"  {reused_count} recurring (skipped), {len(new_issues)} NEW to investigate")
+
+    # Investigate new issues — one AI call per unique issue
+    success_count = 0
+    for i, (fp, issue_data) in enumerate(new_issues.items(), 1):
+        test_name = issue_data["test_name"]
+        affected_jobs = issue_data["jobs"]
+        job_names = ", ".join(j["name"].split("nightly-")[-1][:30] for j in affected_jobs[:5])
+        print(f"  [{i}/{len(new_issues)}] {test_name[:60]} (in: {job_names})...")
+
+        # Pick the first affected job for evidence gathering
+        target_job = None
+        for j in affected_jobs:
+            for job in failed:
+                if job["name"] == j["name"]:
+                    target_job = job
+                    break
+            if target_job:
+                break
+
+        if not target_job:
+            print(f"    No job data found — skipping")
+            continue
+
+        ai = analyze_job(target_job)
+        if ai:
+            root_cause = _extract_root_cause(ai)
+            classification = _extract_classification(ai)
+            is_flake = _extract_is_flake(ai)
+
+            # Record issue in the database
+            for j in affected_jobs:
+                record_issue(
+                    fp_db, fp,
+                    test_name=test_name,
+                    job_name=j["name"],
+                    job_url=j["url"],
+                    classification=classification,
+                    root_cause=root_cause,
+                    ai_summary=ai,
+                    is_flake=is_flake,
+                )
+
+            # Tag all affected jobs with this issue's analysis
+            for j in affected_jobs:
+                for job in failed:
+                    if job["name"] == j["name"]:
+                        job.setdefault("analysis", {}).setdefault("issues", []).append({
+                            "fingerprint": fp,
+                            "test_name": test_name,
+                            "is_recurring": False,
+                            "classification": classification,
+                            "root_cause": root_cause,
+                            "ai_summary": ai[:4000],
+                            "is_flake": is_flake,
+                        })
+
+            success_count += 1
+            print(f"    Done ({len(ai)} chars) → class={classification}, flake={is_flake}")
+        else:
+            print(f"    No analysis returned")
+
+    print(f"Results updated: {success_count}/{len(new_issues)} new issues analyzed, "
           f"{reused_count} recurring reused")
 
 

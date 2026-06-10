@@ -2609,9 +2609,48 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                     if len(_ai_tests_list) > len(real_tests):
                         real_tests = _ai_tests_list
 
+                # Build lookups from per-issue data (fingerprint + classification)
+                _issue_fps = {}
+                _issue_cls = {}
+                _issue_recurring = {}
+                per_issue_data = analysis.get("issues", [])
+                for _iss in per_issue_data:
+                    _tname = _iss.get("test_name", "")
+                    _issue_fps[_tname] = _iss.get("fingerprint", "")
+                    _issue_cls[_tname] = _iss.get("classification", "")
+                    _issue_recurring[_tname] = _iss.get("is_recurring", False)
+
+                _cls_badge_colors = {
+                    "test_regression": ("#f85149", "regression"),
+                    "test_failure": ("#f0883e", "failure"),
+                    "test_flake": ("#d29922", "flake"),
+                    "build_error": ("#da3633", "build"),
+                    "infra_timeout": ("#8b949e", "timeout"),
+                    "infra_other": ("#8b949e", "infra"),
+                    "matrix_mismatch": ("#a371f7", "matrix"),
+                }
+
                 for t in real_tests:
                     tname = t.get("name", t.get("step", "?"))
-                    analysis_html += f'<div style="margin-top:3px"><span class="test-name">{tname}</span></div>'
+                    _fp_link = _issue_fps.get(tname, "")
+                    _cls = _issue_cls.get(tname, "")
+                    _recur = _issue_recurring.get(tname, False)
+
+                    _cls_html = ""
+                    if _cls and _cls in _cls_badge_colors:
+                        _color, _label = _cls_badge_colors[_cls]
+                        _cls_html = f' <span style="font-size:10px;color:{_color};font-weight:600">[{_label}]</span>'
+                    if _recur:
+                        _cls_html += ' <span style="font-size:10px;color:#d29922">🔁</span>'
+
+                    if _fp_link:
+                        analysis_html += (
+                            f'<div style="margin-top:3px">'
+                            f'<a href="issues.html#{_fp_link}" class="test-name" '
+                            f'style="color:#58a6ff" title="View issue history">{tname}</a>{_cls_html}</div>'
+                        )
+                    else:
+                        analysis_html += f'<div style="margin-top:3px"><span class="test-name">{tname}</span>{_cls_html}</div>'
 
             # Only show Suggested Fix + Investigation when there's NO AI analysis
             # (AI structured display already covers Root Cause, Breaking PR, Class, Flake)
@@ -2744,24 +2783,6 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                     f'<div style="line-height:1.5;color:#c9d1d9;padding:8px 12px">{rendered}</div></details>'
                 )
 
-            fix_patch = analysis.get("fix_patch", "")
-            pr_url = analysis.get("pr_url", "")
-            if pr_url:
-                detail_buttons.append(
-                    f'<a href="{pr_url}" target="_blank" style="display:inline-flex;'
-                    f'align-items:center;gap:4px;padding:2px 8px;background:#238636;'
-                    f'color:#fff;border-radius:6px;font-size:11px;text-decoration:none">'
-                    f'PR Opened</a>'
-                )
-            elif fix_patch:
-                import html as _html_mod
-                escaped_patch = _html_mod.escape(fix_patch[:3000])
-                detail_buttons.append(
-                    f'<details><summary>Fix Patch</summary>'
-                    f'<pre style="background:#161b22;padding:10px;border-radius:6px;'
-                    f'font-size:11px;overflow-x:auto;max-height:400px;overflow-y:auto">'
-                    f'{escaped_patch}</pre></details>'
-                )
 
             if detail_buttons:
                 analysis_html += '<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">' + "".join(detail_buttons) + '</div>'
@@ -2883,6 +2904,7 @@ def _render_only():
     results_path.write_text(json.dumps(data_out, indent=2))
     (run_dir / "results.json").write_text(json.dumps(data_out, indent=2))
     _generate_runs_index(OUTPUT_DIR)
+    _generate_issues_page(OUTPUT_DIR)
 
 
 def main():
@@ -3122,6 +3144,7 @@ def main():
     log.info("Results JSON written to %s", results_path)
 
     _generate_runs_index(OUTPUT_DIR)
+    _generate_issues_page(OUTPUT_DIR)
 
 
 def _generate_runs_index(output_dir: Path) -> None:
@@ -3196,6 +3219,159 @@ def _generate_runs_index(output_dir: Path) -> None:
 
     (output_dir / "history.html").write_text(index_html)
     log.info("Runs index written to %s", output_dir / "history.html")
+
+
+def _generate_issues_page(output_dir: Path) -> None:
+    """Generate a Known Issues page from fingerprints.json (issue-centric view)."""
+    fp_path = output_dir / "fingerprints.json"
+    if not fp_path.exists():
+        # Check common parent location
+        fp_path = Path(__file__).parent / "public" / "fingerprints.json"
+    if not fp_path.exists():
+        return
+
+    try:
+        fp_data = json.loads(fp_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return
+
+    issues = fp_data.get("issues", {})
+
+    # Also include legacy fingerprints (for PTP backward compat)
+    legacy_fps = fp_data.get("fingerprints", {})
+    for fp_id, entry in legacy_fps.items():
+        if fp_id not in issues:
+            issues[fp_id] = {
+                "title": entry.get("job_name_pattern", "Unknown"),
+                "first_seen": entry.get("first_seen", ""),
+                "last_seen": entry.get("last_seen", ""),
+                "occurrences": entry.get("occurrences", 1),
+                "classification": entry.get("category", "unknown"),
+                "root_cause": entry.get("root_cause", ""),
+                "is_flake": entry.get("is_flake", False),
+                "affected_jobs": [],
+                "status": "active",
+            }
+
+    if not issues:
+        return
+
+    CLASS_COLORS = {
+        "test_regression": ("#f85149", "Regression"),
+        "test_failure": ("#f0883e", "Test Failure"),
+        "test_flake": ("#d29922", "Flake"),
+        "build_error": ("#da3633", "Build Error"),
+        "infra_timeout": ("#8b949e", "Infra Timeout"),
+        "infra_other": ("#8b949e", "Infrastructure"),
+        "matrix_mismatch": ("#a371f7", "Matrix Mismatch"),
+        "unknown": ("#484f58", "Unknown"),
+    }
+
+    # Sort: active first, then by last_seen desc
+    sorted_issues = sorted(
+        issues.items(),
+        key=lambda x: (x[1].get("status", "active") != "active",
+                       x[1].get("last_seen", "")),
+        reverse=True,
+    )
+
+    rows = ""
+    for fp_id, issue in sorted_issues:
+        title = issue.get("title", "Unknown issue")
+        cls = issue.get("classification", "unknown")
+        first_seen = issue.get("first_seen", "")[:10]
+        last_seen = issue.get("last_seen", "")[:10]
+        occurrences = issue.get("occurrences", 1)
+        root_cause = issue.get("root_cause", "")
+        is_flake = issue.get("is_flake", False)
+        affected = issue.get("affected_jobs", [])
+        status = issue.get("status", "active")
+
+        cls_color, cls_label = CLASS_COLORS.get(cls, ("#484f58", cls))
+        flake_badge = ' <span style="color:#d29922;font-size:10px">⚡flake</span>' if is_flake else ""
+        status_badge = (
+            '<span style="color:#3fb950;font-size:10px">● active</span>'
+            if status == "active"
+            else '<span style="color:#484f58;font-size:10px">○ resolved</span>'
+        )
+
+        # Build affected jobs links
+        jobs_html = ""
+        for j in affected[-10:]:
+            name = j.get("name", "?")
+            url = j.get("url", "")
+            date = j.get("date", "")
+            if url:
+                jobs_html += f'<a href="{url}" target="_blank" style="color:#58a6ff;font-size:11px;margin-right:6px">{name} ({date})</a> '
+            else:
+                jobs_html += f'<span style="font-size:11px;color:#8b949e">{name} ({date})</span> '
+
+        root_cause_html = ""
+        if root_cause:
+            import html as _h
+            root_cause_html = f'<div style="font-size:11px;color:#8b949e;margin-top:4px;max-width:600px">{_h.escape(root_cause[:200])}</div>'
+
+        rows += f"""<tr id="{fp_id}">
+          <td style="max-width:350px">
+            <div style="font-weight:600;color:#c9d1d9;font-size:13px">{title}</div>
+            {root_cause_html}
+          </td>
+          <td><span style="color:{cls_color};font-size:12px;font-weight:600">{cls_label}</span>{flake_badge}</td>
+          <td style="font-size:12px;color:#8b949e">{first_seen}</td>
+          <td style="font-size:12px;color:#8b949e">{last_seen}</td>
+          <td style="text-align:center;font-size:12px">{occurrences}</td>
+          <td>{status_badge}</td>
+          <td style="max-width:300px">{jobs_html}</td>
+        </tr>\n"""
+
+    page_html = f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Known Issues — Prow Nightly Monitor</title>
+<style>
+  body {{ font-family: 'Inter', -apple-system, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; margin: 0; }}
+  .header {{ background: linear-gradient(135deg, #1a1e2e 0%, #2d1b4e 100%); padding: 24px 32px; border-bottom: 1px solid #30363d; }}
+  .header h1 {{ font-size: 22px; color: #f0f6fc; margin: 0; }}
+  .header .meta {{ color: #8b949e; font-size: 13px; margin-top: 6px; }}
+  .container {{ max-width: 1200px; margin: 0 auto; padding: 24px 32px; }}
+  table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: #161b22; border-radius: 12px; overflow: hidden; border: 1px solid #30363d; }}
+  th {{ background: #1c2128; color: #8b949e; padding: 10px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; }}
+  td {{ padding: 10px 12px; border-bottom: 1px solid #21262d; vertical-align: top; }}
+  tr:hover td {{ background: #1c2128; }}
+  a {{ color: #58a6ff; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+  .nav {{ margin-bottom: 20px; display: flex; gap: 8px; }}
+  .nav a {{ background: #21262d; padding: 6px 14px; border-radius: 20px; border: 1px solid #30363d; font-size: 13px; }}
+  .summary {{ display: flex; gap: 24px; margin-bottom: 20px; font-size: 14px; }}
+  .summary .stat {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 20px; }}
+  .summary .stat-num {{ font-size: 24px; font-weight: 700; }}
+</style>
+</head><body>
+<div class="header">
+  <h1>Known Issues</h1>
+  <div class="meta">Fingerprinted issues across all nightly runs — each row is one unique failure pattern</div>
+</div>
+<div class="container">
+  <div class="nav">
+    <a href="./">← Dashboard</a>
+    <a href="./history.html">Run History</a>
+  </div>
+  <div class="summary">
+    <div class="stat"><div class="stat-num" style="color:#f85149">{len([i for i in issues.values() if i.get('status') == 'active'])}</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">{len(issues)}</div>Total tracked</div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Issue</th><th>Class</th><th>First seen</th><th>Last seen</th><th>Count</th><th>Status</th><th>Affected Jobs</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+</div>
+</body></html>"""
+
+    (output_dir / "issues.html").write_text(page_html)
+    log.info("Known Issues page written to %s", output_dir / "issues.html")
 
 
 if __name__ == "__main__":
