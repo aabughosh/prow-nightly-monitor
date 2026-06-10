@@ -18,6 +18,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from fingerprint import (
+    compute_fingerprint, load_db, save_db, is_known,
+    get_previous_analysis, record_fingerprint, mark_seen,
+    group_by_class,
+)
+
 CURSOR_CLI = "/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
 REPO_DIR = os.path.expanduser("~/Documents/GitHub/prow-nightly-monitor")
 TARGET_REPO = os.environ.get("TARGET_REPO", "")
@@ -312,12 +318,23 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
         if category in hints:
             project_context += f"- **Hint for this failure type:** {hints[category]}\n"
 
+    related_repos_hint = ""
+    related_dir = os.path.join(INVESTIGATE_DIR, "_related_repos")
+    if os.path.exists(related_dir):
+        repos = [d for d in os.listdir(related_dir) if os.path.isdir(os.path.join(related_dir, d))]
+        if repos:
+            related_repos_hint = (
+                f"\n- **Related repos available** at ./_related_repos/: {', '.join(repos)}"
+                f"\n  You can read source from these repos for cross-project investigation."
+            )
+
     prompt = f"""You are a senior engineer investigating a CI failure. You have FULL tool access:
 - You can READ any file in this repo
-- You can RUN shell commands (curl, grep, etc.)
+- You can RUN shell commands (curl, grep, git log, etc.)
 - You can WRITE code fixes directly to files
 - You can FETCH full CI logs from Prow URLs
-{project_context}
+{project_context}{related_repos_hint}
+
 ## Step 1: Understand the Project
 First, read the repo's documentation to understand what this project does:
 - Read README.md, CONTRIBUTING.md, and any docs/ folder
@@ -343,7 +360,13 @@ Failed tests:
 Log snippet:
 {analysis.get('log_snippet', '(no log)')[:500]}
 
-## Step 3: Decide What To Do
+## Step 3: Find the Root Cause
+Go beyond the symptoms. Try to identify:
+- **Which commit/PR introduced the regression** — use `git log --oneline -20` and check recent merges
+- **Which container images are affected** — check the job's image references
+- **Is this the same failure as before?** — check if tests were passing in prior runs
+
+## Step 4: Decide What To Do
 Based on your understanding of the project and the failure evidence, decide:
 1. Is this a real bug that needs a code fix? → Write the fix directly to the files.
 2. Is this a flake/transient issue? → Just report it, no code changes.
@@ -352,13 +375,16 @@ Based on your understanding of the project and the failure evidence, decide:
 
 IMPORTANT: Only write fixes for REAL issues. Do NOT fix warnings or transient problems.
 
-## Step 4: Write Fix (if applicable)
+## Step 5: Write Fix (if applicable)
 If you write a fix, save the patch: git diff > ./ci-evidence/fix.patch
 
-## Step 5: Report
+## Step 6: Report
 Respond with:
 **Root Cause:** what specifically caused this failure
+**Breaking PR/Commit:** the PR or commit that introduced the issue (if identifiable)
+**Affected Images:** which container images are impacted (if applicable)
 **Is it a flake?** yes/no — and why
+**Issue Class:** one of: infra_timeout, infra_quota, infra_other, test_regression, test_flake, test_failure, matrix_mismatch, build_error, unknown
 **Suggested Fix:** what you did or what should be done
 **Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
 **Severity:** CRITICAL / HIGH / MEDIUM / LOW
@@ -511,6 +537,37 @@ def analyze_job(job: dict, opened_patches: set[str] | None = None) -> str:
     return result
 
 
+def _checkout_source_repos() -> None:
+    """Clone the target repo and any related repos for deeper investigation.
+
+    For projects with multiple repos (e.g. PTP has ptp-operator, linuxptp-daemon,
+    and ptp-operator-must-gather), clone them all so the agent can cross-reference.
+    """
+    if not TARGET_REPO:
+        return
+
+    if not os.path.exists(INVESTIGATE_DIR):
+        print(f"Cloning {TARGET_REPO}...")
+        subprocess.run(["git", "clone", "--depth=1", TARGET_REPO,
+                       INVESTIGATE_DIR], capture_output=True)
+    else:
+        subprocess.run(["git", "pull", "--ff-only"], cwd=INVESTIGATE_DIR,
+                       capture_output=True)
+
+    project_config = _load_project_config()
+    related_repos = project_config.get("related_repos", [])
+    if related_repos:
+        repos_dir = os.path.join(INVESTIGATE_DIR, "_related_repos")
+        os.makedirs(repos_dir, exist_ok=True)
+        for repo_url in related_repos:
+            repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+            repo_path = os.path.join(repos_dir, repo_name)
+            if not os.path.exists(repo_path):
+                print(f"  Cloning related repo: {repo_name}...")
+                subprocess.run(["git", "clone", "--depth=1", repo_url, repo_path],
+                               capture_output=True)
+
+
 def main():
     if not os.path.exists(RESULTS):
         print(f"No results at {RESULTS}")
@@ -527,39 +584,73 @@ def main():
         print(f"  {CURSOR_CLI} agent login")
         sys.exit(1)
 
-    if TARGET_REPO and not os.path.exists(INVESTIGATE_DIR):
-        print(f"Cloning {TARGET_REPO}...")
-        subprocess.run(["git", "clone", "--depth=1", TARGET_REPO,
-                       INVESTIGATE_DIR], capture_output=True)
-    elif not os.path.exists(INVESTIGATE_DIR):
-        os.makedirs(INVESTIGATE_DIR, exist_ok=True)
+    _checkout_source_repos()
 
     with open(RESULTS) as f:
         data = json.load(f)
 
     failed = [j for j in data.get("jobs", []) if j["state"] in ("failure", "error")]
-    print(f"Analyzing {len(failed)} failure(s) with Cursor agent (deep mode)...")
+    print(f"Found {len(failed)} failure(s)")
+
+    # --- Fingerprinting: skip known recurring issues ---
+    fp_db = load_db()
+    new_failures = []
+    reused_count = 0
+
+    for job in failed:
+        fp = compute_fingerprint(job)
+        job.setdefault("analysis", {})["fingerprint"] = fp
+
+        if is_known(fp_db, fp):
+            prev = get_previous_analysis(fp_db, fp)
+            mark_seen(fp_db, fp)
+            job["analysis"]["ai_summary"] = (
+                f"[Recurring issue — seen {prev.get('occurrences', 1)+1}x] "
+                f"{prev.get('root_cause', prev.get('ai_summary_short', '')[:200])}"
+            )
+            job["analysis"]["is_recurring"] = True
+            reused_count += 1
+            short = re.sub(r"periodic-ci-openshift-release-main-nightly-", "", job["name"])
+            print(f"  SKIP (recurring #{prev.get('occurrences',1)+1}): {short[:60]}")
+        else:
+            new_failures.append(job)
+
+    print(f"  {reused_count} recurring (skipped), {len(new_failures)} NEW to investigate")
+
+    # --- Group new failures by class ---
+    groups = group_by_class(new_failures)
+    if groups:
+        print("  Issue classes:")
+        for cls, jobs_in_cls in sorted(groups.items(), key=lambda x: -len(x[1])):
+            print(f"    {cls}: {len(jobs_in_cls)} failure(s)")
+
+    # --- Investigate only NEW failures ---
     if OPEN_PRS:
         print("  PRs enabled — will open PRs for unique fixes")
 
     opened_patches: set[str] = set()
     success_count = 0
-    for i, job in enumerate(failed, 1):
+    for i, job in enumerate(new_failures, 1):
         name = job["name"].split("-")[-5:] if len(job["name"]) > 50 else [job["name"]]
         short_name = "-".join(name)
-        print(f"  [{i}/{len(failed)}] {short_name}...")
+        print(f"  [{i}/{len(new_failures)}] {short_name}...")
         ai = analyze_job(job, opened_patches)
         if ai:
             job.setdefault("analysis", {})["ai_summary"] = ai[:8000]
+            fp = job["analysis"].get("fingerprint", compute_fingerprint(job))
+            record_fingerprint(fp_db, fp, job, ai)
             success_count += 1
             print(f"    Done ({len(ai)} chars)")
         else:
             print(f"    No analysis returned")
 
+    save_db(fp_db)
+
     with open(RESULTS, "w") as f:
         json.dump(data, f, indent=2)
 
-    print(f"Results updated: {success_count}/{len(failed)} failures analyzed")
+    print(f"Results updated: {success_count}/{len(new_failures)} new failures analyzed, "
+          f"{reused_count} recurring reused")
 
 
 def send_slack_summary():
@@ -598,7 +689,16 @@ def send_slack_summary():
         {"type": "divider"},
     ]
 
-    for j in failed_jobs:
+    new_failures = [j for j in failed_jobs if not j.get("analysis", {}).get("is_recurring")]
+    recurring_failures = [j for j in failed_jobs if j.get("analysis", {}).get("is_recurring")]
+
+    if new_failures:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f":new: *{len(new_failures)} new issue(s):*"},
+        })
+
+    for j in new_failures:
         analysis = j.get("analysis", {})
         category = analysis.get("category", "unknown").upper()
         severity = analysis.get("investigation", {}).get("severity", "?")
@@ -643,6 +743,19 @@ def send_slack_summary():
                 "url": pr_url,
             }
         blocks.append(block)
+
+    if recurring_failures:
+        recurring_summary = ", ".join(
+            f"`{re.sub(r'periodic-ci-openshift-release-main-nightly-', '', j['name'])[:40]}`"
+            for j in recurring_failures[:5]
+        )
+        if len(recurring_failures) > 5:
+            recurring_summary += f" +{len(recurring_failures) - 5} more"
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text":
+                     f":repeat: *{len(recurring_failures)} recurring* (known issues): {recurring_summary}"},
+        })
 
     blocks.append({"type": "divider"})
     blocks.append({
