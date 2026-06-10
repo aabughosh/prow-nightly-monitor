@@ -37,6 +37,7 @@ RESULTS = os.path.join(OUTPUT_DIR, "results.json")
 MAX_RESULTS_SIZE = 50 * 1024 * 1024
 AGENT_TIMEOUT = 300  # 5 minutes per job
 OPEN_PRS = os.environ.get("OPEN_PRS", "true").lower() == "true"
+MIN_VERSION = os.environ.get("MIN_VERSION", "")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/cursor/")
 
@@ -345,6 +346,19 @@ First, read the repo's documentation to understand what this project does:
 CI evidence files are in ./ci-evidence/. If they're not enough, use the URLs
 in ./ci-evidence/prow-urls.txt to curl full logs from Prow.
 
+**IMPORTANT: Fetch the FULL test artifacts!**
+The step-level artifacts contain the real test results. The Prow URL gives you the GCS path.
+Convert: `https://prow.ci.openshift.org/view/gs/test-platform-results/logs/JOB/BUILD_ID`
+To GCS:  `https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/JOB/BUILD_ID/artifacts/`
+
+Example for PTP:
+```
+curl -s "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.17-e2e-telco5g-ptp/2063139012608004096/artifacts/e2e-telco5g-ptp/telco5g-ptp-tests/artifacts/"
+```
+- Look for files like `junit.xml`, `test_results.json`, `test_results_all.xml`, mode-specific results (`test_results_bc.xml`, `test_results_dualnicbc.xml`, etc.)
+- Fetch individual test result files to see EXACTLY which tests failed with their real names
+- Also check `pod-logs/` for container logs from the test run
+
 Evidence files:
 {evidence_listing}
 
@@ -362,9 +376,16 @@ Log snippet:
 
 ## Step 3: Find the Root Cause
 Go beyond the symptoms. Try to identify:
-- **Which commit/PR introduced the regression** — use `git log --oneline -20` and check recent merges
+- **Which commit/PR introduced the regression** — run `git log --oneline -50` and `git log --all --oneline -50` to see recent commits across all branches. Use `git show <sha>` to inspect suspicious commits. Also try `git log --oneline --all --grep="<keyword>"` to search for relevant changes.
+- **Check multiple branches** — the test may run against a release branch. Use `git branch -a` to see all branches, then `git log --oneline origin/release-X.Y -20` to check the relevant branch history.
 - **Which container images are affected** — check the job's image references
 - **Is this the same failure as before?** — check if tests were passing in prior runs
+- **Search GitHub PRs** — use `curl -s "https://api.github.com/search/issues?q=repo:<org>/<repo>+is:pr+<keyword>" | python3 -m json.tool | head -50` to find related PRs
+- **Browse ALL related repos** — check ./_related_repos/ for related source code. Read their test files, pkg/ directories, and look for the test functions that failed. Identify the exact source file and line that causes the failure.
+- **ALWAYS provide GitHub URL links** — when referencing code, commits, or PRs, include the full URL. For example:
+  - PR: `https://github.com/<org>/<repo>/pull/<number>`
+  - Commit: `https://github.com/<org>/<repo>/commit/<sha>`
+  - File: `https://github.com/<org>/<repo>/blob/main/<path>#L<line>`
 
 ## Step 4: Decide What To Do
 Based on your understanding of the project and the failure evidence, decide:
@@ -381,10 +402,11 @@ If you write a fix, save the patch: git diff > ./ci-evidence/fix.patch
 ## Step 6: Report
 Respond with:
 **Root Cause:** what specifically caused this failure
-**Breaking PR/Commit:** the PR or commit that introduced the issue (if identifiable)
+**Breaking PR/Commit:** the PR or commit that introduced the issue (if identifiable) — INCLUDE THE FULL GITHUB URL (e.g. https://github.com/org/repo/pull/123 or https://github.com/org/repo/commit/abc123)
 **Affected Images:** which container images are impacted (if applicable)
 **Is it a flake?** yes/no — and why
 **Issue Class:** one of: infra_timeout, infra_quota, infra_other, test_regression, test_flake, test_failure, matrix_mismatch, build_error, unknown
+**Related Source Files:** list the source files in the repo (or related repos) that are relevant, with GitHub URLs (e.g. https://github.com/org/repo/blob/main/test/conformance/serial/ptp.go#L100)
 **Suggested Fix:** what you did or what should be done
 **Fix Written:** yes/no — if yes, see ./ci-evidence/fix.patch
 **Severity:** CRITICAL / HIGH / MEDIUM / LOW
@@ -548,7 +570,7 @@ def _checkout_source_repos() -> None:
 
     if not os.path.exists(INVESTIGATE_DIR):
         print(f"Cloning {TARGET_REPO}...")
-        subprocess.run(["git", "clone", "--depth=1", TARGET_REPO,
+        subprocess.run(["git", "clone", "--depth=50", TARGET_REPO,
                        INVESTIGATE_DIR], capture_output=True)
     else:
         subprocess.run(["git", "pull", "--ff-only"], cwd=INVESTIGATE_DIR,
@@ -564,7 +586,7 @@ def _checkout_source_repos() -> None:
             repo_path = os.path.join(repos_dir, repo_name)
             if not os.path.exists(repo_path):
                 print(f"  Cloning related repo: {repo_name}...")
-                subprocess.run(["git", "clone", "--depth=1", repo_url, repo_path],
+                subprocess.run(["git", "clone", "--depth=50", repo_url, repo_path],
                                capture_output=True)
 
 
@@ -590,7 +612,22 @@ def main():
         data = json.load(f)
 
     failed = [j for j in data.get("jobs", []) if j["state"] in ("failure", "error")]
-    print(f"Found {len(failed)} failure(s)")
+
+    # Filter by min version — don't waste AI tokens on old versions
+    if MIN_VERSION:
+        min_parts = [int(x) for x in MIN_VERSION.split(".")]
+        def _version_ok(job_name):
+            import re as _re
+            m = _re.search(r"(\d+)\.(\d+)", job_name)
+            if not m:
+                return True
+            return [int(m.group(1)), int(m.group(2))] >= min_parts
+        before = len(failed)
+        failed = [j for j in failed if _version_ok(j["name"])]
+        if len(failed) < before:
+            print(f"Filtered {before - len(failed)} job(s) below MIN_VERSION {MIN_VERSION}")
+
+    print(f"Found {len(failed)} failure(s) to analyze")
 
     # --- Fingerprinting: skip known recurring issues ---
     fp_db = load_db()
