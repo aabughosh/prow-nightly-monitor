@@ -2575,44 +2575,43 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                 if len(real_tests) > 3:
                     analysis_html += f'<div style="color:#8b949e;font-size:11px;margin-top:2px">+{len(real_tests)-3} more</div>'
 
-            if inv.get("suggested_fix"):
-                import re as _re_fix
-                fix_text = inv["suggested_fix"]
-                # Remove garbled Data:{...} lines from fix text
-                fix_text = "\n".join(
-                    l for l in fix_text.split("\n")
-                    if "Data:{ResultType:" not in l and "Result:0x" not in l
-                )
-                # Clean /tmp/cnf-xxxxx/... paths to just filenames
-                fix_text = _re_fix.sub(r'/tmp/cnf-[^/]+/ptp-operator-conformance-test/', '', fix_text)
-                fix_text = _re_fix.sub(r'/tmp/[^/]+/', '', fix_text)
-                # Only show first 2 lines as summary; hide rest in details
-                fix_lines_list = [l for l in fix_text.split("\n") if l.strip()]
-                if len(fix_lines_list) > 2:
-                    fix_short = "\n".join(fix_lines_list[:2])
-                    fix_rest = "\n".join(fix_lines_list[2:])
-                    analysis_html += (
-                        f'<div class="fix-box">'
-                        f'<div class="fix-box-title">Suggested Fix</div>'
-                        f'<div class="fix-box-content">{fix_short}'
-                        f'<details><summary style="font-size:11px;color:#8b949e;cursor:pointer">more...</summary>{fix_rest}</details>'
-                        f'</div></div>'
+            # Only show Suggested Fix + Investigation when there's NO AI analysis
+            # (AI structured display already covers Root Cause, Breaking PR, Class, Flake)
+            if not ai_summary:
+                if inv.get("suggested_fix"):
+                    import re as _re_fix
+                    fix_text = inv["suggested_fix"]
+                    fix_text = "\n".join(
+                        l for l in fix_text.split("\n")
+                        if "Data:{ResultType:" not in l and "Result:0x" not in l
                     )
-                else:
-                    analysis_html += (
-                        f'<div class="fix-box">'
-                        f'<div class="fix-box-title">Suggested Fix</div>'
-                        f'<div class="fix-box-content">{fix_text}</div>'
-                        f'</div>'
-                    )
+                    fix_text = _re_fix.sub(r'/tmp/cnf-[^/]+/ptp-operator-conformance-test/', '', fix_text)
+                    fix_text = _re_fix.sub(r'/tmp/[^/]+/', '', fix_text)
+                    fix_lines_list = [l for l in fix_text.split("\n") if l.strip()]
+                    if len(fix_lines_list) > 2:
+                        fix_short = "\n".join(fix_lines_list[:2])
+                        fix_rest = "\n".join(fix_lines_list[2:])
+                        analysis_html += (
+                            f'<div class="fix-box">'
+                            f'<div class="fix-box-title">Suggested Fix</div>'
+                            f'<div class="fix-box-content">{fix_short}'
+                            f'<details><summary style="font-size:11px;color:#8b949e;cursor:pointer">more...</summary>{fix_rest}</details>'
+                            f'</div></div>'
+                        )
+                    else:
+                        analysis_html += (
+                            f'<div class="fix-box">'
+                            f'<div class="fix-box-title">Suggested Fix</div>'
+                            f'<div class="fix-box-content">{fix_text}</div>'
+                            f'</div>'
+                        )
 
             detail_buttons = []
 
-            if inv and (inv.get("root_cause") or inv.get("error_output")):
+            if not ai_summary and inv and (inv.get("root_cause") or inv.get("error_output")):
                 inv_html = ''
                 if inv.get("root_cause"):
                     rc_text = inv["root_cause"]
-                    # Skip garbled Go struct dumps
                     if "Data:{ResultType:" in rc_text or "Result:0x" in rc_text:
                         rc_text = "See AI analysis below for details."
                     rc_short = rc_text[:150].rsplit(" ", 1)[0] + "..." if len(rc_text) > 150 else rc_text
