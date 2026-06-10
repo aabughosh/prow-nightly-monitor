@@ -2818,6 +2818,9 @@ def _render_only():
         if j.get("analysis"):
             analyses[j["name"]] = j["analysis"]
 
+    # Apply version filter
+    jobs = filter_by_version(jobs)
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     history = load_history()
     trend_html = generate_trend_html(history)
