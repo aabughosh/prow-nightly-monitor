@@ -2727,8 +2727,16 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                 # Fingerprint/recurrence info
                 _fp_info = analysis.get("fingerprint", "")
                 _is_recurring = analysis.get("is_recurring", False)
+                _first_seen = analysis.get("first_seen", "")
+                _occurrences = analysis.get("occurrences", 0)
                 if _is_recurring:
-                    analysis_html += '<div style="margin-top:4px;font-size:11px;color:#d29922;font-style:italic">🔁 Recurring issue (cached analysis)</div>'
+                    _since = _first_seen[:10] if _first_seen else "unknown"
+                    analysis_html += (
+                        f'<div style="margin-top:4px;font-size:11px;color:#d29922;font-style:italic">'
+                        f'🔁 Recurring (since {_since}, seen {_occurrences}x)</div>'
+                    )
+                elif ai_summary and not _is_recurring:
+                    analysis_html += '<div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div>'
 
                 rendered = _md_to_html(cleaned)
                 detail_buttons.append(
@@ -2830,6 +2838,24 @@ def _render_only():
         jobs.append(job)
         if j.get("analysis"):
             analyses[j["name"]] = j["analysis"]
+
+    # Enrich with fingerprint first_seen data from fingerprints.json
+    fp_path = OUTPUT_DIR / "fingerprints.json"
+    if not fp_path.exists():
+        fp_path = Path(__file__).parent / "public" / "fingerprints.json"
+    if fp_path.exists():
+        try:
+            fp_data = json.loads(fp_path.read_text()).get("fingerprints", {})
+            for name, a in analyses.items():
+                fp = a.get("fingerprint", "")
+                if fp and fp in fp_data:
+                    entry = fp_data[fp]
+                    if not a.get("first_seen"):
+                        a["first_seen"] = entry.get("first_seen", "")
+                    if not a.get("occurrences"):
+                        a["occurrences"] = entry.get("occurrences", 1)
+        except (json.JSONDecodeError, OSError):
+            pass
 
     # Apply version filter
     jobs = filter_by_version(jobs)

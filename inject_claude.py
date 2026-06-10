@@ -646,6 +646,8 @@ def main():
                 f"{prev.get('root_cause', prev.get('ai_summary_short', '')[:200])}"
             )
             job["analysis"]["is_recurring"] = True
+            job["analysis"]["first_seen"] = prev.get("first_seen", "")
+            job["analysis"]["occurrences"] = prev.get("occurrences", 1) + 1
             reused_count += 1
             short = re.sub(r"periodic-ci-openshift-release-main-nightly-", "", job["name"])
             print(f"  SKIP (recurring #{prev.get('occurrences',1)+1}): {short[:60]}")
