@@ -2487,6 +2487,15 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
 
     rows = []
     _prev_issue_class = None
+    _class_labels = {
+        "test_regression": ("🔴 Test Regressions", "#f85149"),
+        "build_error": ("🔧 Build Errors", "#da3633"),
+        "test_failure": ("⚠️ Test Failures", "#f0883e"),
+        "test_flake": ("⚡ Flaky Tests", "#d29922"),
+        "infra_other": ("🏗️ Infrastructure", "#8b949e"),
+        "infra_timeout": ("⏰ Timeouts", "#8b949e"),
+        "unknown": ("❓ Unknown", "#484f58"),
+    }
     for job in jobs:
         state = job["state"]
         emoji = STATE_EMOJI.get(state, "?")
@@ -2500,6 +2509,31 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
         category = analysis.get("category", "")
         inv = analysis.get("investigation", {})
         ai_summary = analysis.get("ai_summary", "")
+
+        # Determine issue class for grouping
+        _current_class = "success" if state == "success" else "unknown"
+        if state in ("failure", "error") and ai_summary:
+            for _cl in ai_summary.split("\n"):
+                if _cl.strip().startswith("**Issue Class:**"):
+                    _current_class = _cl.replace("**Issue Class:**", "").strip().strip("`").split("(")[0].strip()
+                    break
+            if _current_class == "unknown":
+                _current_class = category or "unknown"
+
+        # Insert group header when class changes
+        if state in ("failure", "error") and _current_class != _prev_issue_class:
+            _prev_issue_class = _current_class
+            _lbl, _clr = _class_labels.get(_current_class, ("❓ " + _current_class, "#484f58"))
+            rows.append(
+                f'<tr class="group-header"><td colspan="6" style="padding:12px 8px 4px;font-weight:700;'
+                f'font-size:13px;color:{_clr};border-bottom:1px solid {_clr}30">{_lbl}</td></tr>'
+            )
+        elif state == "success" and _prev_issue_class != "success":
+            _prev_issue_class = "success"
+            rows.append(
+                '<tr class="group-header"><td colspan="6" style="padding:12px 8px 4px;font-weight:700;'
+                'font-size:13px;color:#3fb950;border-bottom:1px solid #3fb95030">✅ Passed</td></tr>'
+            )
 
         row_class = f"row-{state}"
         analysis_html = ""
