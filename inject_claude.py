@@ -350,9 +350,17 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
         if category in hints:
             hint = f"\nHint: {hints[category]}"
 
-    prompt = f"""Analyze this CI failure. Evidence files are in ./ci-evidence/ — read them directly.
+    version = ""
+    import re as _re_ver
+    _ver_match = _re_ver.search(r"nightly-(\d+\.\d+)", job['name'])
+    if _ver_match:
+        version = _ver_match.group(1)
+
+    prompt = f"""Analyze this CI failure for OCP version {version or 'unknown'}. Evidence files are in ./ci-evidence/ — read them directly.
+DO NOT mix analysis with other OCP versions. Focus ONLY on version {version or 'this job'}.
 
 **Project:** {project_desc}{hint}
+**Source repo:** https://github.com/{UPSTREAM_REPO}
 
 **Job:** {job['name']}
 **Prow URL:** {job.get('url', 'N/A')}
@@ -368,23 +376,37 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
 **Evidence files available in ./ci-evidence/:**
 {evidence_listing}
 
-Read the evidence files above (especially JUnit XML and test_results files) to find the EXACT test names and error messages. Then respond with EXACTLY this format:
+Read the evidence files (especially JUnit XML and test_results files). Find the EXACT test names, error messages, and line numbers from the source code.
+Then search the source repo for the relevant test code and recent PRs/commits that may have caused the regression.
+
+Respond with EXACTLY this format (all sections required):
 
 **Failed Tests:**
-- `[exact.test.suite] exact test name` — exact error message or timeout details (duration if relevant)
-- (list ALL failed tests from the XML, not just a summary)
+- `[exact.test.suite] exact test name` — exact error message (duration, line number from source if found)
+- (list ALL failed tests, not just a summary)
 
-**Root Cause:** what specifically broke and WHY (reference specific code, config, or infrastructure). Be precise — name the component, function, or resource that failed. (3-5 sentences)
+**Root Cause:** what specifically broke and WHY. Reference the specific function, file, and line in source code. Explain the mechanism of failure in detail. (5-8 sentences)
 
-**Evidence:** quote the key log lines or error messages that prove the root cause (2-3 lines from the evidence files)
+**Breaking PR/Commit:**
+- link to the PR or commit that introduced the regression (search git history if possible)
+- if unknown, say "Unknown — needs git bisect"
 
-**Is it a flake?** yes/no — and why (one sentence with evidence)
+**Affected Images:**
+- list the container images involved (e.g. openshift-ptp/linuxptp-daemon:{version})
+
+**Evidence:** quote 2-4 key log lines or error messages from evidence files that prove the root cause
+
+**Is it a flake?** yes/no — with evidence (one sentence)
 
 **Issue Class:** one of: infra_timeout, infra_quota, infra_other, test_regression, test_flake, test_failure, matrix_mismatch, build_error, unknown
 
-**Severity:** CRITICAL / HIGH / MEDIUM / LOW
+**Related Source Files:**
+- https://github.com/{UPSTREAM_REPO}/blob/main/path/to/file.go#L123-L456 — brief description
+- (list 3-6 relevant source files with line numbers)
 
-**Suggested Fix:** specific actionable steps — name files/PRs/configs to change (2-3 sentences)
+**Suggested Fix:** specific actionable steps — name exact files, functions, and what to change (3-5 sentences)
+
+**Severity:** CRITICAL / HIGH / MEDIUM / LOW — with justification
 """
 
     return prompt
