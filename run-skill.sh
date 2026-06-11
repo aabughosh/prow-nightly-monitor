@@ -33,27 +33,17 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S'): $*" >> "$LOG_FILE"; }
 
 # Determine if this is the weekly AI run (Monday or WEEKLY_AI=true)
 DAY_OF_WEEK=$(date +%u)  # 1=Monday
-WEEKLY_AI="${WEEKLY_AI:-false}"
-if [ "$DAY_OF_WEEK" = "1" ]; then
-    WEEKLY_AI="true"
-fi
+WEEKLY_AI="${WEEKLY_AI:-true}"
 
-if [ "$WEEKLY_AI" = "true" ]; then
-    log "=== Starting WEEKLY run (with AI analysis) — ALL projects ==="
-else
-    log "=== Starting daily run — ALL projects ==="
-fi
+log "=== Starting daily run (with AI analysis) — ALL projects ==="
 cd "$REPO_DIR" || exit 1
 
 pip3 install requests -q 2>/dev/null || true
 
-export FORK_OWNER="${FORK_OWNER:-aabughosh}"
-export OPEN_PRS="${OPEN_PRS:-true}"
 export SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
-export SKIP_AI="true"
 
-# Only run commatrix (other projects can be added later)
-PROJECT_LIST="commatrix"
+# Run both projects
+PROJECT_LIST="commatrix ptp-operator"
 
 for PROJECT_NAME in $PROJECT_LIST; do
     log "--- Processing project: $PROJECT_NAME ---"
