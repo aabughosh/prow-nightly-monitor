@@ -379,34 +379,38 @@ DO NOT mix analysis with other OCP versions. Focus ONLY on version {version or '
 Read the evidence files (especially JUnit XML and test_results files). Find the EXACT test names, error messages, and line numbers from the source code.
 Then search the source repo for the relevant test code and recent PRs/commits that may have caused the regression.
 
+IMPORTANT: Investigate EACH failed test INDIVIDUALLY. Do NOT lump them together.
+
 Respond with EXACTLY this format (all sections required):
 
-**Failed Tests:**
-- `[exact.test.suite] exact test name` — exact error message (duration, line number from source if found)
-- (list ALL failed tests, not just a summary)
+---
+FOR EACH FAILED TEST, write a separate section:
 
-**Root Cause:** what specifically broke and WHY. Reference the specific function, file, and line in source code. Explain the mechanism of failure in detail. (5-8 sentences)
+### Test 1: `[exact.test.suite] exact test name`
+- **Duration:** how long it ran before failing
+- **Error:** exact error message or assertion failure
+- **Root Cause:** what specifically broke for THIS test. Reference the specific function, file, and line in source code. (3-5 sentences)
+- **Breaking PR/Commit:** link to the PR or commit that caused THIS failure (or "Unknown — needs git bisect")
+- **Source File:** https://github.com/{UPSTREAM_REPO}/blob/main/path/to/test_file.go#L123 — the test code
+- **Is it a flake?** yes/no — with evidence
+- **Suggested Fix:** specific actionable fix for THIS test (2-3 sentences)
 
-**Breaking PR/Commit:**
-- link to the PR or commit that introduced the regression (search git history if possible)
-- if unknown, say "Unknown — needs git bisect"
+### Test 2: `[exact.test.suite] exact test name`
+(same structure as above)
+
+(repeat for ALL failed tests)
+
+---
+AFTER all individual tests, add:
+
+**Relation Between Failures:** Are these tests failing for the same reason? Is there a common root cause, or are they independent issues? (2-4 sentences explaining the connection or lack thereof)
 
 **Affected Images:**
 - list the container images involved (e.g. openshift-ptp/linuxptp-daemon:{version})
 
-**Evidence:** quote 2-4 key log lines or error messages from evidence files that prove the root cause
+**Overall Issue Class:** one of: infra_timeout, infra_quota, infra_other, test_regression, test_flake, test_failure, matrix_mismatch, build_error, unknown
 
-**Is it a flake?** yes/no — with evidence (one sentence)
-
-**Issue Class:** one of: infra_timeout, infra_quota, infra_other, test_regression, test_flake, test_failure, matrix_mismatch, build_error, unknown
-
-**Related Source Files:**
-- https://github.com/{UPSTREAM_REPO}/blob/main/path/to/file.go#L123-L456 — brief description
-- (list 3-6 relevant source files with line numbers)
-
-**Suggested Fix:** specific actionable steps — name exact files, functions, and what to change (3-5 sentences)
-
-**Severity:** CRITICAL / HIGH / MEDIUM / LOW — with justification
+**Overall Severity:** CRITICAL / HIGH / MEDIUM / LOW — with justification
 """
 
     return prompt
