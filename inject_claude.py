@@ -42,6 +42,7 @@ AGENT_TIMEOUT = 600  # 10 minutes per issue
 MIN_VERSION = os.environ.get("MIN_VERSION", "")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/cursor/")
+FORCE_REANALYZE = os.environ.get("FORCE_REANALYZE", "false").lower() == "true"
 
 
 def check_auth() -> bool:
@@ -335,7 +336,7 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
     reason = analysis.get("reason", "")
 
     failed_tests = "\n".join(
-        f"  - {t.get('name', '?')}: {t.get('message', '')[:200]}"
+        f"  - {t.get('name', '?')}: {t.get('message', '')[:500]}"
         for t in inv.get("failed_tests", [])
     )
 
@@ -362,18 +363,28 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
 {failed_tests or '(none extracted)'}
 
 **Log snippet:**
-{analysis.get('log_snippet', '(no log)')[:400]}
+{analysis.get('log_snippet', '(no log)')[:800]}
 
 **Evidence files available in ./ci-evidence/:**
 {evidence_listing}
 
-Read the evidence files above to understand what happened. Then respond with EXACTLY this format:
+Read the evidence files above (especially JUnit XML and test_results files) to find the EXACT test names and error messages. Then respond with EXACTLY this format:
 
-**Root Cause:** what specifically caused this failure (be concise, 2-3 sentences max)
-**Is it a flake?** yes/no — and why (one sentence)
+**Failed Tests:**
+- `[exact.test.suite] exact test name` — exact error message or timeout details (duration if relevant)
+- (list ALL failed tests from the XML, not just a summary)
+
+**Root Cause:** what specifically broke and WHY (reference specific code, config, or infrastructure). Be precise — name the component, function, or resource that failed. (3-5 sentences)
+
+**Evidence:** quote the key log lines or error messages that prove the root cause (2-3 lines from the evidence files)
+
+**Is it a flake?** yes/no — and why (one sentence with evidence)
+
 **Issue Class:** one of: infra_timeout, infra_quota, infra_other, test_regression, test_flake, test_failure, matrix_mismatch, build_error, unknown
+
 **Severity:** CRITICAL / HIGH / MEDIUM / LOW
-**Suggested Fix:** what should be done (1-2 sentences)
+
+**Suggested Fix:** specific actionable steps — name files/PRs/configs to change (2-3 sentences)
 """
 
     return prompt
@@ -512,6 +523,10 @@ def _analyze_per_job(data: dict, failed: list[dict], fp_db: dict) -> None:
 
 def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
     """Per-issue analysis for commatrix: fingerprint each test/error individually."""
+    # Clear stale issues from previous runs to prevent accumulation
+    for job in failed:
+        job.setdefault("analysis", {})["issues"] = []
+
     # Extract all individual issues from all failed jobs
     all_issues: list[dict] = []
     for job in failed:
@@ -544,7 +559,7 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
     new_issues: dict[str, dict] = {}
     reused_count = 0
     for fp, issue_data in unique_issues.items():
-        if is_known_issue(fp_db, fp):
+        if is_known_issue(fp_db, fp) and not FORCE_REANALYZE:
             prev = get_issue(fp_db, fp)
             # Update affected_jobs for each job this issue appears in
             for j in issue_data["jobs"]:
@@ -553,7 +568,8 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
             short = issue_data["test_name"][:60]
             print(f"  SKIP (recurring #{prev.get('occurrences',1)+1}): {short}")
 
-            # Tag the affected jobs with recurring info
+            # Tag the affected jobs with recurring info (including saved ai_summary)
+            saved_ai = prev.get("ai_summary_short", "") or prev.get("ai_summary", "")
             for j in issue_data["jobs"]:
                 for job in failed:
                     if job["name"] == j["name"]:
@@ -565,6 +581,7 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
                             "occurrences": prev.get("occurrences", 1) + 1,
                             "classification": prev.get("classification", "unknown"),
                             "root_cause": prev.get("root_cause", ""),
+                            "ai_summary": saved_ai,
                         })
         else:
             new_issues[fp] = issue_data
