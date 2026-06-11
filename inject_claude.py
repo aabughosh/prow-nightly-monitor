@@ -589,17 +589,23 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
 
     print(f"  Extracted {len(all_issues)} individual issues from {len(failed)} failed jobs")
 
-    # Deduplicate: group issues by fingerprint
+    # Deduplicate: group issues by fingerprint (version-specific)
     unique_issues: dict[str, dict] = {}  # fp -> first issue dict + list of jobs
     for issue in all_issues:
+        # Extract OCP version from job name for version-specific fingerprinting
+        _ver = ""
+        _ver_m = re.search(r"nightly-(\d+\.\d+)", issue.get("job_name", ""))
+        if _ver_m:
+            _ver = _ver_m.group(1)
         fp = compute_issue_fingerprint(
-            issue["test_name"], issue["error_msg"], issue["category"]
+            issue["test_name"], issue["error_msg"], issue["category"], version=_ver
         )
         if fp not in unique_issues:
             unique_issues[fp] = {
                 "test_name": issue["test_name"],
                 "error_msg": issue["error_msg"],
                 "category": issue["category"],
+                "version": _ver,
                 "jobs": [],
             }
         unique_issues[fp]["jobs"].append({

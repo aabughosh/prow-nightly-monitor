@@ -50,14 +50,16 @@ def _normalize_test_name(name: str) -> str:
 # Per-issue fingerprinting (new model)
 # ---------------------------------------------------------------------------
 
-def compute_issue_fingerprint(test_name: str, error_msg: str = "", category: str = "") -> str:
+def compute_issue_fingerprint(test_name: str, error_msg: str = "",
+                              category: str = "", version: str = "") -> str:
     """Compute a fingerprint for a single test/error issue.
 
-    Uses: normalized test name + normalized error snippet + category.
+    Uses: version + normalized test name + normalized error snippet + category.
+    Each OCP version gets its own fingerprint so analysis is version-specific.
     """
     norm_name = _normalize_test_name(test_name)
     norm_error = _normalize_error(error_msg)[:200]
-    raw = f"{category}::{norm_name}::{norm_error}"
+    raw = f"{version}::{category}::{norm_name}::{norm_error}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
