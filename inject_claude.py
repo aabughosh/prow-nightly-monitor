@@ -38,7 +38,7 @@ OUTPUT_DIR = os.environ.get("OUTPUT_DIR", f"{REPO_DIR}/public")
 RESULTS = os.path.join(OUTPUT_DIR, "results.json")
 
 MAX_RESULTS_SIZE = 50 * 1024 * 1024
-AGENT_TIMEOUT = 300  # 5 minutes per job
+AGENT_TIMEOUT = 600  # 10 minutes per issue
 MIN_VERSION = os.environ.get("MIN_VERSION", "")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/cursor/")
@@ -112,10 +112,42 @@ def run_cursor_agent(prompt: str, cwd: str = INVESTIGATE_DIR) -> str:
     return ""
 
 
-def dump_evidence(job: dict) -> list[str]:
-    """Write all CI artifacts to ci-evidence/ as files the agent can read.
+MAX_EVIDENCE_FILES = 12
 
-    Returns a list of (filename, description) for the prompt.
+_SKIP_PATTERNS = (
+    "gather-extra/", "gather-extra__",
+    "baremetalds-", "aws-deprovision", "ofcir-",
+    "ipi-conf", "cloud-init",
+    "cluster-setup/", "cluster-setup__",
+    ".html",
+    "/artifacts/",  # skip duplicate nested artifacts/ copies
+    "__artifacts__",
+)
+_KEEP_PATTERNS = (
+    "junit.xml", "test_results", "build-log",
+    "commatrix-e2e/", "network-flow-matrix",
+    "matrix-diff", "doc-diff", "raw-ss", "communication-matrix",
+    "nftables", "mc-master", "mc-worker", "ss-generated",
+)
+
+
+def _is_essential_artifact(key: str) -> bool:
+    """Return True if this artifact is worth including as evidence."""
+    key_lower = key.lower()
+    for pat in _SKIP_PATTERNS:
+        if pat in key_lower:
+            return False
+    for pat in _KEEP_PATTERNS:
+        if pat in key_lower:
+            return True
+    return False
+
+
+def dump_evidence(job: dict) -> list[str]:
+    """Write essential CI artifacts to ci-evidence/ for the agent.
+
+    Filters out irrelevant cluster metadata to keep evidence lean and fast.
+    Returns a list of filenames for the prompt.
     """
     if os.path.exists(EVIDENCE_DIR):
         shutil.rmtree(EVIDENCE_DIR)
@@ -127,11 +159,15 @@ def dump_evidence(job: dict) -> list[str]:
     evidence_files = []
 
     for key, content in all_artifacts.items():
+        if not _is_essential_artifact(key):
+            continue
         safe_name = key.replace("/", "__")
         path = os.path.join(EVIDENCE_DIR, safe_name)
         with open(path, "w") as f:
             f.write(content)
         evidence_files.append(safe_name)
+        if len(evidence_files) >= MAX_EVIDENCE_FILES:
+            break
 
     log_snippet = analysis.get("log_snippet", "")
     if log_snippet:
@@ -292,113 +328,52 @@ def _load_project_config() -> dict:
 
 
 def build_prompt(job: dict, evidence_files: list[str]) -> str:
-    """Build a prompt — uses project config for context, agent reads docs and decides."""
+    """Build a focused prompt for fast CI failure analysis."""
     analysis = job.get("analysis", {})
     inv = analysis.get("investigation", {})
     category = analysis.get("category", "")
     reason = analysis.get("reason", "")
-    matrix_diff = analysis.get("matrix_diff", {})
 
     failed_tests = "\n".join(
-        f"  - {t.get('name', '?')}: {t.get('message', '')[:300]}"
+        f"  - {t.get('name', '?')}: {t.get('message', '')[:200]}"
         for t in inv.get("failed_tests", [])
     )
 
     evidence_listing = "\n".join(f"  - {f}" for f in evidence_files)
 
     project = _load_project_config()
-    project_context = ""
+    project_desc = project.get("description", "N/A") if project else "N/A"
+    hint = ""
     if project:
-        browse_hint = "- **Browse the ENTIRE repo** — look at all directories, all packages, all tests"
-
-        project_context = f"""
-## Project Context (from config)
-- **What this project does:** {project.get('description', 'N/A')}
-{browse_hint}
-- **Config directories:** {', '.join(project.get('config_dirs', [])) or 'N/A'}
-"""
         hints = project.get("classification_hints", {})
         if category in hints:
-            project_context += f"- **Hint for this failure type:** {hints[category]}\n"
+            hint = f"\nHint: {hints[category]}"
 
-    related_repos_hint = ""
-    related_dir = os.path.join(INVESTIGATE_DIR, "_related_repos")
-    if os.path.exists(related_dir):
-        repos = [d for d in os.listdir(related_dir) if os.path.isdir(os.path.join(related_dir, d))]
-        if repos:
-            related_repos_hint = (
-                f"\n- **Related repos available** at ./_related_repos/: {', '.join(repos)}"
-                f"\n  You can read source from these repos for cross-project investigation."
-            )
+    prompt = f"""Analyze this CI failure. Evidence files are in ./ci-evidence/ — read them directly.
 
-    prompt = f"""You are a senior engineer investigating a CI failure. You have FULL tool access:
-- You can READ any file in this repo
-- You can RUN shell commands (curl, grep, git log, etc.)
-- You can WRITE code fixes directly to files
-- You can FETCH full CI logs from Prow URLs
-{project_context}{related_repos_hint}
+**Project:** {project_desc}{hint}
 
-## Step 1: Understand the Project
-First, read the repo's documentation to understand what this project does:
-- Read README.md, CONTRIBUTING.md, and any docs/ folder
-- Look at the project structure (ls the root, key directories)
-- Understand the test framework, CI setup, and how failures relate to the code
+**Job:** {job['name']}
+**Prow URL:** {job.get('url', 'N/A')}
+**Category:** {category}
+**Reason:** {reason}
 
-## Step 2: Investigate the Failure
-CI evidence files are in ./ci-evidence/. If they're not enough, use the URLs
-in ./ci-evidence/prow-urls.txt to curl full logs from Prow.
-
-**IMPORTANT: Fetch the FULL test artifacts!**
-The step-level artifacts contain the real test results. The Prow URL gives you the GCS path.
-Convert: `https://prow.ci.openshift.org/view/gs/test-platform-results/logs/JOB/BUILD_ID`
-To GCS:  `https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/JOB/BUILD_ID/artifacts/`
-
-Example for PTP:
-```
-curl -s "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.17-e2e-telco5g-ptp/2063139012608004096/artifacts/e2e-telco5g-ptp/telco5g-ptp-tests/artifacts/"
-```
-- Look for files like `junit.xml`, `test_results.json`, `test_results_all.xml`, mode-specific results (`test_results_bc.xml`, `test_results_dualnicbc.xml`, etc.)
-- Fetch individual test result files to see EXACTLY which tests failed with their real names
-- Also check `pod-logs/` for container logs from the test run
-
-Evidence files:
-{evidence_listing}
-
-Failure details:
-- Job: {job['name']}
-- Prow URL: {job.get('url', 'N/A')}
-- Category: {category}
-- Reason: {reason}
-
-Failed tests:
+**Failed tests:**
 {failed_tests or '(none extracted)'}
 
-Log snippet:
-{analysis.get('log_snippet', '(no log)')[:500]}
+**Log snippet:**
+{analysis.get('log_snippet', '(no log)')[:400]}
 
-## Step 3: Find the Root Cause
-Go beyond the symptoms. Try to identify:
-- **Which commit/PR introduced the regression** — run `git log --oneline -50` and `git log --all --oneline -50` to see recent commits across all branches. Use `git show <sha>` to inspect suspicious commits. Also try `git log --oneline --all --grep="<keyword>"` to search for relevant changes.
-- **Check multiple branches** — the test may run against a release branch. Use `git branch -a` to see all branches, then `git log --oneline origin/release-X.Y -20` to check the relevant branch history.
-- **Which container images are affected** — check the job's image references
-- **Is this the same failure as before?** — check if tests were passing in prior runs
-- **Search GitHub PRs** — use `curl -s "https://api.github.com/search/issues?q=repo:<org>/<repo>+is:pr+<keyword>" | python3 -m json.tool | head -50` to find related PRs
-- **Browse ALL related repos** — check ./_related_repos/ for related source code. Read their test files, pkg/ directories, and look for the test functions that failed. Identify the exact source file and line that causes the failure.
-- **ALWAYS provide GitHub URL links** — when referencing code, commits, or PRs, include the full URL. For example:
-  - PR: `https://github.com/<org>/<repo>/pull/<number>`
-  - Commit: `https://github.com/<org>/<repo>/commit/<sha>`
-  - File: `https://github.com/<org>/<repo>/blob/main/<path>#L<line>`
+**Evidence files available in ./ci-evidence/:**
+{evidence_listing}
 
-## Step 4: Report
-Respond with:
-**Root Cause:** what specifically caused this failure
-**Breaking PR/Commit:** the PR or commit that introduced the issue (if identifiable) — INCLUDE THE FULL GITHUB URL (e.g. https://github.com/org/repo/pull/123 or https://github.com/org/repo/commit/abc123)
-**Affected Images:** which container images are impacted (if applicable)
-**Is it a flake?** yes/no — and why
+Read the evidence files above to understand what happened. Then respond with EXACTLY this format:
+
+**Root Cause:** what specifically caused this failure (be concise, 2-3 sentences max)
+**Is it a flake?** yes/no — and why (one sentence)
 **Issue Class:** one of: infra_timeout, infra_quota, infra_other, test_regression, test_flake, test_failure, matrix_mismatch, build_error, unknown
-**Related Source Files:** list the source files in the repo (or related repos) that are relevant, with GitHub URLs (e.g. https://github.com/org/repo/blob/main/test/conformance/serial/ptp.go#L100)
-**Suggested Fix:** what should be done (guidance for the user)
 **Severity:** CRITICAL / HIGH / MEDIUM / LOW
+**Suggested Fix:** what should be done (1-2 sentences)
 """
 
     return prompt
@@ -424,34 +399,15 @@ def analyze_job(job: dict) -> str:
 
 
 def _checkout_source_repos() -> None:
-    """Clone the target repo and any related repos for deeper investigation.
-
-    For projects with multiple repos (e.g. PTP has ptp-operator, linuxptp-daemon,
-    and ptp-operator-must-gather), clone them all so the agent can cross-reference.
-    """
+    """Ensure INVESTIGATE_DIR exists for evidence dumping. Skip full repo cloning for speed."""
     if not TARGET_REPO:
+        os.makedirs(INVESTIGATE_DIR, exist_ok=True)
         return
 
     if not os.path.exists(INVESTIGATE_DIR):
-        print(f"Cloning {TARGET_REPO}...")
-        subprocess.run(["git", "clone", "--depth=50", TARGET_REPO,
+        subprocess.run(["git", "clone", "--depth=1", TARGET_REPO,
                        INVESTIGATE_DIR], capture_output=True)
-    else:
-        subprocess.run(["git", "pull", "--ff-only"], cwd=INVESTIGATE_DIR,
-                       capture_output=True)
-
-    project_config = _load_project_config()
-    related_repos = project_config.get("related_repos", [])
-    if related_repos:
-        repos_dir = os.path.join(INVESTIGATE_DIR, "_related_repos")
-        os.makedirs(repos_dir, exist_ok=True)
-        for repo_url in related_repos:
-            repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
-            repo_path = os.path.join(repos_dir, repo_name)
-            if not os.path.exists(repo_path):
-                print(f"  Cloning related repo: {repo_name}...")
-                subprocess.run(["git", "clone", "--depth=50", repo_url, repo_path],
-                               capture_output=True)
+    os.makedirs(os.path.join(INVESTIGATE_DIR, "ci-evidence"), exist_ok=True)
 
 
 def main():

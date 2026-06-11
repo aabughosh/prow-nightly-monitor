@@ -83,7 +83,7 @@ def extract_issues_from_job(job: dict) -> list[dict]:
     if failed_tests:
         for t in failed_tests:
             name = t.get("name", t.get("step", ""))
-            if not name or name.startswith("Data:{") or "Result:0x" in name:
+            if not name or "Data:{" in name or "Result:0x" in name or "ResultType:vector" in name:
                 continue
             issues.append({
                 "test_name": name,
@@ -96,6 +96,9 @@ def extract_issues_from_job(job: dict) -> list[dict]:
     # If no test-level failures, create one issue for the whole job error
     if not issues:
         reason = analysis.get("reason", "")
+        # Skip garbled Prometheus data in reason
+        if reason and ("Data:{" in reason or "Result:0x" in reason or "ResultType:vector" in reason):
+            reason = ""
         title = reason[:120] if reason else f"Job failure: {job_name.split('nightly-')[-1]}"
         issues.append({
             "test_name": title,

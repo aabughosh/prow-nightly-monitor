@@ -2,7 +2,7 @@
 # Daily Prow Monitor + Weekly AI Analysis — runs ALL projects from projects.json
 # Daily (Mon-Fri noon): fetch data + basic analysis + Slack per project
 # Weekly (Monday noon): also run Cursor CLI for deep AI analysis
-set -euo pipefail
+set +e
 
 CURSOR_CLI="/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
 REPO_DIR="$HOME/Documents/GitHub/prow-nightly-monitor"
@@ -11,6 +11,9 @@ LOCK_FILE="/tmp/prow-nightly-monitor.lock"
 MAX_LOG_SIZE=$((5 * 1024 * 1024))  # 5 MB
 
 export PATH="/opt/homebrew/bin:/Applications/Cursor.app/Contents/Resources/app/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+# Debug: log startup to a fixed file (helps diagnose launchd issues)
+echo "$(date): run-skill.sh starting (PID $$, PATH=$PATH)" >> /tmp/prow-nightly-debug.log
 
 # Prevent concurrent runs
 if [ -f "$LOCK_FILE" ]; then
@@ -75,9 +78,9 @@ PYEOF
     # Clean stale results
     rm -f "$PROJECT_OUTPUT/results.json"
 
-    # Fetch Prow data + generate dashboard
+    # Fetch Prow data + generate dashboard (skip built-in AI; Cursor CLI handles AI later)
     log "  Fetching Prow data (filter: $JOB_FILTER)..."
-    if ! python3 monitor.py >> "$LOG_FILE" 2>&1; then
+    if ! SKIP_AI=true python3 monitor.py >> "$LOG_FILE" 2>&1; then
         log "  ERROR: monitor.py failed for $PROJECT_NAME — skipping"
         continue
     fi

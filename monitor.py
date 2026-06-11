@@ -83,13 +83,24 @@ if _projects_file.exists():
 def fetch_prow_jobs() -> list[dict]:
     """Fetch periodic jobs from Prow and filter by JOB_FILTER."""
     log.info("Fetching jobs from Prow (filter: %s)", JOB_FILTER)
-    resp = requests.get(
-        f"{PROW_URL}/prowjobs.js",
-        params={"type": "periodic", "job": JOB_FILTER},
-        timeout=60,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+    job_param = f"*{JOB_FILTER}*" if not JOB_FILTER.startswith("*") else JOB_FILTER
+    try:
+        resp = requests.get(
+            f"{PROW_URL}/prowjobs.js",
+            params={"type": "periodic", "job": job_param},
+            timeout=120,
+            stream=True,
+        )
+        resp.raise_for_status()
+        log.info("Prow response: %d bytes", len(resp.content))
+        import json as _json_fetch
+        data = _json_fetch.loads(resp.content)
+    except requests.exceptions.Timeout:
+        log.error("Prow API timed out after 120s")
+        return []
+    except Exception as e:
+        log.error("Prow API fetch failed: %s", e)
+        return []
     items = data.get("items", [])
 
     jobs = []
@@ -871,8 +882,9 @@ def investigate_failure(job: dict, category: str, reason: str,
     # --- Filter out garbled/non-test entries (Go struct dumps like Data:{ResultType:vector...}) ---
     report["failed_tests"] = [
         t for t in report["failed_tests"]
-        if not t.get("name", "").startswith("Data:{")
+        if "Data:{" not in t.get("name", "")
         and "Result:0x" not in t.get("name", "")
+        and "ResultType:vector" not in t.get("name", "")
         and t.get("name", "") != "?"
     ]
 
@@ -2509,6 +2521,22 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
         category = analysis.get("category", "")
         inv = analysis.get("investigation", {})
         ai_summary = analysis.get("ai_summary", "")
+
+        # If no job-level ai_summary, build one from per-issue ai_summaries
+        if not ai_summary and analysis.get("issues"):
+            _issue_parts = []
+            for _iss in analysis["issues"]:
+                _iss_ai = _iss.get("ai_summary", "")
+                if _iss_ai:
+                    _issue_parts.append(_iss_ai)
+                elif _iss.get("root_cause"):
+                    _cls = _iss.get("classification", "unknown")
+                    _issue_parts.append(
+                        f"**Issue Class:** {_cls}\n"
+                        f"**Root Cause:** {_iss['root_cause']}\n"
+                    )
+            if _issue_parts:
+                ai_summary = "\n\n---\n\n".join(_issue_parts)
 
         # Determine issue class for grouping
         _current_class = "success" if state == "success" else "unknown"
