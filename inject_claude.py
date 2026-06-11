@@ -364,8 +364,20 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
     if _ver_match:
         version = _ver_match.group(1)
 
-    prompt = f"""Analyze this CI failure for OCP version {version or 'unknown'}. Evidence files are in ./ci-evidence/ — read them directly.
-DO NOT mix analysis with other OCP versions. Focus ONLY on version {version or 'this job'}.
+    # If multiple versions affected, tell the AI to compare them
+    versions_list = job.get("_affected_versions", [])
+    if versions_list and len(versions_list) > 1:
+        ver_str = ", ".join(sorted(versions_list))
+        version_instruction = (
+            f"This test fails on OCP versions: {ver_str}. "
+            f"Evidence is from version {version}. "
+            f"In your analysis, note which versions are affected and whether the root cause is the same across versions."
+        )
+    else:
+        version_instruction = f"Focus on OCP version {version or 'unknown'}."
+
+    prompt = f"""Analyze this CI failure. Evidence files are in ./ci-evidence/ — read them directly.
+{version_instruction}
 
 **Project:** {project_desc}{hint}
 **Source repo:** https://github.com/{UPSTREAM_REPO}
@@ -414,6 +426,8 @@ FOR EACH FAILED TEST, write a separate section:
 AFTER all individual tests, add:
 
 **Relation Between Failures:** Are these tests failing for the same reason? Is there a common root cause, or are they independent issues? (2-4 sentences explaining the connection or lack thereof)
+
+**Per-Version Notes:** (if multiple versions are affected, note whether the root cause is the same or different per version — e.g. "4.17: metric not emitting; 5.0: same root cause as 4.17" or "4.18: different issue — DaemonSet not created")
 
 **Affected Images:**
 - list the container images involved (e.g. openshift-ptp/linuxptp-daemon:{version})
@@ -589,28 +603,37 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
 
     print(f"  Extracted {len(all_issues)} individual issues from {len(failed)} failed jobs")
 
-    # Deduplicate: group issues by fingerprint (version-specific)
+    # Deduplicate: group issues by fingerprint
+    # - Infra issues (gather-*, unknown): version-agnostic (one analysis for all versions)
+    # - Test failures: version-agnostic too, but we list all affected versions in the prompt
+    #   so the AI can compare behavior across versions in one call
+    _INFRA_NAMES = ("gather-", "unknown", "ofcir-", "baremetalds-", "ipi-")
     unique_issues: dict[str, dict] = {}  # fp -> first issue dict + list of jobs
     for issue in all_issues:
-        # Extract OCP version from job name for version-specific fingerprinting
         _ver = ""
         _ver_m = re.search(r"nightly-(\d+\.\d+)", issue.get("job_name", ""))
         if _ver_m:
             _ver = _ver_m.group(1)
+
+        # All issues get version-agnostic fingerprints — we group same test across versions
+        # and investigate them together (the AI output will note per-version behavior)
         fp = compute_issue_fingerprint(
-            issue["test_name"], issue["error_msg"], issue["category"], version=_ver
+            issue["test_name"], issue["error_msg"], issue["category"], version=""
         )
         if fp not in unique_issues:
             unique_issues[fp] = {
                 "test_name": issue["test_name"],
                 "error_msg": issue["error_msg"],
                 "category": issue["category"],
-                "version": _ver,
+                "versions": [],
                 "jobs": [],
             }
+        if _ver and _ver not in unique_issues[fp]["versions"]:
+            unique_issues[fp]["versions"].append(_ver)
         unique_issues[fp]["jobs"].append({
             "name": issue["job_name"],
             "url": issue["job_url"],
+            "version": _ver,
         })
 
     print(f"  {len(unique_issues)} unique issues (deduplicated across jobs)")
@@ -665,6 +688,10 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
                     break
             if target_job:
                 break
+
+        # Pass affected versions to the prompt builder
+        if target_job:
+            target_job["_affected_versions"] = issue_data.get("versions", [])
 
         if not target_job:
             print(f"    No job data found — skipping")
