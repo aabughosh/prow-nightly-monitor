@@ -345,10 +345,18 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
     project = _load_project_config()
     project_desc = project.get("description", "N/A") if project else "N/A"
     hint = ""
+    related_repos_info = ""
     if project:
         hints = project.get("classification_hints", {})
         if category in hints:
             hint = f"\nHint: {hints[category]}"
+        related = project.get("related_repos", [])
+        if related:
+            repo_names = [r.rstrip("/").split("/")[-1].replace(".git", "") for r in related]
+            related_repos_info = (
+                "\n**Related source repos (cloned locally for you to search):**\n"
+                + "\n".join(f"  - ./{name}/" for name in repo_names)
+            )
 
     version = ""
     import re as _re_ver
@@ -361,6 +369,8 @@ DO NOT mix analysis with other OCP versions. Focus ONLY on version {version or '
 
 **Project:** {project_desc}{hint}
 **Source repo:** https://github.com/{UPSTREAM_REPO}
+{related_repos_info}
+You have the source code cloned locally. Search it with grep/find to find the test code, recent commits, and relevant functions.
 
 **Job:** {job['name']}
 **Prow URL:** {job.get('url', 'N/A')}
@@ -436,15 +446,33 @@ def analyze_job(job: dict) -> str:
 
 
 def _checkout_source_repos() -> None:
-    """Ensure INVESTIGATE_DIR exists for evidence dumping. Skip full repo cloning for speed."""
+    """Clone target repo + related repos so the agent can search source code."""
     if not TARGET_REPO:
         os.makedirs(INVESTIGATE_DIR, exist_ok=True)
+        os.makedirs(os.path.join(INVESTIGATE_DIR, "ci-evidence"), exist_ok=True)
         return
 
     if not os.path.exists(INVESTIGATE_DIR):
+        print(f"  Cloning {TARGET_REPO} ...")
         subprocess.run(["git", "clone", "--depth=1", TARGET_REPO,
                        INVESTIGATE_DIR], capture_output=True)
+    else:
+        subprocess.run(["git", "pull", "--ff-only"], cwd=INVESTIGATE_DIR,
+                       capture_output=True)
+
     os.makedirs(os.path.join(INVESTIGATE_DIR, "ci-evidence"), exist_ok=True)
+
+    # Clone related repos (e.g. linuxptp-daemon, cloud-event-proxy) for source search
+    project = _load_project_config()
+    if project:
+        related = project.get("related_repos", [])
+        for repo_url in related:
+            repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+            repo_path = os.path.join(INVESTIGATE_DIR, repo_name)
+            if not os.path.exists(repo_path):
+                print(f"  Cloning related: {repo_name} ...")
+                subprocess.run(["git", "clone", "--depth=1", repo_url, repo_path],
+                               capture_output=True)
 
 
 def main():
