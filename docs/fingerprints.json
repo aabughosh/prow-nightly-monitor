@@ -275,8 +275,8 @@
     "460e27f6a9d3919d": {
       "title": "the following ports are used but don't have an endpointslice:",
       "first_seen": "2026-06-12T09:47:53.678046+00:00",
-      "last_seen": "2026-06-13T21:11:04.746843+00:00",
-      "occurrences": 9,
+      "last_seen": "2026-06-14T21:08:46.053471+00:00",
+      "occurrences": 11,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "I now have all the evidence needed. Let me write the full analysis.\n\n---\n\n### Test 1: `[TestE2e] Validation [It] should validate the communication matrix ports match the node's open ports`\n\n- **Duration:** 27.520 seconds (within the overall suite of 461.49s)\n\n- **Error:**\n  ```\n  the following ports are used but don't have an endpointslice:\n    Ingress,TCP,43067,,crio,,,master,false\n    Ingress,TCP,45329,,crio,,,master,false\n    Ingress,TCP,46203,,crio,,,master,false\n    Ingress,TCP,32911,,crio,,,worker,false\n    Ingress,TCP,33525,,crio,,,worker,false\n    Ingress,TCP,36315,,crio,,,worker,false\n  ```\n  Assertion at `test/e2e/validation_test.go:161` via `Fail(...)`.\n\n- **Root Cause:** PR #400 (commit `7d56343`, merged `1fec55d` on 2026-04-28) intentionally removed `LinuxDynamicPrivateDefaultDynamicRange` (TCP/UDP 32768\u201360999) from the generated commatrix's `DynamicRanges`. The test at `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` to suppress ephemeral-port false positives before asserting. After the PR, `commatrix.DynamicRanges` only contains the NodePort range (30000\u201332767), so Linux ephemeral ports are no longer filtered. CRI-O binds random ephemeral TCP ports on the node IP (confirmed in `raw-ss-tcp`: e.g. `192.168.111.22:43067 ... crio,pid=2911`); those ports have no Kubernetes EndpointSlice and now pass through to the `Fail()` call. The fix was intentional for nftables generation (opening the entire ephemeral range in a firewall is undesirable), but the test suppression was a side effect that was not replaced. The `filterOutPortsOfKnownServices` function at line 221\u2013239 skips `rpc.statd`, `dnsmasq`, and `dig`, but `crio` is not included.\n\n- **Breaking PR/Commit:** https://github.com/openshift-kni/commatrix/pull/400 \u2014 commit [`7d56343`](https://github.com/openshift-kni/commatrix/commit/7d56343e0d6e32f2fcc9b639ada47bb83cc57740) authored by Shir Moran, merged 2026-04-28.\n\n- **Source File:** https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go#L161\n\n- **Is it a flake?** **No.** CRI-O consistently binds ephemeral TCP ports on node IPs on every cluster run (observed on master-0, master-2, worker-0, worker-1, worker-2 across all nodes in the `raw-ss-tcp` evidence). The port numbers change per run (ephemeral), but crio ports in 32768\u201360999 with no EndpointSlice will always appear. Every run since PR #400 merged will trigger this failure.\n\n- **Suggested Fix:** Extend `filterOutPortsOfKnownServices()` in `validation_test.go` to also skip entries where `Service == \"crio\"` (matching the same pattern already used for `rpc.statd`). This is the minimal, targeted fix that doesn't reintroduce the broad ephemeral range into the generated matrix. Alternatively, a separate hardcoded `LinuxEphemeralRange` constant (32768\u201360999) could be used solely in this test's `filterOutPortsInDynamicRanges` call without adding it back to the generated commatrix, preserving the intentional firewall behavior of PR #400.\n\n---\n\n**Relation Between Failures:** There is only one failing test. The 7 stale-in-matrix ports (`6388`, `8798` \u00d72, `9192`, `9443`, `68/UDP` \u00d72) are logged as warnings at `validation_test.go:153\u2013154` (`logrus.Warningf`) but do not trigger a `Fail()` \u2014 the test only asserts on ports that are open on nodes but missing an EndpointSlice, not the reverse. The single test failure is entirely caused by the 6 crio ephemeral ports losing their filter after PR #400.\n\n**Per-Version Notes:**\n- **4.23:** Failing due to crio ephemeral ports in Linux range 32768\u201360999 no longer filtered (PR #400 on `main`). Evidence is from this version.\n- **5.0:** Same root cause. PR #400 was merged to `main` and the `rename-tekton-pipelines-5-0` change (`2a312c5`) confirms the 5.0 branch tracks the same codebase. CRI-O ephemeral port behavior is identical across OCP versions, so the same `filterOutPortsInDynamicRanges` regression applies.\n\n**Affected Images:**\n- `registry.ci.openshift.org",
@@ -301,6 +301,16 @@
           "name": "5.0-metal-ovn-network-flow-matrix-bm",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2065781400560209920",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.23-metal-ovn-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2066143772382597120",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "5.0-metal-ovn-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2066143785795981312",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -506,8 +516,8 @@
     "96c00bcf51759889": {
       "title": "the following ports are used but don't have an endpointslice:",
       "first_seen": "2026-06-12T16:05:26.904197+00:00",
-      "last_seen": "2026-06-13T21:11:04.746811+00:00",
-      "occurrences": 4,
+      "last_seen": "2026-06-14T21:08:46.053425+00:00",
+      "occurrences": 6,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "Now I have everything I need to write the complete analysis.\n\n---\n\n### Test 1: `[Validation] should validate the communication matrix ports match the node's open ports`\n\n- **Duration:** 20.809 seconds (within the 448.895s overall suite run)\n- **Error:** `the following ports are used but don't have an endpointslice: Ingress,TCP,44463,,crio,,,master,false` \u2014 triggered at `test/e2e/validation_test.go:161`\n- **Root Cause:** Port TCP 44463 is bound by the CRI-O container runtime process (pid=2677) as an ephemeral host-level socket (`LISTEN 0 4096 10.0.82.179:44463 0.0.0.0:*`). Because it is a host process, no Kubernetes EndpointSlice exists for it. Prior to PR #400, the generated `commatrix.DynamicRanges` included the Linux ephemeral private port range (32768\u201360999), and the call to `filterOutPortsInDynamicRanges` at `validation_test.go:159` would have silently discarded port 44463 (which falls in that range). PR #400 removed `getLinuxDynamicPrivateRange` from `pkg/dynamic-ranges/dynamic-ranges.go` and deleted `types.LinuxDynamicPrivateDefaultDynamicRange`, leaving only the Kubernetes NodePort range (30000\u201332767) as a dynamic filter. Port 44463 is outside that range, and `filterOutPortsOfKnownServices` (`validation_test.go:221\u2013239`) only exempts `rpc.statd`, `dnsmasq`, and `dig` \u2014 not `crio` \u2014 so the port survives all filtering and causes the `Fail` at line 161.\n- **Breaking PR/Commit:** [PR #400 \u2014 \"Remove Linux Dynamic ranges from generated communication matrix\"](https://github.com/openshift-kni/commatrix/pull/400) \u2014 merged 2026-04-28, commit `7d56343e0d6e32f2fcc9b639ada47bb83cc57740`. The specific change that broke the test was the deletion of `LinuxDynamicPrivateDefaultDynamicRange` from `pkg/types/static-custom-entries.go` and the removal of `getLinuxDynamicPrivateRange` from `pkg/dynamic-ranges/dynamic-ranges.go`, which together stripped the 32768\u201360999 dynamic-range filter from the validation path.\n- **Source File:** https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go#L161\n- **Is it a flake?** Likely yes for the specific port number, but structurally a deterministic regression. Port 44463 is an ephemeral OS-assigned port; on any given run the exact port number from CRI-O will differ, but CRI-O consistently opens an ephemeral host-level socket (for internal streaming/gRPC) that lands in the 32768\u201360999 range. Before PR #400, every such port was silently filtered. After PR #400, every run where CRI-O's ephemeral port lands outside 30000\u201332767 (i.e. practically every run) will fail. The failure mode is therefore structurally consistent, even if the exact port number varies per run.\n- **Suggested Fix:** Add `crio` (and potentially any other known container-runtime host processes) to the `filterOutPortsOfKnownServices` function in `test/e2e/validation_test.go`, following the same pattern already used for `rpc.statd` (line 226\u2013229). CRI-O is a host-level daemon that will never have an EndpointSlice; treating it exactly like `rpc.statd` is the correct semantic. A broader but also valid fix is to re-introduce the Linux ephemeral range as a separate, test-only filter (not in the firewall matrix), so any ephemeral host process is automatically excluded from the EPS validation without re-opening the firewall concern that motivated PR #400.\n\n---\n\n**Relation Between Failures:** There is only one failed test. The 6 ports reported as \"in matrix but not in use\" (TCP 80, 443, 8798, 9192 \u2014 in the documented aws-sno.csv but absent from EndpointSlices; TCP 9443, 10258 \u2014 in the generated EPS matrix but not open on the node) are logged as `logrus.Warningf` calls and do not cause a `Fail`. They are independent documentation drift issues (stale entries in `docs/stable/raw/aws-sno.csv`) unrelated to the single test failure.\n\n**Per-Version Notes:** Only OCP 5.0 (`periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node`) was examined. PR #400 targets the `main` branch, so any version tracking ",
@@ -527,6 +537,16 @@
           "name": "5.0-aws-ovn-network-flow-matrix-single-node",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2065781398039433216",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.23-aws-ovn-network-flow-matrix-single-node",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2066143769857626112",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "5.0-aws-ovn-network-flow-matrix-single-node",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2066143781605871616",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -570,8 +590,8 @@
     "bcd5fe78f332fbf8": {
       "title": "RETRYING: [XXXXXXXXXXXX]: Wait 300 seconds, but only start checking after 10 seconds (1 retries left).Result was: {",
       "first_seen": "2026-06-13T21:12:52.490257+00:00",
-      "last_seen": "2026-06-13T21:12:52.490355+00:00",
-      "occurrences": 8,
+      "last_seen": "2026-06-14T21:08:46.053321+00:00",
+      "occurrences": 16,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "Now I have a complete picture. Let me write the analysis:\n\n---\n\n### Test 1: `[Run multi-stage test pre phase] telco5g-network-flow-matrix-bm-telco5g-cluster-setup container test`\n\n- **Duration:** 36m22s\n- **Error:** `ssh: connect to host XXXXXXXXXXXX port 22: Connection timed out` \u2014 Ansible `wait_for` exhausted retries waiting for the baremetal node to become reachable via SSH.\n- **Root Cause:** The `telco5g-cluster-setup` step runs an Ansible playbook that provisions a baremetal cluster and then waits (up to 300s with 10s initial delay, retried once) for SSH on port 22. The target baremetal node never became reachable, indicating the node failed to boot or had a network provisioning error. The commatrix project tests **never ran** \u2014 the cluster was never created. Additionally, a secondary error shows the Kubernetes Secret holding step output exceeded 1 MiB (`Secret \"telco5g-network-flow-matrix-bm\" is invalid: data: Too long`), indicating the verbose SSH debug output filled the secret.\n- **Breaking PR/Commit:** Unknown \u2014 this is an infrastructure provisioning failure, not a code regression.\n- **Source File:** https://steps.ci.openshift.org/reference/telco5g-cluster-setup\n- **Is it a flake?** Yes \u2014 SSH/network timeouts during baremetal provisioning are transient infra-level failures unrelated to any code change.\n- **Suggested Fix:** Retry the job; if persistent, investigate baremetal node availability and the provisioning pipeline for this lab environment. The oversized debug SSH output filling the secret may also need mitigation (e.g., reduce SSH verbosity in the Ansible playbook).\n\n---\n\n**Relation Between Failures:** All downstream failures (\"Run multi-stage test post phase\", `telco5g-log-gather`, `telco5g-release-cluster`) are direct cascading consequences of the single root cause: the baremetal cluster was never provisioned due to an SSH connection timeout. Every subsequent step correctly detects \"Cluster doesn't exist, job failed\" and exits. There is one root cause.\n\n**Per-Version Notes:**\n- 4.21: SSH timeout during cluster-setup; cluster never provisioned; commatrix tests did not run (evidence run).\n- 4.22: Same infra provisioning layer; expected same root cause (no cluster provisioned).\n- 4.23: Same infra provisioning layer; expected same root cause (no cluster provisioned).\n- 5.0: Same infra provisioning layer; expected same root cause (no cluster provisioned).\n\n**Affected Images:** `ci-operator` step images for `telco5g-cluster-setup`, `telco5g-log-gather`, `telco5g-release-cluster` (no commatrix application image was exercised).\n\n**Overall Issue Class:** infra_timeout\n\n**Overall Severity:** MEDIUM",
@@ -616,6 +636,46 @@
           "name": "5.0-telco5g-network-flow-matrix-single-node-bm",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2065781404041482240",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.21-telco5g-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-bm/2066143751411077120",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "4.21-telco5g-network-flow-matrix-single-node-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm/2066143753923465216",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "4.22-telco5g-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm/2066143763155128320",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "4.22-telco5g-network-flow-matrix-single-node-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-single-node-bm/2066143764828655616",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "4.23-telco5g-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2066143774894985216",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "4.23-telco5g-network-flow-matrix-single-node-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2066143776572706816",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "5.0-telco5g-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2066143788325146624",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "5.0-telco5g-network-flow-matrix-single-node-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2066143789994479616",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -623,8 +683,8 @@
     "40aa32e4f02a0625": {
       "title": "Validation [It] should validate the communication matrix ports match the node's open ports",
       "first_seen": "2026-06-13T21:14:55.724300+00:00",
-      "last_seen": "2026-06-13T21:14:55.724393+00:00",
-      "occurrences": 4,
+      "last_seen": "2026-06-14T21:08:46.053370+00:00",
+      "occurrences": 8,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "Now I have all the information I need. Let me write the final analysis:\n\n---\n\n### Test 1: `[TestE2e/Validation] should validate the communication matrix ports match the node's open ports`\n- **Duration:** 44.076s\n- **Error:** `the following ports are used but don't have an endpointslice: Ingress,TCP,40359,,crio,,,master,false`\n- **Root Cause:** CRI-O (container runtime) opened an ephemeral listening socket on TCP/40359 (Linux ephemeral range 32768\u201360999). `filterOutPortsOfKnownServices()` at `validation_test.go:221` only skips `rpc.statd`, `dnsmasq`, and `dig` \u2014 not `crio`. `filterOutPortsInDynamicRanges()` only covers NodePort range 30000\u201332767 (`KubeletNodePortDefaultDynamicRange`), so 40359 is not filtered and the `Fail()` at line 161 is triggered.\n- **Breaking PR/Commit:** Unknown \u2014 no code regression; `crio` was never added to the known-services filter, and this is a newly-observed ephemeral port binding by crio in OCP 4.23/5.0.\n- **Source File:** https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go#L161\n- **Is it a flake?** Yes \u2014 port 40359 is OS-assigned and changes each run; this specific port number is ephemeral but the underlying crio behavior may be consistent.\n- **Suggested Fix:** Add `crio` to `filterOutPortsOfKnownServices()` in `validation_test.go:221\u2013238`, analogous to how `rpc.statd` is handled, since crio's dynamically-bound sockets are host-level process ports with no Kubernetes EndpointSlice.\n\n---\n\n### Test 2: `[TestE2e] TestE2e`\n- **Duration:** 507.44s\n- **Error:** `--- FAIL: TestE2e (507.44s)` \u2014 suite-level failure due to 1 failed spec\n- **Root Cause:** `TestE2e` is the Go test function that runs the Ginkgo suite (`test/e2e/`). It fails because the child spec \"should validate the communication matrix ports match the node's open ports\" failed. The suite ran 4 of 4 specs; 3 passed, 1 failed. This is a cascading failure from Test 1 above.\n- **Breaking PR/Commit:** Unknown \u2014 same root cause as Test 1.\n- **Source File:** https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go\n- **Is it a flake?** Same as Test 1 \u2014 conditional on crio binding an ephemeral port not covered by the filter.\n- **Suggested Fix:** Same fix as Test 1; resolving the child spec failure resolves the suite.\n\n---\n\n**Relation Between Failures:** Both failures are the same root cause: a single failing Ginkgo `It` spec causes the parent `TestE2e` suite to fail. Port TCP/40359 is a crio-owned ephemeral socket that passes through all filters (`filterOutPortsOfKnownServices` and `filterOutPortsInDynamicRanges`) because `crio` is not in the known-services skip list and 40359 falls outside the NodePort dynamic range.\n\n**Per-Version Notes:**\n- OCP 4.23: Confirmed affected \u2014 this evidence run; crio opens TCP/40359 with no EndpointSlice.\n- OCP 5.0: Also affected per the prompt; same root cause is expected since crio ephemeral port behavior is not version-specific to OCP.\n\n**Affected Images:** `quay.io/openshift-kni/commatrix` (test container image built from the commatrix repo, run in the `network-flow-matrix-tests` step)\n\n**Overall Issue Class:** `matrix_mismatch`\n\n**Overall Severity:** MEDIUM \u2014 the test correctly identifies a real discrepancy (crio ephemeral port lacks EndpointSlice), but the fix is a test-side filter addition rather than a cluster misconfiguration; the cluster itself is functioning normally.",
@@ -649,6 +709,26 @@
           "name": "5.0-metal-ovn-network-flow-matrix-bm",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2065781400560209920",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.23-aws-ovn-network-flow-matrix-single-node",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2066143769857626112",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "4.23-metal-ovn-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2066143772382597120",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "5.0-aws-ovn-network-flow-matrix-single-node",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2066143781605871616",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "5.0-metal-ovn-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2066143785795981312",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -656,8 +736,8 @@
     "c42cbc1e222c6503": {
       "title": "[44.076 seconds]",
       "first_seen": "2026-06-13T21:14:55.724406+00:00",
-      "last_seen": "2026-06-13T21:14:55.724420+00:00",
-      "occurrences": 4,
+      "last_seen": "2026-06-14T21:08:46.053406+00:00",
+      "occurrences": 8,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "Now I have all the information I need. Let me write the final analysis:\n\n---\n\n### Test 1: `[TestE2e/Validation] should validate the communication matrix ports match the node's open ports`\n- **Duration:** 44.076s\n- **Error:** `the following ports are used but don't have an endpointslice: Ingress,TCP,40359,,crio,,,master,false`\n- **Root Cause:** CRI-O (container runtime) opened an ephemeral listening socket on TCP/40359 (Linux ephemeral range 32768\u201360999). `filterOutPortsOfKnownServices()` at `validation_test.go:221` only skips `rpc.statd`, `dnsmasq`, and `dig` \u2014 not `crio`. `filterOutPortsInDynamicRanges()` only covers NodePort range 30000\u201332767 (`KubeletNodePortDefaultDynamicRange`), so 40359 is not filtered and the `Fail()` at line 161 is triggered.\n- **Breaking PR/Commit:** Unknown \u2014 no code regression; `crio` was never added to the known-services filter, and this is a newly-observed ephemeral port binding by crio in OCP 4.23/5.0.\n- **Source File:** https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go#L161\n- **Is it a flake?** Yes \u2014 port 40359 is OS-assigned and changes each run; this specific port number is ephemeral but the underlying crio behavior may be consistent.\n- **Suggested Fix:** Add `crio` to `filterOutPortsOfKnownServices()` in `validation_test.go:221\u2013238`, analogous to how `rpc.statd` is handled, since crio's dynamically-bound sockets are host-level process ports with no Kubernetes EndpointSlice.\n\n---\n\n### Test 2: `[TestE2e] TestE2e`\n- **Duration:** 507.44s\n- **Error:** `--- FAIL: TestE2e (507.44s)` \u2014 suite-level failure due to 1 failed spec\n- **Root Cause:** `TestE2e` is the Go test function that runs the Ginkgo suite (`test/e2e/`). It fails because the child spec \"should validate the communication matrix ports match the node's open ports\" failed. The suite ran 4 of 4 specs; 3 passed, 1 failed. This is a cascading failure from Test 1 above.\n- **Breaking PR/Commit:** Unknown \u2014 same root cause as Test 1.\n- **Source File:** https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go\n- **Is it a flake?** Same as Test 1 \u2014 conditional on crio binding an ephemeral port not covered by the filter.\n- **Suggested Fix:** Same fix as Test 1; resolving the child spec failure resolves the suite.\n\n---\n\n**Relation Between Failures:** Both failures are the same root cause: a single failing Ginkgo `It` spec causes the parent `TestE2e` suite to fail. Port TCP/40359 is a crio-owned ephemeral socket that passes through all filters (`filterOutPortsOfKnownServices` and `filterOutPortsInDynamicRanges`) because `crio` is not in the known-services skip list and 40359 falls outside the NodePort dynamic range.\n\n**Per-Version Notes:**\n- OCP 4.23: Confirmed affected \u2014 this evidence run; crio opens TCP/40359 with no EndpointSlice.\n- OCP 5.0: Also affected per the prompt; same root cause is expected since crio ephemeral port behavior is not version-specific to OCP.\n\n**Affected Images:** `quay.io/openshift-kni/commatrix` (test container image built from the commatrix repo, run in the `network-flow-matrix-tests` step)\n\n**Overall Issue Class:** `matrix_mismatch`\n\n**Overall Severity:** MEDIUM \u2014 the test correctly identifies a real discrepancy (crio ephemeral port lacks EndpointSlice), but the fix is a test-side filter addition rather than a cluster misconfiguration; the cluster itself is functioning normally.",
@@ -682,6 +762,26 @@
           "name": "5.0-metal-ovn-network-flow-matrix-bm",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2065781400560209920",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.23-aws-ovn-network-flow-matrix-single-node",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2066143769857626112",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "4.23-metal-ovn-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2066143772382597120",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "5.0-aws-ovn-network-flow-matrix-single-node",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2066143781605871616",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "5.0-metal-ovn-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2066143785795981312",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -689,8 +789,8 @@
     "e419f675f1af4ff4": {
       "title": "TestE2e",
       "first_seen": "2026-06-13T21:14:55.724428+00:00",
-      "last_seen": "2026-06-13T21:14:55.724443+00:00",
-      "occurrences": 4,
+      "last_seen": "2026-06-14T21:08:46.053453+00:00",
+      "occurrences": 8,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "Now I have all the information I need. Let me write the final analysis:\n\n---\n\n### Test 1: `[TestE2e/Validation] should validate the communication matrix ports match the node's open ports`\n- **Duration:** 44.076s\n- **Error:** `the following ports are used but don't have an endpointslice: Ingress,TCP,40359,,crio,,,master,false`\n- **Root Cause:** CRI-O (container runtime) opened an ephemeral listening socket on TCP/40359 (Linux ephemeral range 32768\u201360999). `filterOutPortsOfKnownServices()` at `validation_test.go:221` only skips `rpc.statd`, `dnsmasq`, and `dig` \u2014 not `crio`. `filterOutPortsInDynamicRanges()` only covers NodePort range 30000\u201332767 (`KubeletNodePortDefaultDynamicRange`), so 40359 is not filtered and the `Fail()` at line 161 is triggered.\n- **Breaking PR/Commit:** Unknown \u2014 no code regression; `crio` was never added to the known-services filter, and this is a newly-observed ephemeral port binding by crio in OCP 4.23/5.0.\n- **Source File:** https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go#L161\n- **Is it a flake?** Yes \u2014 port 40359 is OS-assigned and changes each run; this specific port number is ephemeral but the underlying crio behavior may be consistent.\n- **Suggested Fix:** Add `crio` to `filterOutPortsOfKnownServices()` in `validation_test.go:221\u2013238`, analogous to how `rpc.statd` is handled, since crio's dynamically-bound sockets are host-level process ports with no Kubernetes EndpointSlice.\n\n---\n\n### Test 2: `[TestE2e] TestE2e`\n- **Duration:** 507.44s\n- **Error:** `--- FAIL: TestE2e (507.44s)` \u2014 suite-level failure due to 1 failed spec\n- **Root Cause:** `TestE2e` is the Go test function that runs the Ginkgo suite (`test/e2e/`). It fails because the child spec \"should validate the communication matrix ports match the node's open ports\" failed. The suite ran 4 of 4 specs; 3 passed, 1 failed. This is a cascading failure from Test 1 above.\n- **Breaking PR/Commit:** Unknown \u2014 same root cause as Test 1.\n- **Source File:** https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go\n- **Is it a flake?** Same as Test 1 \u2014 conditional on crio binding an ephemeral port not covered by the filter.\n- **Suggested Fix:** Same fix as Test 1; resolving the child spec failure resolves the suite.\n\n---\n\n**Relation Between Failures:** Both failures are the same root cause: a single failing Ginkgo `It` spec causes the parent `TestE2e` suite to fail. Port TCP/40359 is a crio-owned ephemeral socket that passes through all filters (`filterOutPortsOfKnownServices` and `filterOutPortsInDynamicRanges`) because `crio` is not in the known-services skip list and 40359 falls outside the NodePort dynamic range.\n\n**Per-Version Notes:**\n- OCP 4.23: Confirmed affected \u2014 this evidence run; crio opens TCP/40359 with no EndpointSlice.\n- OCP 5.0: Also affected per the prompt; same root cause is expected since crio ephemeral port behavior is not version-specific to OCP.\n\n**Affected Images:** `quay.io/openshift-kni/commatrix` (test container image built from the commatrix repo, run in the `network-flow-matrix-tests` step)\n\n**Overall Issue Class:** `matrix_mismatch`\n\n**Overall Severity:** MEDIUM \u2014 the test correctly identifies a real discrepancy (crio ephemeral port lacks EndpointSlice), but the fix is a test-side filter addition rather than a cluster misconfiguration; the cluster itself is functioning normally.",
@@ -715,6 +815,26 @@
           "name": "5.0-metal-ovn-network-flow-matrix-bm",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2065781400560209920",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.23-aws-ovn-network-flow-matrix-single-node",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2066143769857626112",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "4.23-metal-ovn-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2066143772382597120",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "5.0-aws-ovn-network-flow-matrix-single-node",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2066143781605871616",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "5.0-metal-ovn-network-flow-matrix-bm",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2066143785795981312",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -794,8 +914,8 @@
     "26e5f1ca8142b9f8": {
       "title": "telco5g-ptp-tests",
       "first_seen": "2026-06-13T21:23:04.339931+00:00",
-      "last_seen": "2026-06-13T21:23:04.340144+00:00",
-      "occurrences": 2,
+      "last_seen": "2026-06-14T21:14:10.348881+00:00",
+      "occurrences": 5,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "Now I have enough information to write the final analysis.\n\n---\n\n### Test 1: `[telco5g-ptp-tests] Run multi-stage test e2e-telco5g-ptp - e2e-telco5g-ptp-telco5g-ptp-tests container test`\n- **Duration:** 497s (8m17s)\n- **Error:** `Error from server (NotFound): daemonsets.apps \"linuxptp-daemon\" not found` \u2014 wait loop timed out after ~90s polling\n- **Root Cause:** The test setup script (step `telco5g-ptp-tests`) builds the `ptp-operator` image from `release-4.17`, deploys the operator to the cluster, then polls for the `linuxptp-daemon` DaemonSet in `openshift-ptp`. The DaemonSet is created by the ptp-operator controller upon reconciling a `PtpOperatorConfig` CR. The operator either was never fully reconciled, the PtpOperatorConfig was not applied in time, or the image build consumed so much of the 8m17s budget that the 90-second DaemonSet wait window started too late for the operator to finish deploying.\n- **Breaking PR/Commit:** Unknown \u2014 ptp-operator source on `release-4.17` was not cloned locally; the linuxptp-daemon HEAD is `3b01872` (ART consistency image bump, Jun 8 2026) and cloud-event-proxy HEAD is `3d9234c` (PTP repo URL update, Jun 11 2026), neither directly related.\n- **Source File:** https://github.com/openshift/release/blob/main/ci-operator/step-registry/telco5g/ptp/tests/telco5g-ptp-tests-commands.sh (step reference: https://steps.ci.openshift.org/reference/telco5g-ptp-tests)\n- **Is it a flake?** Possibly yes \u2014 the failure occurs in the setup/deployment phase, not in actual PTP sync logic; slow image builds or image pulls on the cluster can cause the fixed-deadline DaemonSet readiness check to expire, and this pattern does appear as a recurring flake in periodic telco5g-ptp jobs.\n- **Suggested Fix:** Extend the `linuxptp-daemon` DaemonSet wait timeout in the test step script, or separate the image-build phase from the deployment-wait phase to avoid a single combined deadline running out before the operator can reconcile.\n\n---\n\n### Test 2: `[unknown] Run multi-stage test test phase`\n- **Duration:** 497s (8m17s) \u2014 same event\n- **Error:** `\"e2e-telco5g-ptp\" pod \"e2e-telco5g-ptp-telco5g-ptp-tests\" failed after 8m17s (failed containers: test): ContainerFailed one or more containers exited`\n- **Root Cause:** This is the CI framework (ci-operator pod watcher) reporting the same container exit-code-1 failure from Test 1. The `test` container inside the `e2e-telco5g-ptp-telco5g-ptp-tests` pod exited with code 1 when the DaemonSet wait script returned 1, and ci-operator surfaced it as a second JUnit failure for the \"test phase\" step. There is no independent root cause \u2014 it is a re-reporting of the same event.\n- **Breaking PR/Commit:** Same as Test 1 \u2014 Unknown\n- **Source File:** https://github.com/openshift/release/blob/main/ci-operator/jobs/openshift/release/openshift-release-main-periodics.yaml (CI framework, not project source)\n- **Is it a flake?** Yes \u2014 this entry is generated by the CI framework watching the pod; it appears whenever the test container fails and does not represent an independent failure.\n- **Suggested Fix:** No code fix needed for this entry; fixing Test 1 eliminates this failure automatically.\n\n---\n\n**Relation Between Failures:** Both failures are two views of the same single root event: the `linuxptp-daemon` DaemonSet was never created in `openshift-ptp` before the test container's deadline expired. Test 1 is the shell-script timeout inside the container; Test 2 is the ci-operator pod watcher detecting the resulting exit code 1. There is no second independent failure.\n\n**Per-Version Notes:**\n- 4.17: Confirmed affected \u2014 evidence from this run (Jun 13 2026), all 6 nodes Ready, DaemonSet never appeared, operator built from `release-4.17`\n- 4.18: Also affected per prompt \u2014 same job variant on `nightly-4.18`; root cause is expected to be identical (same test step script and same operator deployment flow on `release-4.18`)\n\n**Affected Images:**\n- `image-registry.openshift-image-registry.svc:5000/openshift-p",
@@ -810,6 +930,21 @@
           "name": "4.18-e2e-telco5g-ptp",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.18-e2e-telco5g-ptp/2065147149229756416",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.17-e2e-telco5g-ptp",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.17-e2e-telco5g-ptp/2065675750719098880",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "4.18-e2e-telco5g-ptp",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.18-e2e-telco5g-ptp/2065147149229756416",
+          "date": "2026-06-14"
+        },
+        {
+          "name": "4.22-e2e-telco5g-ptp",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2066060639540875264",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -817,8 +952,8 @@
     "cf70b1c67b534bc5": {
       "title": "unknown",
       "first_seen": "2026-06-13T21:23:04.340176+00:00",
-      "last_seen": "2026-06-13T21:23:04.340176+00:00",
-      "occurrences": 1,
+      "last_seen": "2026-06-14T21:14:10.348893+00:00",
+      "occurrences": 2,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "Now I have enough information to write the final analysis.\n\n---\n\n### Test 1: `[telco5g-ptp-tests] Run multi-stage test e2e-telco5g-ptp - e2e-telco5g-ptp-telco5g-ptp-tests container test`\n- **Duration:** 497s (8m17s)\n- **Error:** `Error from server (NotFound): daemonsets.apps \"linuxptp-daemon\" not found` \u2014 wait loop timed out after ~90s polling\n- **Root Cause:** The test setup script (step `telco5g-ptp-tests`) builds the `ptp-operator` image from `release-4.17`, deploys the operator to the cluster, then polls for the `linuxptp-daemon` DaemonSet in `openshift-ptp`. The DaemonSet is created by the ptp-operator controller upon reconciling a `PtpOperatorConfig` CR. The operator either was never fully reconciled, the PtpOperatorConfig was not applied in time, or the image build consumed so much of the 8m17s budget that the 90-second DaemonSet wait window started too late for the operator to finish deploying.\n- **Breaking PR/Commit:** Unknown \u2014 ptp-operator source on `release-4.17` was not cloned locally; the linuxptp-daemon HEAD is `3b01872` (ART consistency image bump, Jun 8 2026) and cloud-event-proxy HEAD is `3d9234c` (PTP repo URL update, Jun 11 2026), neither directly related.\n- **Source File:** https://github.com/openshift/release/blob/main/ci-operator/step-registry/telco5g/ptp/tests/telco5g-ptp-tests-commands.sh (step reference: https://steps.ci.openshift.org/reference/telco5g-ptp-tests)\n- **Is it a flake?** Possibly yes \u2014 the failure occurs in the setup/deployment phase, not in actual PTP sync logic; slow image builds or image pulls on the cluster can cause the fixed-deadline DaemonSet readiness check to expire, and this pattern does appear as a recurring flake in periodic telco5g-ptp jobs.\n- **Suggested Fix:** Extend the `linuxptp-daemon` DaemonSet wait timeout in the test step script, or separate the image-build phase from the deployment-wait phase to avoid a single combined deadline running out before the operator can reconcile.\n\n---\n\n### Test 2: `[unknown] Run multi-stage test test phase`\n- **Duration:** 497s (8m17s) \u2014 same event\n- **Error:** `\"e2e-telco5g-ptp\" pod \"e2e-telco5g-ptp-telco5g-ptp-tests\" failed after 8m17s (failed containers: test): ContainerFailed one or more containers exited`\n- **Root Cause:** This is the CI framework (ci-operator pod watcher) reporting the same container exit-code-1 failure from Test 1. The `test` container inside the `e2e-telco5g-ptp-telco5g-ptp-tests` pod exited with code 1 when the DaemonSet wait script returned 1, and ci-operator surfaced it as a second JUnit failure for the \"test phase\" step. There is no independent root cause \u2014 it is a re-reporting of the same event.\n- **Breaking PR/Commit:** Same as Test 1 \u2014 Unknown\n- **Source File:** https://github.com/openshift/release/blob/main/ci-operator/jobs/openshift/release/openshift-release-main-periodics.yaml (CI framework, not project source)\n- **Is it a flake?** Yes \u2014 this entry is generated by the CI framework watching the pod; it appears whenever the test container fails and does not represent an independent failure.\n- **Suggested Fix:** No code fix needed for this entry; fixing Test 1 eliminates this failure automatically.\n\n---\n\n**Relation Between Failures:** Both failures are two views of the same single root event: the `linuxptp-daemon` DaemonSet was never created in `openshift-ptp` before the test container's deadline expired. Test 1 is the shell-script timeout inside the container; Test 2 is the ci-operator pod watcher detecting the resulting exit code 1. There is no second independent failure.\n\n**Per-Version Notes:**\n- 4.17: Confirmed affected \u2014 evidence from this run (Jun 13 2026), all 6 nodes Ready, DaemonSet never appeared, operator built from `release-4.17`\n- 4.18: Also affected per prompt \u2014 same job variant on `nightly-4.18`; root cause is expected to be identical (same test step script and same operator deployment flow on `release-4.18`)\n\n**Affected Images:**\n- `image-registry.openshift-image-registry.svc:5000/openshift-p",
@@ -828,6 +963,11 @@
           "name": "4.17-e2e-telco5g-ptp",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.17-e2e-telco5g-ptp/2065675750719098880",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.17-e2e-telco5g-ptp",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.17-e2e-telco5g-ptp/2065675750719098880",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -835,8 +975,8 @@
     "d1735d66140e73ca": {
       "title": "unknown",
       "first_seen": "2026-06-13T21:24:44.775097+00:00",
-      "last_seen": "2026-06-13T21:24:44.775097+00:00",
-      "occurrences": 1,
+      "last_seen": "2026-06-14T21:14:10.348900+00:00",
+      "occurrences": 2,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "Now I have enough information. Let me write the analysis.\n\n---\n\n### Test 1: `[telco5g-ptp-tests] Run multi-stage test e2e-telco5g-ptp - e2e-telco5g-ptp-telco5g-ptp-tests container test`\n- **Duration:** ~608s (10m8s)\n- **Error:** `Error from server (NotFound): daemonsets.apps \"linuxptp-daemon\" not found`\n- **Root Cause:** The test script (step ref: `telco5g-ptp-tests`) polls `kubectl rollout status daemonset linuxptp-daemon -n openshift-ptp` in a loop with a ~71-second timeout window. The `linuxptp-daemon` DaemonSet was never created in the `openshift-ptp` namespace, which means the ptp-operator either failed to deploy or failed to reconcile the DaemonSet during setup. The test never progressed to PTP sync verification. The relevant deploy manifest is at `deploy/linuxptp-daemon.yaml` in the linuxptp-daemon repo but the actual DaemonSet creation is controller-driven by the ptp-operator reconciliation loop against `release-4.18`.\n- **Breaking PR/Commit:** Unknown \u2014 requires checking recent commits to `openshift/ptp-operator` branch `release-4.18` for changes to DaemonSet creation/reconciliation logic.\n- **Source File:** https://steps.ci.openshift.org/reference/telco5g-ptp-tests (step registry script, not in a single source file; ptp-operator deploy logic at https://github.com/openshift/ptp-operator/tree/release-4.18/pkg/controller)\n- **Is it a flake?** Possibly \u2014 transient operator pod startup failures (ImagePullBackOff, CrashLoopBackOff) can prevent DaemonSet creation; however consistent absence of the DaemonSet across the full 10-minute container run suggests it may be a real regression.\n- **Suggested Fix:** Check whether the ptp-operator pod entered a crash loop after deploy; inspect operator logs in the `must-gather` artifact. If a recent commit to `release-4.18` changed the DaemonSet name, selector labels, or install namespace, revert or fix accordingly.\n\n---\n\n### Test 2: `[unknown] \"e2e-telco5g-ptp\" pod \"e2e-telco5g-ptp-telco5g-ptp-tests\" failed`\n- **Duration:** 10m8s (same container)\n- **Error:** `the pod ci-op-xi4x8x2t/e2e-telco5g-ptp-telco5g-ptp-tests failed after 10m8s (failed containers: test): ContainerFailed one or more containers exited`\n- **Root Cause:** This is the CI framework's (ci-operator / Prow entrypoint) outer reporting of the same container exit. The `test` container exited with code 1 (logged in `sigs.k8s.io/prow/pkg/entrypoint/run.go:84`) because the shell script returned 1 when the DaemonSet wait loop exceeded its deadline. This is a derived failure \u2014 the same missing `linuxptp-daemon` DaemonSet drives both failures.\n- **Breaking PR/Commit:** Unknown \u2014 same root cause as Test 1.\n- **Source File:** https://github.com/kubernetes-sigs/prow/blob/main/pkg/entrypoint/run.go#L84 (Prow framework, not ptp-operator code)\n- **Is it a flake?** No \u2014 this failure is mechanically caused by Test 1; it will always appear when the test container exits non-zero.\n- **Suggested Fix:** No independent fix needed; resolving Test 1 will eliminate this failure.\n\n---\n\n**Relation Between Failures:** Both failures share a single root cause: the `linuxptp-daemon` DaemonSet was not present in the `openshift-ptp` namespace when the test script began its readiness check. Test 1 is the direct failure (script timeout); Test 2 is the Prow framework echo of the same container exit code. The overall job ran for 2h10m, but the `test` step itself only ran 10 minutes \u2014 meaning no PTP e2e tests ran at all; the failure was in operator setup.\n\n**Per-Version Notes:** OCP 4.18 (branch `release-4.18`) \u2014 this is the only affected version in this job run.\n\n**Affected Images:**\n- `image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.18`\n- `image-registry.openshift-image-registry.svc:5000/openshift-ptp/linuxptp-daemon:4.18`\n- `image-registry.openshift-image-registry.svc:5000/openshift-ptp/cloud-event-proxy:4.18`\n\n**Overall Issue Class:** `test_failure` \u2014 the project's own test step (`finished.json`: `\"passed\":false,\"result\":\"FAI",
@@ -846,6 +986,11 @@
           "name": "4.18-e2e-telco5g-ptp",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.18-e2e-telco5g-ptp/2065147149229756416",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.18-e2e-telco5g-ptp",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.18-e2e-telco5g-ptp/2065147149229756416",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -853,8 +998,8 @@
     "c0855c5579f63208": {
       "title": "Last log lines: \u001b[36mINFO\u001b[0m[2026-06-12T05:01:07Z] Ran for 15s | \u001b[31mERRO\u001b[0m[2026-06-12T05:01:07Z] Some steps failed:",
       "first_seen": "2026-06-13T21:25:15.649700+00:00",
-      "last_seen": "2026-06-13T21:25:15.649700+00:00",
-      "occurrences": 1,
+      "last_seen": "2026-06-14T21:14:10.348908+00:00",
+      "occurrences": 2,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "Based on all evidence files, the picture is complete. The job failed in under 15 seconds before any test ran, so there are no individual test failures to report. I'll follow the required format.\n\n---\n\n**No individual test failures \u2014 the job never reached the test execution phase.**\n\nThe ci-operator aborted at the input-resolution stage (the very first step), after exhausting 5 HTTP retries to the OpenShift release controller. No cluster was provisioned and no ptp-operator tests were launched.\n\n**Relation Between Failures:** There is a single root cause: the OpenShift CI release controller endpoint `amd64.ocp.releases.ci.openshift.org` was unreachable or returning errors when ci-operator attempted to fetch the latest `4.20.0-0.nightly` release at 05:00:52 UTC on 2026-06-12. All 5 retry attempts failed within ~15 seconds, causing ci-operator to abort with `resolving_inputs:resolving_release`. No steps, builds, or tests were executed; the failure is entirely within the CI infrastructure layer.\n\n**Per-Version Notes:**\n- OCP 4.20: Job aborted before cluster provisioning; cannot assess product health from this run.\n\n**Affected Images:** None \u2014 no images were built or pulled; failure occurred before any build step.\n\n**Overall Issue Class:** `infra_other` \u2014 the release controller API (`amd64.ocp.releases.ci.openshift.org`) was transiently unavailable, preventing resolution of the nightly release stream. This is a CI infrastructure transient error, not a ptp-operator code regression.\n\n**Overall Severity:** LOW \u2014 this is a transient CI infrastructure connectivity blip. The ptp-operator project code was never exercised; re-running the job once the release controller recovers is the expected resolution.",
@@ -864,6 +1009,11 @@
           "name": "4.20-e2e-telco5g-ptp",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2065298224968634368",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.20-e2e-telco5g-ptp",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2065298224968634368",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -889,8 +1039,8 @@
     "422df0d09f43940b": {
       "title": "Import the release payload \"latest\" from an external source",
       "first_seen": "2026-06-13T21:26:21.338984+00:00",
-      "last_seen": "2026-06-13T21:26:21.338984+00:00",
-      "occurrences": 1,
+      "last_seen": "2026-06-14T21:14:10.348915+00:00",
+      "occurrences": 2,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "Based on the evidence files, the entire job failed in 37 seconds during the release image import step \u2014 no PTP operator tests ever executed.\n\n---\n\n### Test 1: `[release:latest] Import the release payload \"latest\" from an external source`\n- **Duration:** ~37s (entire job)\n- **Error:** `unable to import tag ci-op-w2jv97my/release:latest \u2014 dockerimage \"registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-06-10-104337\" not found on the image stream even after (6) imports: timed out waiting for the condition`\n- **Root Cause:** The OCP 4.22 nightly build `4.22.0-0.nightly-2026-06-10-104337` (produced June 10) was no longer available on `registry.ci.openshift.org` when the job ran on June 12 (~2 days later). Nightly images are typically pruned within 24\u201348 hours. `ci-operator` attempted 6 image stream import retries and exhausted its timeout; the failure reason was logged as `executing_graph:step_failed:importing_release`. No PTP project test code was ever reached.\n- **Breaking PR/Commit:** Unknown \u2014 this is a CI infrastructure/image-pruning issue, not a code regression.\n- **Source File:** https://github.com/openshift/ci-tools (ci-operator release import logic; not in ptp-operator)\n- **Is it a flake?** Yes \u2014 this is a transient infra issue caused by a stale nightly image reference; re-running against the current nightly would likely succeed.\n- **Suggested Fix:** Retry the job so ci-operator resolves to the current (un-pruned) 4.22 nightly. If this recurs, investigate whether the periodic job cadence is too slow relative to nightly image TTL.\n\n---\n\n**PROJECT TESTS PASSED \u2014 failure is from CI framework.** The PTP operator's own tests never ran; the job aborted in the pre-test setup phase during release image import.\n\n**Relation Between Failures:** Single failure mode \u2014 the CI infrastructure could not import a stale 4.22 nightly release image (`2026-06-10-104337`, ~2 days old), blocking all downstream steps. There is no relationship to ptp-operator, linuxptp-daemon, or cloud-event-proxy code.\n\n**Per-Version Notes:** OCP 4.22 \u2014 nightly image from June 10 was pruned/unavailable by June 12; no other versions affected by this run.\n\n**Affected Images:** `registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-06-10-104337`\n\n**Overall Issue Class:** `infra_timeout`\n\n**Overall Severity:** LOW",
@@ -900,6 +1050,11 @@
           "name": "4.22-e2e-telco5g-ptp-upstream",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2065411342864486400",
           "date": "2026-06-13"
+        },
+        {
+          "name": "4.22-e2e-telco5g-ptp-upstream",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2065411342864486400",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
@@ -925,8 +1080,8 @@
     "91b59bcf6e86a6d3": {
       "title": "No meaningful output found in logs",
       "first_seen": "2026-06-13T21:33:09.882109+00:00",
-      "last_seen": "2026-06-13T21:33:09.882109+00:00",
-      "occurrences": 1,
+      "last_seen": "2026-06-14T21:14:10.348921+00:00",
+      "occurrences": 2,
       "classification": "unknown",
       "root_cause": "",
       "ai_summary_short": "I now have all the data needed. Here is the full analysis:\n\n---\n\n**PROJECT TESTS PASSED \u2014 failure is from CI framework**\n\nNo PTP project tests were executed. The `telco5g-ptp-tests` step exited in 1 second with a pre-flight node readiness guard, before any test code ran.\n\n---\n\n*(No failed test sections \u2014 zero project tests were run; see explanation below)*\n\n---\n\n**Relation Between Failures:** There is a single root cause: worker node `cnfdf30.telco5gran.eng.rdu2.redhat.com` was in `NotReady,SchedulingDisabled` / status `Unknown` at job start time (2026-06-08T09:18:07Z). The `telco5g-ptp-tests` entrypoint script performs a hard pre-flight check (`oc get nodes \u2026 | grep -v 'True$'`) and aborts with exit 1 if any node is not Ready. This guard fired immediately, so the entire PTP test suite was skipped \u2014 no test results were produced and no project-level regression can be inferred.\n\n**Per-Version Notes:**\n- OCP 4.22 (nightly 4.22.0-0.nightly-2026-06-07-152904): job aborted before tests ran due to bare-metal lab node being NotReady; no test signal available for this nightly.\n\n**Affected Images:**\n- `registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-06-07-152904` (release payload \u2014 never tested)\n- `registry.ci.openshift.org/ci/telco-runner:latest` (test runner image \u2014 ran the node check and exited)\n\n**Overall Issue Class:** infra_other\n\n**Overall Severity:** LOW \u2014 the PTP operator code was not tested (no regression signal), but no code defect is implicated. The lab node `cnfdf30` was transiently unavailable; re-running the job once the node recovers is the appropriate action.",
@@ -936,6 +1091,65 @@
           "name": "rehearse-80182-4.22-e2e-telco5g-ptp-upstream",
           "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/80182/rehearse-80182-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2063912719072890880",
           "date": "2026-06-13"
+        },
+        {
+          "name": "rehearse-80182-4.22-e2e-telco5g-ptp-upstream",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/80182/rehearse-80182-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2066115136258576384",
+          "date": "2026-06-14"
+        }
+      ],
+      "status": "active"
+    },
+    "7edb64917b0497f9": {
+      "title": "unknown",
+      "first_seen": "2026-06-14T21:16:06.300741+00:00",
+      "last_seen": "2026-06-14T21:16:06.300741+00:00",
+      "occurrences": 1,
+      "classification": "unknown",
+      "root_cause": "",
+      "ai_summary_short": "Now I have enough evidence. Let me write the final analysis:\n\n---\n\n### Test 1: `[telco5g-ptp-tests] Run multi-stage test e2e-telco5g-ptp - e2e-telco5g-ptp-telco5g-ptp-tests container test`\n- **Duration:** ~676s (11m16s total container lifetime)\n- **Error:** `daemonsets.apps \"linuxptp-daemon\" not found` \u2014 DaemonSet polling loop timed out after ~72s of retries\n- **Root Cause:** The `linuxptp-daemon` DaemonSet was never created in the `openshift-ptp` namespace. The test script (ref: `telco5g-ptp-tests`) first calls `build_images` to build and push the ptp-operator image from `release-4.22`, then deploys the operator and polls `kubectl rollout status daemonset linuxptp-daemon -nopenshift-ptp`. The operator either failed to deploy or failed to reconcile and create the DaemonSet \u2014 the ptp-operator controller in `release-4.22` is responsible for creating this DaemonSet via `PtpOperatorConfig`. The build log is truncated before the actual operator deployment output, so the exact deployment failure is not visible, but the DaemonSet never materialised.\n- **Breaking PR/Commit:** Unknown \u2014 could be a regression in `openshift/ptp-operator:release-4.22` or a transient infra/image-build issue. Most recent visible linuxptp-daemon commit: `3b01872 Merge pull request #604 from openshift-bot/art-consistency-openshift-5.0-linuxptp-daemon` (art-consistency bump, likely not causal). No direct ptp-operator commit visible in evidence.\n- **Source File:** [https://github.com/openshift/release/tree/main/ci-operator/step-registry/telco5g/ptp/tests](https://github.com/openshift/release/tree/main/ci-operator/step-registry/telco5g/ptp/tests) (step script); ptp-operator DaemonSet reconciliation in [https://github.com/openshift/ptp-operator/blob/release-4.22/controllers/ptpoperatorconfig_controller.go](https://github.com/openshift/ptp-operator/blob/release-4.22/controllers/ptpoperatorconfig_controller.go)\n- **Is it a flake?** Possibly \u2014 operator deployment failures on fresh namespaces can be transient image-pull or timing issues; but the DaemonSet never appearing at all (rather than being slow) suggests a real failure.\n- **Suggested Fix:** Check the full operator deployment pod logs from the `openshift-ptp` namespace (available in must-gather artifacts) to determine whether the ptp-operator pod itself crashed or the DaemonSet controller failed to reconcile. If it is a regression in `release-4.22`, bisect recent commits to the ptp-operator controller reconciliation loop.\n\n---\n\n### Test 2: `[unknown] \"e2e-telco5g-ptp\" pod \"e2e-telco5g-ptp-telco5g-ptp-tests\" failed`\n- **Duration:** 11m16s (pod lifetime)\n- **Error:** `could not watch pod: the pod ci-op-gsgb8h0l/e2e-telco5g-ptp-telco5g-ptp-tests failed after 11m16s (failed containers: test): ContainerFailed one or more containers exited`\n- **Root Cause:** This is the CI framework (ci-operator) reporting the same failure as Test 1 at the step-watcher level. The `test` container within the `e2e-telco5g-ptp-telco5g-ptp-tests` pod exited with code 1 (because the `linuxptp-daemon` DaemonSet was not found), and ci-operator's pod-watcher surfaced this as a top-level step failure via `sigs.k8s.io/prow/pkg/entrypoint/run.go:84`. No independent failure.\n- **Breaking PR/Commit:** Same as Test 1 \u2014 this is a secondary signal of the same event.\n- **Source File:** [https://github.com/kubernetes-sigs/prow/blob/main/pkg/entrypoint/run.go#L84](https://github.com/kubernetes-sigs/prow/blob/main/pkg/entrypoint/run.go#L84) (CI framework entrypoint)\n- **Is it a flake?** No \u2014 this is a deterministic CI framework propagation of Test 1's exit code 1; it will always fire when the test container fails.\n- **Suggested Fix:** Fixing Test 1's root cause (the missing DaemonSet) will resolve this failure automatically.\n\n---\n\n**Relation Between Failures:** Both failures are the same event reported at two levels. Test 1 is the inner shell script failure (DaemonSet not found, exit 1) and Test 2 is ci-operator's pod-watcher surfacing that exit code as",
+      "is_flake": false,
+      "affected_jobs": [
+        {
+          "name": "4.22-e2e-telco5g-ptp",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2066060639540875264",
+          "date": "2026-06-14"
+        }
+      ],
+      "status": "active"
+    },
+    "c5be28bd0ba6bdf1": {
+      "title": "gather-audit-logs",
+      "first_seen": "2026-06-14T21:16:52.625142+00:00",
+      "last_seen": "2026-06-14T21:16:52.625142+00:00",
+      "occurrences": 1,
+      "classification": "unknown",
+      "root_cause": "",
+      "ai_summary_short": "The analysis is complete. Here is the final output:\n\n---\n\nPROJECT TESTS PASSED \u2014 failure is from CI framework\n\nThe `telco5g-ptp-tests__finished.json` explicitly reports `\"passed\":true,\"result\":\"SUCCESS\"`. The PTP operator's own test suite completed successfully. The job-level failure originates entirely from the CI framework's post-phase `gather-audit-logs` step, not from any ptp-operator code or test regression.\n\n---\n\n### Test 1: `[Run multi-stage test e2e-telco5g-ptp-upstream] e2e-telco5g-ptp-upstream-gather-audit-logs container test`\n\n- **Duration:** 8m35s\n- **Error:** `dial tcp 10.8.34.117:6443: i/o timeout` \u2014 Kubernetes API server unreachable during post-phase log collection\n- **Root Cause:** After the PTP test suite finished successfully, the CI framework's `gather-audit-logs` post-step attempted to connect to the cluster API server at `10.8.34.117:6443`. The API server was completely unreachable (all TCP connections timed out). This is consistent with the cluster having torn down or lost network connectivity between the end of the test phase and the start of the post/audit phase. The `ClusterVersion: Installing \"\" for <unknown>` line also shows the cluster never fully converged, suggesting infra-level provisioning issues.\n- **Breaking PR/Commit:** Unknown \u2014 no ptp-operator code change involved; this is a CI infra/environment issue\n- **Source File:** https://steps.ci.openshift.org/reference/gather-audit-logs (CI framework step, not ptp-operator source)\n- **Is it a flake?** Yes \u2014 transient network I/O timeout during post-phase cleanup; the actual test step passed cleanly\n- **Suggested Fix:** Retry the job. If it recurs, investigate the baremetal/cloud provisioning for the `10.8.34.117` node \u2014 the API server appears to have become unreachable between test completion and log collection.\n\n---\n\n### Test 2: `[Run multi-stage test post phase]`\n\n- **Duration:** 21m44s (total post phase)\n- **Error:** `pod \"e2e-telco5g-ptp-upstream-gather-audit-logs\" failed after 8m35s: ContainerFailed one or more containers exited`\n- **Root Cause:** The post phase itself failed because the `gather-audit-logs` container (Test 1 above) exited with code 1. The ci-operator correctly propagated this failure upward and marked the overall step `e2e-telco5g-ptp-upstream` as failed. This is a cascading failure from the same API server I/O timeout \u2014 no independent root cause.\n- **Breaking PR/Commit:** Unknown \u2014 CI framework orchestration, no ptp-operator commit involved\n- **Source File:** https://steps.ci.openshift.org/job?org=openshift&repo=release&branch=main&test=e2e-telco5g-ptp-upstream&variant=nightly-4.23\n- **Is it a flake?** Yes \u2014 secondary failure cascading from the infra-level API server timeout; no code regression\n- **Suggested Fix:** Same as Test 1 \u2014 retry the job. The post phase failure resolves automatically once the API server remains reachable through the full job lifecycle.\n\n---\n\n**Relation Between Failures:** Both failures share a single root cause: the OpenShift API server at `10.8.34.117:6443` became unreachable (TCP-level i/o timeout) after the PTP test suite completed. The `gather-audit-logs` step could not connect, failed with exit code 1, and the ci-operator post phase propagated that as an overall job failure. There is no relationship to PTP code or test logic.\n\n**Per-Version Notes:** OCP 4.23 \u2014 project tests passed (`result: SUCCESS`); job failure is purely infra/post-phase; `ClusterVersion` shows `Installing \"\" for <unknown>` suggesting the cluster may not have fully stabilized before being accessed in the post phase.\n\n**Affected Images:** No ptp-operator images affected. Failure is in the CI framework's `gather-audit-logs` image (openshift/ci tooling).\n\n**Overall Issue Class:** infra_timeout\n\n**Overall Severity:** LOW",
+      "is_flake": false,
+      "affected_jobs": [
+        {
+          "name": "4.23-e2e-telco5g-ptp-upstream",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-e2e-telco5g-ptp-upstream/2066022995188518912",
+          "date": "2026-06-14"
+        }
+      ],
+      "status": "active"
+    },
+    "62a038e55d0a029a": {
+      "title": "[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]",
+      "first_seen": "2026-06-14T21:20:25.974687+00:00",
+      "last_seen": "2026-06-14T21:20:25.974687+00:00",
+      "occurrences": 1,
+      "classification": "unknown",
+      "root_cause": "",
+      "ai_summary_short": "Now I have everything I need for the analysis. Let me write it out:\n\n---\n\n### Test 1: `[dualfollower-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]`\n\n- **Duration:** 612.78s (~10m12s)\n- **Error:** `Timed out after 600.001s. Timeout to detect metrics for ptpconfig test-slave1 \u2014 incorrect clock state on node cnfdf32.telco5gran.eng.rdu2.redhat.com iface ens7f1: expected HOLDOVER, got LOCKED. Per-interface results: ens7f0: role mismatch (expected=FAULTY, got=SLAVE); ens7f1: clock state mismatch (expected=HOLDOVER, got=LOCKED)`\n- **Root Cause:** The test (`ptp.go:756`, `TurnPortDown` at `ptptesthelper.go:416`) runs `ip link set ens7f0 down` inside the linuxptp-daemon pod on node `cnfdf32.telco5gran.eng.rdu2.redhat.com`, then waits up to 120s for PTP to report the port as FAULTY. The port remained SLAVE throughout the entire 600s `Eventually` window, indicating the NIC or PTP stack on cnfdf32 did not detect or propagate the link-down event. With Port0 still SLAVE, Port1 never entered HOLDOVER. This is a hardware/infra failure \u2014 the dual-follower NIC on cnfdf32 (ens7f0/ens7f1) does not respond to software-initiated link-down as expected by the test.\n- **Breaking PR/Commit:** Not a code regression. Most recent relevant change: [PR #224 `ccd1e711`](https://github.com/openshift/ptp-operator/commit/ccd1e711) (2026-04-20) replaced `toggleNetworkInterface` with `PortEngine`/`TurnPortDown`, which uses `ip link set`. The `ip link set` approach may not trigger a PTP-visible link-down on all NIC models.\n- **Source File:** [https://github.com/openshift/ptp-operator/blob/release-5.0/test/conformance/serial/ptp.go#L756](https://github.com/openshift/ptp-operator/blob/release-5.0/test/conformance/serial/ptp.go#L756)\n- **Is it a flake?** No \u2014 the port role never changed at all across 600s; this is a persistent hardware incompatibility, not a timing race.\n- **Suggested Fix:** Verify that node `cnfdf32` has PTP-capable NICs that respond to `ip link set <iface> down` with a PTP port state transition to FAULTY. If the NIC (or its driver) does not propagate link-down to the PTP layer, the CI node needs to be replaced or the hardware configuration corrected before this test can pass.\n\n---\n\n**Relation Between Failures:** There is only one failing test. The single failure is caused by PTP-capable hardware on node `cnfdf32` not reacting to `ip link set down` with the expected PTP port state change (SLAVE\u2192FAULTY), blocking the HOLDOVER transition. All 146 other tests passed; this is an isolated hardware/infra issue on the dual-follower test node.\n\n**Per-Version Notes:** OCP 5.0 (release-5.0) \u2014 dual-follower PTP test failed due to infra NIC issue on cnfdf32; all other test suites (bc, dualnicbc, parallel) passed cleanly.\n\n**Affected Images:**\n- `image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:5.0`\n- `image-registry.openshift-image-registry.svc:5000/openshift-ptp/linuxptp-daemon:5.0`\n- `image-registry.openshift-image-registry.svc:5000/openshift-ptp/cloud-event-proxy:5.0`\n\n**Overall Issue Class:** `infra_other`\n\n**Overall Severity:** LOW \u2014 only one test failed due to infra hardware behavior; the PTP operator itself and 145 other tests are healthy. The root cause is the test node's NIC not transitioning PTP port state on `ip link set down`, not a ptp-operator code regression.",
+      "is_flake": false,
+      "affected_jobs": [
+        {
+          "name": "5.0-e2e-telco5g-ptp",
+          "url": "https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2066136133355442176",
+          "date": "2026-06-14"
         }
       ],
       "status": "active"
