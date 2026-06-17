@@ -296,6 +296,43 @@ def fetch_junit_results(job: dict) -> list[dict]:
     except Exception:
         pass
 
+    # Try test_results.json first (most detailed — has individual test names)
+    base_url = f"{GCS_BASE}/{job_path}/{build_id}/artifacts"
+    try:
+        resp = requests.get(f"{base_url}/", timeout=8)
+        if resp.status_code == 200:
+            wf_dirs = re.findall(r'href="[^"]*?/artifacts/([^/"]+)/"', resp.text)
+            for wf in wf_dirs[:2]:
+                wf_resp = requests.get(f"{base_url}/{wf}/", timeout=6)
+                if wf_resp.status_code != 200:
+                    continue
+                steps = re.findall(r'href="[^"]*?/([^/"]+)/"', wf_resp.text)
+                for step in steps:
+                    if "test" not in step.lower():
+                        continue
+                    tr_url = f"{base_url}/{wf}/{step}/artifacts/test_results.json"
+                    try:
+                        tr_resp = requests.get(tr_url, timeout=10)
+                        if tr_resp.status_code == 200:
+                            tr_data = json.loads(tr_resp.text)
+                            tests_dict = tr_data.get("tests", {})
+                            results = []
+                            for tname, tinfo in tests_dict.items():
+                                if tinfo.get("result") in ("error", "fail") and tname != "[BeforeSuite]":
+                                    results.append({
+                                        "name": tname,
+                                        "classname": step,
+                                        "message": f"result: {tinfo.get('result')}",
+                                        "duration": tinfo.get("time", 0),
+                                    })
+                            if results:
+                                return results
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+
+    # Fallback: try JUnit XML
     for junit_url in junit_paths:
         try:
             resp = requests.get(junit_url, timeout=15)
@@ -305,6 +342,7 @@ def fetch_junit_results(job: dict) -> list[dict]:
                     return results
         except Exception:
             continue
+
     return []
 
 
@@ -2553,13 +2591,13 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
             _prev_issue_class = _current_class
             _lbl, _clr = _class_labels.get(_current_class, ("❓ " + _current_class, "#484f58"))
             rows.append(
-                f'<tr class="group-header"><td colspan="6" style="padding:12px 8px 4px;font-weight:700;'
+                f'<tr class="group-header"><td colspan="7" style="padding:12px 8px 4px;font-weight:700;'
                 f'font-size:13px;color:{_clr};border-bottom:1px solid {_clr}30">{_lbl}</td></tr>'
             )
         elif state == "success" and _prev_issue_class != "success":
             _prev_issue_class = "success"
             rows.append(
-                '<tr class="group-header"><td colspan="6" style="padding:12px 8px 4px;font-weight:700;'
+                '<tr class="group-header"><td colspan="7" style="padding:12px 8px 4px;font-weight:700;'
                 'font-size:13px;color:#3fb950;border-bottom:1px solid #3fb95030">✅ Passed</td></tr>'
             )
 
@@ -2815,12 +2853,64 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
             if detail_buttons:
                 analysis_html += '<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">' + "".join(detail_buttons) + '</div>'
 
+        # Build the Summary cell: issue class + severity + TL;DR + fail count
+        summary_html = ""
+        if state in ("failure", "error"):
+            _sum_class = ""
+            _sum_severity = ""
+            _sum_tldr = ""
+            if ai_summary:
+                for _sl in ai_summary.split("\n"):
+                    _slt = _sl.strip()
+                    if _slt.startswith("**Overall Issue Class:**"):
+                        _sum_class = _slt.replace("**Overall Issue Class:**", "").strip().strip("`*")
+                    elif _slt.startswith("**Overall Severity:**"):
+                        _sum_severity = _slt.replace("**Overall Severity:**", "").strip().split("—")[0].split("–")[0].strip().strip("`*")
+                    elif _slt.startswith("**TL;DR:**"):
+                        _sum_tldr = _slt.replace("**TL;DR:**", "").strip()
+
+            # Count failed tests
+            _junit_failures = analysis.get("junit_failures", [])
+            _inv_tests = inv.get("failed_tests", [])
+            _test_list = _junit_failures or _inv_tests
+            _fail_count = len(_test_list)
+
+            # Badges
+            _class_colors = {
+                "test_regression": "#f85149", "test_failure": "#f0883e",
+                "test_flake": "#d29922", "infra_other": "#8b949e",
+                "infra_timeout": "#8b949e", "infra_quota": "#8b949e",
+                "build_error": "#da3633", "matrix_mismatch": "#a371f7",
+            }
+            _sc_color = _class_colors.get(_sum_class, _class_colors.get(category, "#484f58"))
+            _badge_label = _sum_class or category or "unknown"
+            summary_html += f'<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:{_sc_color};color:white">{_badge_label}</span> '
+            if _sum_severity:
+                _sev_colors = {"CRITICAL": "#f85149", "HIGH": "#f0883e", "MEDIUM": "#d29922", "LOW": "#8b949e"}
+                _sv_color = _sev_colors.get(_sum_severity.upper(), "#484f58")
+                summary_html += f'<span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:{_sv_color};color:white">{_sum_severity}</span>'
+
+            # TL;DR line (from AI) or fallback to step/reason
+            if _sum_tldr:
+                summary_html += f'<div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">{_sum_tldr}</div>'
+            else:
+                _layer = analysis.get("layer_label", "") or analysis.get("layer", "")
+                _reason = analysis.get("reason", "")
+                _fallback = _layer or _reason[:80]
+                if _fallback:
+                    summary_html += f'<div style="margin-top:4px;font-size:11px;color:#c9d1d9;line-height:1.4">{_fallback}</div>'
+
+            # Failure count
+            if _fail_count > 0:
+                summary_html += f'<div style="font-size:10px;color:#8b949e;margin-top:2px">{_fail_count} failed test{"s" if _fail_count != 1 else ""}</div>'
+
         rows.append(
             f'<tr class="{row_class}" data-state="{state}" data-category="{category}">'
             f'<td>{emoji} {state}</td>'
             f'<td><span class="version-badge">{version}</span></td>'
             f'<td><a href="{url}" target="_blank" title="{job["name"]}">{name_short}</a></td>'
             f'<td>{duration}</td>'
+            f'<td style="max-width:300px">{summary_html}</td>'
             f'<td>{analysis_html}</td>'
             f'<td>{started}</td>'
             f'</tr>'

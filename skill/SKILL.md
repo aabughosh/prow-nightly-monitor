@@ -128,8 +128,10 @@ If the user asks, you can:
 
 ## Important rules
 
+- **You must present evidence from raw data for your conclusions.** Quote the exact log lines verbatim that prove your root cause. Do NOT guess or assume — find it in the logs.
 - Errors are errors. Warnings are warnings. Don't mix them.
 - `level=warning` lines are informational — they did NOT cause the failure.
 - Only `[FAILED]` assertions are real failures.
+- Check build logs for image pull errors, registry failures, or missing images before assuming hardware/infra issues.
 - Be specific — name the port, the process, the file, the line number.
 - Think independently — use the data to reach your own conclusions.

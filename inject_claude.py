@@ -38,7 +38,7 @@ OUTPUT_DIR = os.environ.get("OUTPUT_DIR", f"{REPO_DIR}/public")
 RESULTS = os.path.join(OUTPUT_DIR, "results.json")
 
 MAX_RESULTS_SIZE = 50 * 1024 * 1024
-AGENT_TIMEOUT = 600  # 10 minutes per issue
+AGENT_TIMEOUT = 900  # 15 minutes per issue
 MIN_VERSION = os.environ.get("MIN_VERSION", "")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/cursor/")
@@ -125,7 +125,7 @@ _SKIP_PATTERNS = (
     "__artifacts__",
 )
 _KEEP_PATTERNS = (
-    "junit.xml", "test_results", "build-log",
+    "junit.xml", "test_results", "build-log", "finished.json",
     "commatrix-e2e/", "network-flow-matrix",
     "matrix-diff", "doc-diff", "raw-ss", "communication-matrix",
     "nftables", "mc-master", "mc-worker", "ss-generated",
@@ -179,10 +179,12 @@ def dump_evidence(job: dict) -> list[str]:
     prow_url = job.get("url", "")
     if prow_url:
         import re as _re
+        import requests as _req
         m = _re.search(r"/logs/(.+)/(\d+)$", prow_url)
         if m:
             job_path, build_id = m.group(1), m.group(2)
             gcs_base = "https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/test-platform-results/logs"
+            gcs_raw = f"https://storage.googleapis.com/test-platform-results/logs"
             urls = [
                 f"Prow UI: {prow_url}",
                 f"Artifacts: {gcs_base}/{job_path}/{build_id}/artifacts/",
@@ -191,6 +193,21 @@ def dump_evidence(job: dict) -> list[str]:
             with open(os.path.join(EVIDENCE_DIR, "prow-urls.txt"), "w") as f:
                 f.write("\n".join(urls))
             evidence_files.append("prow-urls.txt")
+
+            # Fetch the top-level build log (last 8KB) — shows which steps passed/failed
+            try:
+                build_log_url = f"{gcs_raw}/{job_path}/{build_id}/build-log.txt"
+                resp = _req.get(build_log_url, timeout=15)
+                if resp.status_code == 200:
+                    text = resp.text
+                    # Keep the last 8000 chars (contains step results and failure reason)
+                    if len(text) > 8000:
+                        text = "... (truncated, showing last 8000 chars) ...\n" + text[-8000:]
+                    with open(os.path.join(EVIDENCE_DIR, "ci-operator-build-log.txt"), "w") as f:
+                        f.write(text)
+                    evidence_files.append("ci-operator-build-log.txt")
+            except Exception:
+                pass
 
     inv = analysis.get("investigation", {})
     if inv:
@@ -335,9 +352,10 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
     category = analysis.get("category", "")
     reason = analysis.get("reason", "")
 
+    tests_list = inv.get("failed_tests", []) or analysis.get("junit_failures", [])
     failed_tests = "\n".join(
         f"  - {t.get('name', '?')}: {t.get('message', '')[:500]}"
-        for t in inv.get("failed_tests", [])
+        for t in tests_list
     )
 
     evidence_listing = "\n".join(f"  - {f}" for f in evidence_files)
@@ -398,43 +416,50 @@ You have the source code cloned locally. Search it with grep/find to find the te
 **Evidence files available in ./ci-evidence/:**
 {evidence_listing}
 
-Read the evidence files (especially JUnit XML and test_results files). Find the EXACT test names, error messages, and line numbers from the source code.
+CRITICAL FIRST STEP — determine the REAL failure source:
+1. Read ci-operator-build-log.txt FIRST — it shows ALL job steps, which passed, which failed, and the final error.
+2. Check finished.json in the test step. If it says "passed":true / "result":"SUCCESS", the PROJECT's tests passed!
+3. If the project's tests passed but the job still failed, the failure is from the CI FRAMEWORK (MonitorTest, operator-state-analyzer, lease-checker, openshift-e2e, etc.) — NOT from {UPSTREAM_REPO.split('/')[-1]} code.
+4. For CI framework failures: classify as infra_other, explain that the project tests passed, and describe what CI component actually failed (e.g. "MonitorTest detected node-not-ready during intentional reboot").
+5. Only investigate source code regressions if the PROJECT's OWN tests actually failed (check test_results.json, junit.xml in the test step).
+
+You can use `curl` to fetch more details from the Prow job: {job.get('url', '')}
+The ci-operator-build-log.txt already contains the last 8KB of the top-level build log showing the overall job results.
+
+Read the evidence files (especially JUnit XML, test_results.json, build-log.txt, and finished.json). Find the EXACT test names, error messages, and line numbers from the source code.
 Then search the source repo for the relevant test code and recent PRs/commits that may have caused the regression.
 
-IMPORTANT: Investigate EACH failed test INDIVIDUALLY. Do NOT lump them together.
+EVIDENCE RULE: You MUST present verbatim log quotes as proof for every conclusion. Do NOT guess or assume root causes — find the actual error in the logs. For example, if a DaemonSet was not created, check the build log for image pull errors or registry failures before assuming hardware issues.
 
-Respond with EXACTLY this format (all sections required):
+CRITICAL: You MUST cover ALL failed tests listed above. Keep each test CONCISE (max 6 lines per field).
+If the failure is from the CI framework (not the project's tests), state "PROJECT TESTS PASSED — failure is from CI framework".
 
----
-FOR EACH FAILED TEST, write a separate section:
-
-### Test 1: `[exact.test.suite] exact test name`
-- **Duration:** how long it ran before failing
-- **Error:** exact error message or assertion failure
-- **Root Cause:** what specifically broke for THIS test. Reference the specific function, file, and line in source code. (3-5 sentences)
-- **Breaking PR/Commit:** link to the PR or commit that caused THIS failure (or "Unknown — needs git bisect")
-- **Source File:** https://github.com/{UPSTREAM_REPO}/blob/main/path/to/test_file.go#L123 — the test code
-- **Is it a flake?** yes/no — with evidence
-- **Suggested Fix:** specific actionable fix for THIS test (2-3 sentences)
-
-### Test 2: `[exact.test.suite] exact test name`
-(same structure as above)
-
-(repeat for ALL failed tests)
+Respond with EXACTLY this format:
 
 ---
-AFTER all individual tests, add:
+FOR EACH FAILED TEST (you MUST include ALL of them, do NOT skip any):
 
-**Relation Between Failures:** Are these tests failing for the same reason? Is there a common root cause, or are they independent issues? (2-4 sentences explaining the connection or lack thereof)
+### Test N: `[exact.test.suite] exact test name`
+- **Duration:** Xs
+- **Error:** one-line error
+- **Evidence:** quote the exact log line(s) that prove the root cause (verbatim, max 2 lines)
+- **Root Cause:** 2-3 sentences. Reference function/file/line.
+- **Breaking PR/Commit:** link or "Unknown"
+- **Source File:** GitHub link to test code
+- **Is it a flake?** yes/no — one sentence
+- **Suggested Fix:** 1-2 sentences
 
-**Per-Version Notes:** (if multiple versions are affected, note whether the root cause is the same or different per version — e.g. "4.17: metric not emitting; 5.0: same root cause as 4.17" or "4.18: different issue — DaemonSet not created")
+(REPEAT for EVERY test above — if there are 4 tests, you must write 4 sections)
 
-**Affected Images:**
-- list the container images involved (e.g. openshift-ptp/linuxptp-daemon:{version})
+---
+AFTER all tests:
 
-**Overall Issue Class:** one of: infra_timeout, infra_quota, infra_other, test_regression, test_flake, test_failure, matrix_mismatch, build_error, unknown
-
-**Overall Severity:** CRITICAL / HIGH / MEDIUM / LOW — with justification
+**TL;DR:** One sentence (max 15 words) summarizing the failure — e.g. "PTP hardware not locked, all 4 BC clockClass tests timed out" or "MonitorTest flagged node-not-ready during intentional SNO reboot"
+**Relation Between Failures:** 2-3 sentences — common root cause?
+**Per-Version Notes:** one line per version
+**Affected Images:** container images list
+**Overall Issue Class:** infra_timeout | infra_quota | infra_other | test_regression | test_flake | test_failure | matrix_mismatch | build_error | unknown
+**Overall Severity:** CRITICAL / HIGH / MEDIUM / LOW
 """
 
     return prompt
@@ -604,10 +629,12 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
     print(f"  Extracted {len(all_issues)} individual issues from {len(failed)} failed jobs")
 
     # Deduplicate: group issues by fingerprint
-    # - Infra issues (gather-*, unknown): version-agnostic (one analysis for all versions)
-    # - Test failures: version-agnostic too, but we list all affected versions in the prompt
-    #   so the AI can compare behavior across versions in one call
-    _INFRA_NAMES = ("gather-", "unknown", "ofcir-", "baremetalds-", "ipi-")
+    # Strategy:
+    # - Specific test failures (named tests): version-agnostic so we analyze once
+    #   and note per-version differences
+    # - Generic "Job failure:" fallbacks (no test names extracted): version-SPECIFIC
+    #   because different versions likely have different actual failures that we can
+    #   only discover through evidence analysis
     unique_issues: dict[str, dict] = {}  # fp -> first issue dict + list of jobs
     for issue in all_issues:
         _ver = ""
@@ -615,10 +642,13 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
         if _ver_m:
             _ver = _ver_m.group(1)
 
-        # All issues get version-agnostic fingerprints — we group same test across versions
-        # and investigate them together (the AI output will note per-version behavior)
+        # If test_name is a generic fallback (no real test identified), use
+        # version-specific fingerprint so each version gets its own AI analysis
+        is_generic = issue["test_name"].startswith("Job failure:") or \
+                     issue["test_name"].startswith("Last log lines:")
+        fp_version = _ver if is_generic else ""
         fp = compute_issue_fingerprint(
-            issue["test_name"], issue["error_msg"], issue["category"], version=""
+            issue["test_name"], issue["error_msg"], issue["category"], version=fp_version
         )
         if fp not in unique_issues:
             unique_issues[fp] = {
@@ -671,66 +701,91 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
 
     print(f"  {reused_count} recurring (skipped), {len(new_issues)} NEW to investigate")
 
-    # Investigate new issues — one AI call per unique issue
-    success_count = 0
-    for i, (fp, issue_data) in enumerate(new_issues.items(), 1):
-        test_name = issue_data["test_name"]
-        affected_jobs = issue_data["jobs"]
-        job_names = ", ".join(j["name"].split("nightly-")[-1][:30] for j in affected_jobs[:5])
-        print(f"  [{i}/{len(new_issues)}] {test_name[:60]} (in: {job_names})...")
-
-        # Pick the first affected job for evidence gathering
-        target_job = None
-        for j in affected_jobs:
+    # Group new issues by target job to avoid duplicate AI calls.
+    # Multiple fingerprints from the same job share one AI analysis.
+    job_groups: dict[str, list[tuple[str, dict]]] = {}  # job_name -> [(fp, issue_data)]
+    for fp, issue_data in new_issues.items():
+        # Find the target job name for this issue
+        target_name = ""
+        for j in issue_data["jobs"]:
             for job in failed:
                 if job["name"] == j["name"]:
-                    target_job = job
+                    target_name = j["name"]
                     break
-            if target_job:
+            if target_name:
                 break
+        if not target_name:
+            target_name = f"_no_job_{fp[:8]}"
+        job_groups.setdefault(target_name, []).append((fp, issue_data))
 
-        # Pass affected versions to the prompt builder
-        if target_job:
-            target_job["_affected_versions"] = issue_data.get("versions", [])
+    print(f"  Grouped into {len(job_groups)} AI calls (by target job)")
 
+    success_count = 0
+    call_num = 0
+    for target_name, fps_in_group in job_groups.items():
+        call_num += 1
+        test_names = [d["test_name"][:50] for _, d in fps_in_group]
+        print(f"  [{call_num}/{len(job_groups)}] {target_name.split('nightly-')[-1][:35]} "
+              f"({len(fps_in_group)} issues: {', '.join(test_names[:3])}{'...' if len(test_names)>3 else ''})")
+
+        # Find the actual job object
+        target_job = None
+        for job in failed:
+            if job["name"] == target_name:
+                target_job = job
+                break
         if not target_job:
             print(f"    No job data found — skipping")
             continue
 
+        # Merge affected versions from all issues in this group
+        all_versions = []
+        for _, issue_data in fps_in_group:
+            for v in issue_data.get("versions", []):
+                if v not in all_versions:
+                    all_versions.append(v)
+        target_job["_affected_versions"] = all_versions
+
+        # One AI call for this job
         ai = analyze_job(target_job)
         if ai:
             root_cause = _extract_root_cause(ai)
             classification = _extract_classification(ai)
             is_flake = _extract_is_flake(ai)
 
-            # Record issue in the database
-            for j in affected_jobs:
-                record_issue(
-                    fp_db, fp,
-                    test_name=test_name,
-                    job_name=j["name"],
-                    job_url=j["url"],
-                    classification=classification,
-                    root_cause=root_cause,
-                    ai_summary=ai,
-                    is_flake=is_flake,
-                )
+            # Apply the SAME analysis to all fingerprints in this group
+            for fp, issue_data in fps_in_group:
+                test_name = issue_data["test_name"]
+                affected_jobs = issue_data["jobs"]
 
-            # Tag all affected jobs with this issue's analysis
-            for j in affected_jobs:
-                for job in failed:
-                    if job["name"] == j["name"]:
-                        job.setdefault("analysis", {}).setdefault("issues", []).append({
-                            "fingerprint": fp,
-                            "test_name": test_name,
-                            "is_recurring": False,
-                            "classification": classification,
-                            "root_cause": root_cause,
-                            "ai_summary": ai[:4000],
-                            "is_flake": is_flake,
-                        })
+                # Record issue in the database
+                for j in affected_jobs:
+                    record_issue(
+                        fp_db, fp,
+                        test_name=test_name,
+                        job_name=j["name"],
+                        job_url=j["url"],
+                        classification=classification,
+                        root_cause=root_cause,
+                        ai_summary=ai,
+                        is_flake=is_flake,
+                    )
 
-            success_count += 1
+                # Tag all affected jobs with this issue's analysis
+                for j in affected_jobs:
+                    for job in failed:
+                        if job["name"] == j["name"]:
+                            job.setdefault("analysis", {}).setdefault("issues", []).append({
+                                "fingerprint": fp,
+                                "test_name": test_name,
+                                "is_recurring": False,
+                                "classification": classification,
+                                "root_cause": root_cause,
+                                "ai_summary": ai[:8000],
+                                "is_flake": is_flake,
+                            })
+
+            success_count += len(fps_in_group)
             print(f"    Done ({len(ai)} chars) → class={classification}, flake={is_flake}")
         else:
             print(f"    No analysis returned")

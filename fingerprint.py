@@ -76,6 +76,9 @@ def extract_issues_from_job(job: dict) -> list[dict]:
     analysis = job.get("analysis", {})
     inv = analysis.get("investigation", {})
     failed_tests = inv.get("failed_tests", [])
+    # Also check junit_failures (populated by monitor.py from test_results.json / JUnit XML)
+    if not failed_tests:
+        failed_tests = analysis.get("junit_failures", [])
     category = analysis.get("category", "unknown")
     job_name = job.get("name", "")
     job_url = job.get("url", "")
@@ -86,6 +89,9 @@ def extract_issues_from_job(job: dict) -> list[dict]:
         for t in failed_tests:
             name = t.get("name", t.get("step", ""))
             if not name or "Data:{" in name or "Result:0x" in name or "ResultType:vector" in name:
+                continue
+            # Skip CI framework re-reports (always duplicates the real failure)
+            if name.startswith("Run multi-stage test test phase") or name == "unknown":
                 continue
             issues.append({
                 "test_name": name,
@@ -238,7 +244,7 @@ def record_issue(db: dict, fingerprint: str, test_name: str, job_name: str,
         "occurrences": entry.get("occurrences", 0) + 1,
         "classification": classification or entry.get("classification", "unknown"),
         "root_cause": root_cause[:300] if root_cause else entry.get("root_cause", ""),
-        "ai_summary_short": ai_summary[:4000] if ai_summary else entry.get("ai_summary_short", ""),
+        "ai_summary_short": ai_summary[:8000] if ai_summary else entry.get("ai_summary_short", ""),
         "is_flake": is_flake,
         "affected_jobs": affected,
         "status": "active",
