@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Analysis — 4.15-e2e-telco5g-ptp</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: #0d1117; color: #e1e4e8; min-height: 100vh; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { background: #21262d; padding: 1px 5px; border-radius: 3px; font-size: 11px;
+         color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; }
+  .header { background: linear-gradient(135deg, #161b22 0%, #1a1e2e 50%, #2d1b4e 100%);
+            padding: 20px 32px; border-bottom: 1px solid #30363d; }
+  .header h1 { font-size: 18px; font-weight: 600; color: #f0f6fc; }
+  .header .meta { color: #8b949e; font-size: 12px; margin-top: 4px; }
+  .container { max-width: 1000px; margin: 0 auto; padding: 24px 32px; }
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+               gap: 12px; margin-bottom: 24px; }
+  .info-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+              padding: 12px 16px; }
+  .info-label { font-size: 10px; color: #8b949e; text-transform: uppercase;
+                letter-spacing: 1px; margin-bottom: 4px; }
+  .info-value { font-size: 14px; font-weight: 600; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px;
+           font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: white; }
+  .analysis-box { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+                  padding: 20px 24px; margin-top: 20px; font-size: 13px; line-height: 1.6; }
+  .nav { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+  .nav a { font-size: 13px; }
+  .footer { margin-top: 32px; padding: 16px; text-align: center; color: #484f58;
+            font-size: 11px; border-top: 1px solid #21262d; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>AI Analysis — <code>4.15-e2e-telco5g-ptp</code></h1>
+  <div class="meta">Generated: 2026-06-22T21:36:30.399388+00:00 | Project: ptp-operator</div>
+</div>
+
+<div class="container">
+
+<div class="nav">
+  <a href="../index.html#periodic-ci-openshift-release-main-nightly-4.15-e2e-telco5g-ptp">Back to Dashboard</a>
+  <span style="color:#30363d">|</span>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.15-e2e-telco5g-ptp/2063221955619721216" target="_blank">View in Prow</a>
+  <span style="color:#30363d">|</span>
+  <a href="../issues.html">Known Issues</a>
+</div>
+
+<div class="info-grid">
+  <div class="info-card">
+    <div class="info-label">Status</div>
+    <div class="info-value" style="color:#f85149">failure</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Version</div>
+    <div class="info-value">4.15</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Duration</div>
+    <div class="info-value">191m</div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Category</div>
+    <div class="info-value"><span class="badge" style="background:#f85149">TEST</span></div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#d29922">MEDIUM</span></div>
+  </div>
+  <div class="info-card">
+    <div class="info-label">Started</div>
+    <div class="info-value" style="font-size:12px">2026-06-06T11:30</div>
+  </div>
+</div>
+
+<div style="margin:16px 0"><h3 style="color:#8b949e;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Failed Tests</h3><div style="margin:6px 0;padding:8px 12px;background:#161b22;border-radius:6px;border-left:3px solid #f85149"><div style="font-family:monospace;font-size:12px;color:#f0883e">Data:{ResultType:vector Result:0xc000303578}}</div><div style="font-size:11px;color:#8b949e;margin-top:2px"></div></div></div>
+
+<h2 style="color:#58a6ff;font-size:16px;margin:20px 0 12px;border-bottom:1px solid #21262d;padding-bottom:8px">
+  AI Analysis
+</h2>
+<div class="analysis-box">
+  <p style="margin:4px 0"><strong>Root Cause:</strong> Three PTP conformance tests failed in the BC and dualnicbc test modes on OCP 4.15. All failures involve clock-class verification during simulated upstream link loss:</p>
+<br>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Verify clockClass when locking PTP source on single NIC boundary clock</strong> (bc-serial): PMC correctly reported clockClass 248 after bringing ens2f3 down, but the node-level <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift_ptp_clock_class</code> Prometheus metric stayed at 6 for 300s. On OCP < 4.18, cloud-event-proxy exposes only a node-level clock_class metric (no per-config label) that tracks the main clock via <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetMainClockName()</code>. Per-config freerun transitions are visible via PMC but not reflected in that aggregate metric. PR #210 added node-level metric assertions for OCP < 4.18 single-NIC BC, which is incorrect for freerun (248) checks.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">2. <strong>BC clock class recovers to Locked after upstream link outage</strong> (bc-serial and dualnicbc-serial): After <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TurnAllPortsDown()</code>, clock class never degraded from Locked (6). NetworkManager on RHCOS auto-recovers admin-down interfaces within ~4–7s, restoring sync before the test could observe degradation. PR #215 fixed this for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TurnOffAndWaitFaulty()</code> via <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">nmcli managed=no</code>, but <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TurnAllPortsDown()</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TurnAllPortsUp()</code> used by the recovery test were never updated.</div>
+<br>
+<p style="margin:4px 0"><strong>Breaking PR/Commit:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; https://github.com/openshift/ptp-operator/pull/210 (commit https://github.com/openshift/ptp-operator/commit/8b697a3517bc2e24dde547624a96b6d78c4d7a56) — introduced incorrect node-level metric assertion for freerun on OCP < 4.18</div>
+<div style="padding-left:16px;margin:2px 0">&bull; https://github.com/openshift/ptp-operator/pull/185 (commit https://github.com/openshift/ptp-operator/commit/da824bf082cd75c19fa56a4133902824eb5c2e5e) — added recovery test using <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TurnAllPortsDown</code> without NM guard (incomplete fix in https://github.com/openshift/ptp-operator/pull/215)</div>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp/ptp-operator:4.15</code> (operator under test)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; linuxptp-daemon image (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DAEMON_IMAGE</code> in CI — hosts ptp4l/phc2sys and metrics endpoint)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; cloud-event-proxy sidecar image (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">SIDECAR_IMAGE</code> — publishes <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift_ptp_clock_class</code> metrics)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; ptp-operator-conformance-test image (built and run in the telco5g-ptp-tests pod)</div>
+<br>
+<p style="margin:4px 0"><strong>Is it a flake?</strong> no — Failures are deterministic on OCP 4.15: PMC shows correct clock class while node-level metrics do not update for freerun, and NM auto-recovery prevents sustained link outage in tests that lack <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">nmcli managed=no</code>.</p>
+<br>
+<p style="margin:4px 0"><strong>Issue Class:</strong> test_regression</p>
+<br>
+<p style="margin:4px 0"><strong>Related Source Files:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; https://github.com/openshift/ptp-operator/blob/main/test/pkg/ptptesthelper/ptptesthelper.go#L758-L770 — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">VerifyNICClockClass</code> metrics logic for OCP < 4.18</div>
+<div style="padding-left:16px;margin:2px 0">&bull; https://github.com/openshift/ptp-operator/blob/main/test/pkg/ptptesthelper/ptptesthelper.go#L432-L468 — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TurnAllPortsDown</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TurnAllPortsUp</code> missing NM guard</div>
+<div style="padding-left:16px;margin:2px 0">&bull; https://github.com/openshift/ptp-operator/blob/main/test/conformance/serial/ptp.go#L1121-L1168 — single-NIC clockClass locking test</div>
+<div style="padding-left:16px;margin:2px 0">&bull; https://github.com/openshift/ptp-operator/blob/main/test/conformance/serial/ptp.go#L2086-L2171 — BC clock class recovery test</div>
+<div style="padding-left:16px;margin:2px 0">&bull; https://github.com/openshift/cloud-event-proxy/blob/main/plugins/ptp_operator/metrics/ptp4lParse.go#L32-L54 — node-level metric tracks main clock only</div>
+<br>
+<p style="margin:4px 0"><strong>Suggested Fix:</strong></p>
+<div style="padding-left:16px;margin:2px 0">1. On OCP < 4.18 single-NIC BC, verify node-level metrics only for locked (6) state; rely on PMC for freerun (248) transitions.</div>
+<div style="padding-left:16px;margin:2px 0">2. Apply <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">nmcli device set managed no/yes</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TurnAllPortsDown</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TurnAllPortsUp</code> (same pattern as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TurnOffAndWaitFaulty</code> from PR #215).</div>
+<br>
+<p style="margin:4px 0"><strong>Fix Written:</strong> yes — see <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">./ci-evidence/fix.patch</code></p>
+<br>
+<p style="margin:4px 0"><strong>Severity:</strong> MEDIUM — CI regression on OCP 4.15 telco5g-ptp nightly; operator PTP sync itself works (PMC confirms correct clock class); failures are in test assertions and test harness link-down simulation.</p>
+</div>
+
+<div class="footer">
+  <a href="https://github.com/aabughosh/prow-nightly-monitor">prow-nightly-monitor</a> |
+  AI-powered CI failure analysis
+</div>
+
+</div>
+</body>
+</html>
