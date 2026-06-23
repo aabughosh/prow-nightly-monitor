@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.23-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-06-23T13:57:59.195473+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-06-23T21:16:48.027032+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">pending</div>
+    <div class="info-value" style="color:#f85149">failure</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,13 +62,16 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">running...</div>
+    <div class="info-value">70m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">MATRIX</span></div>
   </div>
-  
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
+  </div>
   <div class="info-card">
     <div class="info-label">Started</div>
     <div class="info-value" style="font-size:12px">2026-06-23T13:00</div>
@@ -81,7 +84,40 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
+  <p style="margin:4px 0">Now I have a complete picture. Let me compile the analysis.</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Crio ephemeral port 36515 bypasses dynamic-range filter after PR #400 removed Linux ephemeral range from generated matrix.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: crio ephemeral port not filtered — breaks EndpointSlice validation</strong> (affects Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">[FAIL] Validation [It] should validate the communication matrix ports match the node's open ports</p>
+<p style="margin:4px 0">/tmp/secret/commatrix/test/e2e/validation_test.go:161</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix-diff-ss</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,36515,,crio,,,master,false</code></p>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ss-port-analysis.txt</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LISTEN 0 4096 10.0.16.1:36515 0.0.0.0:* users:(("crio",pid=2679,fd=11))</code></p>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix.csv</code> (generated): only <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Ingress,TCP,30000-32767,,Kubelet node ports</code> as DynamicRanges — no Linux ephemeral range entry.</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code> calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)</code>. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code> parsed from the generated <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix.csv</code> contains only the NodePort range (TCP/UDP 30000-32767). Port 36515 is in the Linux ephemeral range (32768-60999), which was previously part of the generated commatrix but was removed by PR #400 (commit 7d56343: "Remove Linux Dynamic ranges from generated communication matrix"). Since <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code> no longer covers 32768-60999, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> does not suppress port 36515, leaving it as an unfiltered "open port without EndpointSlice," which triggers <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail()</code> at line 161.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> https://github.com/openshift-kni/commatrix/pull/400 — commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> (merged as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">1fec55d</code>): "Remove Linux Dynamic ranges from generated communication matrix"</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — this is a deterministic regression; crio always opens an ephemeral port and the filter no longer covers the ephemeral range.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> function in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go</code> (analogous to how <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> is already skipped at line 226), or restore the Linux ephemeral range (32768-60999) as a test-level filter separate from the generated matrix. The test comment at line 158 already acknowledges the intent: "Don't include… ports that are in dynamic ranges."</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause. The 6 stale documented ports (TCP 80, 443, 8798, 9192, 9443, 10258) appear as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NotUsed</code> warnings in the test output but do <strong>not</strong> cause a failure — those are OCP 4.23 drift against the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">aws-sno.csv</code> documented matrix and are separate maintenance work. The ovnkube NodePorts (30127, 30288, 32707) and rpc.statd entries are correctly filtered by existing logic. Only the crio ephemeral port escapes all filters after PR #400.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.23 SNO/AWS-OVN: crio ephemeral port not filtered since PR #400 removed Linux dynamic range from generated commatrix.</p>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-23-001024</code> (test runner image: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code>)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_regression</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
 </div>
 
 <div class="footer">

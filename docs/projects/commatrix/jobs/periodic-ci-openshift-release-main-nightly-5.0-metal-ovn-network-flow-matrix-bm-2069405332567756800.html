@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-metal-ovn-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-06-23T13:57:59.195473+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-06-23T21:16:48.027032+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">pending</div>
+    <div class="info-value" style="color:#f85149">failure</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,13 +62,16 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">running...</div>
+    <div class="info-value">109m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">MATRIX</span></div>
   </div>
-  
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
+  </div>
   <div class="info-card">
     <div class="info-label">Started</div>
     <div class="info-value" style="font-size:12px">2026-06-23T13:00</div>
@@ -81,7 +84,43 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
+  <h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[Validation] [It] should validate the communication matrix ports match the node's open ports</code></h4>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 410s (6m50s for this spec, overall suite 568s)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">the following ports are used but don't have an endpointslice: [6 crio ephemeral TCP ports]</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">[FAIL] Validation [It] should validate the communication matrix ports match the node's open ports</p>
+<p style="margin:4px 0">/tmp/secret/commatrix/test/e2e/validation_test.go:161</p>
+<br>
+<p style="margin:4px 0">From ss-port-analysis.txt:</p>
+<p style="margin:4px 0">Port 33669: LISTEN 0      4096   192.168.111.21:33669 0.0.0.0:* users:(("crio",pid=2977,fd=11))</p>
+<p style="margin:4px 0">Port 36513: LISTEN 0      4096   192.168.111.20:36513 0.0.0.0:* users:(("crio",pid=2963,fd=11))</p>
+<p style="margin:4px 0">Port 46735: LISTEN 0      4096   192.168.111.22:46735 0.0.0.0:* users:(("crio",pid=2902,fd=11))</p>
+<p style="margin:4px 0">Port 34765: LISTEN 0      4096   192.168.111.24:34765 0.0.0.0:* users:(("crio",pid=2870,fd=11))</p>
+<p style="margin:4px 0">Port 43503: LISTEN 0      4096   192.168.111.25:43503 0.0.0.0:* users:(("crio",pid=2852,fd=11))</p>
+<p style="margin:4px 0">Port 45739: LISTEN 0      4096   192.168.111.23:45739 0.0.0.0:* users:(("crio",pid=2876,fd=11))</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is binding random ephemeral TCP ports (one per node, range 32768-60999) bound to the node's management IP. These have no Kubernetes EndpointSlice. The test's <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices()</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:221-239</code> already filters <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code> for exactly this reason (non-Kubernetes host-level processes with random ports), but <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is not included in that list. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">KubeletNodePortDefaultDynamicRange</code> only covers 30000–32767, so the crio ephemeral ports (>32767) also survive the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> call. The failure fires at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code> when <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">missingEPSMat</code> is non-empty.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — likely a recent OCP 4.23 crio version update where crio began listening on an additional ephemeral TCP streaming port. No matching commatrix PR found to add crio to the known-services filter.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift-kni/commatrix/blob/release-4.23/test/e2e/validation_test.go#L221</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — crio consistently binds this port on every node at startup; it will fail every run on any 4.23 baremetal cluster until the filter or dynamic range is updated.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"crio"</code> to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> function in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go</code> alongside <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, just as that filter documents: <em>"these are randomly open ports on the node / no need to mention them in the matrix diff"</em>. Alternatively, add a dynamic range entry (TCP 32768–60999, Ingress) to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">static-custom-entries.go</code> for crio's ephemeral image-streaming sockets.</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> crio ephemeral TCP ports (not EndpointSlice-backed) escape the known-services filter, causing 1 validation failure.</p>
+<br>
+<p style="margin:4px 0"><strong>Relation Between Failures:</strong> There is a single failing test. The 35 raw "open but missing endpointslice" ports all share the same root: host-level processes (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code>) open random ephemeral TCP/UDP ports that have no Kubernetes EndpointSlice. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code> are already filtered; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is not, leaving 6 ports that trip the assertion at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code>. The 7 "in matrix but not in use" ports (TCP 6388 metal3-httpd, TCP 8798×2 machine-config-daemon, TCP 9192 machine-approver, TCP 9443 cloud-controller-manager, UDP 68×2 NetworkManager) are only logged as warnings and did not cause a test failure.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; OCP 4.23 baremetal OVN nightly: FAIL — crio ephemeral port not filtered in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code></div>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-21-184744</code> (cluster under test); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix</code> test image built from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.23</code> branch</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> matrix_mismatch</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 </div>
 
 <div class="footer">
