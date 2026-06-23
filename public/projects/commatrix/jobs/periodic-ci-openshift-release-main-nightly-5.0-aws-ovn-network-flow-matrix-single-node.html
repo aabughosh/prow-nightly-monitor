@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-06-23T12:43:30.239107+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-06-23T13:57:59.195473+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2069042926079447040" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2069405329216507904" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">failure</div>
+    <div class="info-value" style="color:#f85149">pending</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,19 +62,16 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">70m</div>
+    <div class="info-value">running...</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#f0883e">MATRIX</span></div>
+    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
   </div>
-  <div class="info-card">
-    <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
-  </div>
+  
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-06-22T13:00</div>
+    <div class="info-value" style="font-size:12px">2026-06-23T13:00</div>
   </div>
 </div>
 
@@ -84,40 +81,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[Validation] should validate the communication matrix ports match the node's open ports</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 48.9s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> Port TCP/33085 (crio) is open on the node but has no EndpointSlice entry</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">From matrix-diff-ss:</h2>
-<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,33085,,crio,,,master,false</div>
-<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">From ss-port-analysis.txt:</h2>
-<p style="margin:4px 0">Port 33085: LISTEN 0  4096  10.0.11.29:33085 0.0.0.0:* users:(("crio",pid=2708,fd=12))</p>
-<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">From ci-operator-build-log.txt:</h2>
-<p style="margin:4px 0">[FAIL] Validation [It] should validate the communication matrix ports match the node's open ports</p>
-<p style="margin:4px 0">/tmp/secret/commatrix/test/e2e/validation_test.go:161</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> CRI-O's internal stream server (used for exec/attach/port-forward) binds to an ephemeral port at startup — here TCP 33085, which is in the Linux ephemeral range (32768–60999) but <strong>outside</strong> the Kubernetes NodePort dynamic range (30000–32767). The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> function in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:221–239</code> only skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code>; it has no exemption for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code>. After all filters are applied, port 33085 survives and triggers <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail()</code> at line 161. The NodePort dynamic range filter (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code>) would have caught ports 30998/31262/32110 (ovnkube NodePorts), but 33085 is above 32767 so it is not filtered.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no single recent commit directly introduced this. Most recent relevant merge is [PR #493](https://github.com/openshift-kni/commatrix/pull/493) (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fix/expand-eps-entries-to-eligible-pools</code>, sha <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">128925b4</code>), which changed EndpointSlice pool expansion logic and may have affected which ports pass through dynamic-range filtering. The underlying gap (missing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code>) predates this run.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> [https://github.com/openshift-kni/commatrix/blob/release-4.23/test/e2e/validation_test.go#L141-L163](https://github.com/openshift-kni/commatrix/blob/release-4.23/test/e2e/validation_test.go#L141-L163)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Borderline — CRI-O's stream port is ephemeral and changes on each reboot; if it falls in the 30000–32767 NodePort range it would be filtered and the test would pass, making it intermittently flaky depending on which ephemeral port the OS allocates.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to the allowlist in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> (same pattern as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>), <strong>and/or</strong> extend the Linux ephemeral port range (32768–60999) as a dynamic range in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code> to cover all OS-allocated transient ports. Additionally, the 7 stale entries in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">docs/stable/raw/aws-sno.csv</code> should be updated: remove TCP 80, 443, 8798, 9192 (no longer active on this platform/version combination in OCP 4.23 SNO), and investigate TCP 9099, 9443, 10258 which EndpointSlice reports but <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ss</code> does not show listening.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CRI-O ephemeral stream port (TCP 33085) open on node with no EndpointSlice, not filtered by test.</p>
-<br>
-<p style="margin:4px 0"><strong>Relation Between Failures:</strong> There is only one actual test failure. The "7 ports in matrix but not in use" data is captured as a warning — those entries (TCP 80/443/8798/9192 stale in the doc CSV; TCP 9099/9443/10258 in EndpointSlice but not listening at ss-capture time) reflect doc drift and transient service state rather than test failures. Both issues share the same root: the documented <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">aws-sno.csv</code> matrix has not been updated to reflect OCP 4.23 SNO component port changes.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; OCP 4.23: Confirmed affected — evidence is from this run; crio binds to TCP 33085 (above NodePort range), test fails at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; OCP 5.0: Affected by same root cause — same test code, same CRI-O stream port behavior; same matrix CSV is likely equally out of date for 5.0 components</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-21-184744</code> (test runner image from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.23</code> branch of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-kni/commatrix</code>)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix_mismatch</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">

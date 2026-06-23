@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-metal-ovn-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-06-23T12:43:30.239107+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-06-23T13:57:59.195473+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2069042927778140160" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2069405332567756800" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">failure</div>
+    <div class="info-value" style="color:#f85149">pending</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,19 +62,16 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">121m</div>
+    <div class="info-value">running...</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#f0883e">MATRIX</span></div>
+    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
   </div>
-  <div class="info-card">
-    <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
-  </div>
+  
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-06-22T13:00</div>
+    <div class="info-value" style="font-size:12px">2026-06-23T13:00</div>
   </div>
 </div>
 
@@ -84,50 +81,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[Validation] [It] should validate the communication matrix ports match the node's open ports</code></h4>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 38s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> "the following ports are used but don't have an endpointslice: Ingress,TCP,36649,,crio,,,master,false ... [6 ports total]"</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">[FAILED] the following ports are used but don't have an endpointslice:</p>
-<p style="margin:4px 0">Ingress,TCP,36649,,crio,,,master,false</p>
-<p style="margin:4px 0">Ingress,TCP,41927,,crio,,,master,false</p>
-<p style="margin:4px 0">Ingress,TCP,43911,,crio,,,master,false</p>
-<p style="margin:4px 0">Ingress,TCP,41403,,crio,,,worker,false</p>
-<p style="margin:4px 0">Ingress,TCP,42657,,crio,,,worker,false</p>
-<p style="margin:4px 0">Ingress,TCP,45057,,crio,,,worker,false</p>
-<p style="margin:4px 0">In [It] at: /tmp/secret/commatrix/test/e2e/validation_test.go:161</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">From raw-ss-tcp: each of these is confirmed bound to a node-IP (e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.111.22:36649 ... users:(("crio",pid=4362,fd=11))</code>), not loopback — CRI-O's container streaming server listening on the baremetal provisioning network.</p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> CRI-O's container streaming server (used for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kubectl exec</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">attach</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">port-forward</code>) binds an ephemeral TCP port to the node's machine-network IP (192.168.111.x range) on every boot. These ports fall in the Linux ephemeral range (32768–60999), which is entirely above the Kubernetes NodePort range (30000–32767). The test's <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges()</code> at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:241</code> only covers 30000–32767 (from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetDynamicRanges()</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/dynamic-ranges/dynamic-ranges.go:38</code>), so these crio ports are never suppressed. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices()</code> at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:221</code> excludes <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code> but has no entry for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code>. Since crio's streaming port always lands in 32768–60999 (above the NodePort ceiling), this failure is deterministic on every run, not probabilistic.</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no specific recent commit identified; this is a gap in the exclusion logic that was either introduced when crio streaming was enabled on node IPs, or has been latent and masked by coincidence. Check recent PRs touching <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetDynamicRanges</code> in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> branch: [https://github.com/openshift-kni/commatrix/commits/release-5.0](https://github.com/openshift-kni/commatrix/commits/release-5.0)</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> [https://github.com/openshift-kni/commatrix/blob/release-5.0/test/e2e/validation_test.go#L141-L163](https://github.com/openshift-kni/commatrix/blob/release-5.0/test/e2e/validation_test.go#L141)</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — CRI-O's streaming server always binds an ephemeral port above 32767, so this will fail on every run with this cluster topology.</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices()</code> exclusion list in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:221</code>, or add a Linux ephemeral port range entry (TCP 32768–60999) to the dynamic ranges returned by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetDynamicRanges()</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/dynamic-ranges/dynamic-ranges.go</code>. The latter is cleaner and self-documenting.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CRI-O streaming server ephemeral ports (32768–60999) not filtered, causing consistent EPS mismatch failure.</p>
-<br>
-<p style="margin:4px 0"><strong>Relation Between Failures:</strong> All 6 failing port entries share a single root cause — CRI-O's gRPC streaming server binds one ephemeral TCP port per node to the node's baremetal IP. The 7 ports "in matrix but not in use" (TCP 6388/metal3-httpd, TCP 8798/machine-config-daemon ×2, TCP 9192/machine-approver, TCP 9443/cloud-controller-manager, UDP 68/NetworkManager ×2) are separate OCP 5.0 drift issues — those ports were removed from services in newer builds — but they only generate <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">logrus.Warningf</code> output and did NOT trigger this test failure; they would be a concern for the doc-matrix comparison test, which passed.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; OCP 5.0 (nightly-2026-06-22-061535): 1 test failed; 6 crio ephemeral ports missing EndpointSlice; 7 stale matrix entries logged as warnings only.</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release-5:5.0.0-0.nightly-2026-06-22-061535</code> (OCP nightly used for cluster deploy)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pipeline:ci-telco-runner-latest</code> (test runner image)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; CRI-O container runtime (version shipped in the above nightly)</div>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix_mismatch</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM — the project's own tests genuinely failed (not a CI infra issue), but the cause is a gap in the test's exclusion logic for a known OS-level process (CRI-O streaming), not a real security or communication regression.</p>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">
