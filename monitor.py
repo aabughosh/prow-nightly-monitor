@@ -3560,18 +3560,16 @@ def _generate_issues_page(output_dir: Path) -> None:
         if len(affected_tests) > 10:
             tests_items += f"<li class='more'>+{len(affected_tests) - 10} more</li>"
 
-        # Affected jobs (filtered to project)
+        # Affected jobs (filtered to project, dedup by name+date)
         all_jobs: list[dict] = []
-        seen_urls: set = set()
+        seen_keys: set = set()
         for _, m in members:
             for j in m.get("affected_jobs", []):
                 if project_filter and project_filter not in j.get("name", ""):
                     continue
-                url = j.get("url", "")
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
-                    all_jobs.append(j)
-                elif not url:
+                dedup_key = (j.get("name", ""), j.get("date", ""))
+                if dedup_key not in seen_keys:
+                    seen_keys.add(dedup_key)
                     all_jobs.append(j)
         all_jobs.sort(key=lambda j: j.get("date", ""), reverse=True)
 
