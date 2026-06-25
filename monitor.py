@@ -3365,9 +3365,12 @@ def _generate_issues_page(output_dir: Path) -> None:
     """Generate a Known Issues page from fingerprints.json (issue-centric view).
 
     Groups fingerprints by shared root_cause so the page is organized around
-    *why* things break rather than individual test names.
+    *why* things break rather than individual test names.  When root_cause is
+    unavailable, groups by shared affected jobs (same job run = same issue).
+    Filters to the current project based on output_dir.
     """
     import html as _h
+    import re as _re
     from collections import OrderedDict
 
     fp_path = output_dir / "fingerprints.json"
@@ -3394,10 +3397,43 @@ def _generate_issues_page(output_dir: Path) -> None:
                 "occurrences": entry.get("occurrences", 1),
                 "classification": entry.get("category", "unknown"),
                 "root_cause": entry.get("root_cause", ""),
+                "ai_summary_short": entry.get("ai_summary_short", ""),
                 "is_flake": entry.get("is_flake", False),
                 "affected_jobs": [],
                 "status": "active",
             }
+
+    if not issues:
+        return
+
+    # --- Filter to current project based on output_dir ---
+    # Detect project job_filter from the output path
+    project_filter = ""
+    output_str = str(output_dir)
+    _projects_path = Path(__file__).parent / "projects.json"
+    if _projects_path.exists():
+        try:
+            _all_proj = json.loads(_projects_path.read_text())
+            for pname, pconf in _all_proj.items():
+                if pname in output_str:
+                    project_filter = pconf.get("job_filter", "")
+                    break
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    if project_filter:
+        filtered = {}
+        for fp_id, issue in issues.items():
+            affected = issue.get("affected_jobs", [])
+            title = issue.get("title", "")
+            # Keep if any affected job matches the filter, or title/job_name_pattern matches
+            if any(project_filter in j.get("name", "") for j in affected):
+                filtered[fp_id] = issue
+            elif project_filter in title:
+                filtered[fp_id] = issue
+            elif project_filter in issue.get("job_name_pattern", ""):
+                filtered[fp_id] = issue
+        issues = filtered
 
     if not issues:
         return
@@ -3415,37 +3451,56 @@ def _generate_issues_page(output_dir: Path) -> None:
     }
 
     def _extract_root_cause(issue: dict) -> str:
-        """Get root cause text: prefer root_cause field, fall back to ai_summary_short."""
+        """Get root cause text: prefer root_cause, then ai_summary_short."""
         rc = (issue.get("root_cause") or "").strip()
         if rc:
             return rc
         summary = (issue.get("ai_summary_short") or "").strip()
         if not summary:
             return ""
-        # Extract from **Root Cause:** pattern common in AI summaries
-        import re as _re
         m = _re.search(r"\*\*Root Cause:\*\*\s*(.+?)(?:\n\n|\*\*Breaking)", summary, _re.DOTALL)
         if m:
             return _re.sub(r"\s+", " ", m.group(1)).strip()[:500]
-        # Try "### Root Cause" heading
         m = _re.search(r"###?\s*Root Cause\s*\n+(.+?)(?:\n\n|\n###|\*\*)", summary, _re.DOTALL)
         if m:
             return _re.sub(r"\s+", " ", m.group(1)).strip()[:500]
-        # Just use first meaningful paragraph (skip headers/metadata)
         lines = [l.strip() for l in summary.split("\n") if l.strip()
                  and not l.strip().startswith("#") and not l.strip().startswith("---")]
         if lines:
-            text = " ".join(lines[:3])
-            return _re.sub(r"\s+", " ", text).strip()[:500]
+            return _re.sub(r"\s+", " ", " ".join(lines[:3])).strip()[:500]
         return ""
 
-    # --- Group fingerprints by shared root_cause ---
-    # Key: root_cause text (or unique sentinel for empty root causes)
+    def _job_set_key(issue: dict) -> str:
+        """Create a grouping key from affected jobs (job name + date combos)."""
+        jobs = issue.get("affected_jobs", [])
+        if not jobs:
+            return ""
+        parts = sorted(f"{j.get('name','')}@{j.get('date','')}" for j in jobs)
+        return "|".join(parts)
+
+    # --- Group fingerprints ---
+    # Priority: group by root_cause text. If empty, group by shared affected jobs.
     groups: OrderedDict[str, list] = OrderedDict()
+    no_rc_issues: list[tuple[str, dict]] = []
+
     for fp_id, issue in issues.items():
         rc = _extract_root_cause(issue)
-        key = rc if rc else f"__empty__{fp_id}"
-        groups.setdefault(key, []).append((fp_id, issue))
+        if rc:
+            groups.setdefault(rc, []).append((fp_id, issue))
+        else:
+            no_rc_issues.append((fp_id, issue))
+
+    # Group no-root-cause issues by shared affected jobs
+    job_groups: dict[str, list] = {}
+    for fp_id, issue in no_rc_issues:
+        jk = _job_set_key(issue)
+        if jk:
+            job_groups.setdefault(jk, []).append((fp_id, issue))
+        else:
+            groups.setdefault(f"__single__{fp_id}", []).append((fp_id, issue))
+
+    for jk, members in job_groups.items():
+        groups[f"__jobs__{jk}"] = members
 
     # Build group-level metadata for sorting
     group_metas = []
@@ -3463,7 +3518,6 @@ def _generate_issues_page(output_dir: Path) -> None:
 
     cards_html = ""
     for key, members, any_active, last_seen_grp, total_occ in group_metas:
-        root_cause_text = key if not key.startswith("__empty__") else ""
         first_seen_grp = min((m[1].get("first_seen", "") for m in members), default="")
 
         # Aggregate classification: pick most severe or most common
@@ -3483,12 +3537,23 @@ def _generate_issues_page(output_dir: Path) -> None:
         )
 
         # Root cause display (primary heading)
-        if root_cause_text:
-            rc_display = _h.escape(root_cause_text[:300])
-            if len(root_cause_text) > 300:
+        if not key.startswith("__"):
+            # Has real root cause text
+            rc_display = _h.escape(key[:300])
+            if len(key) > 300:
                 rc_display += "…"
+        elif key.startswith("__jobs__"):
+            # Grouped by shared affected jobs — synthesize a description
+            job_names = sorted(set(
+                j.get("name", "") for _, m in members for j in m.get("affected_jobs", [])
+            ))
+            n_tests = len(members)
+            job_summary = ", ".join(job_names[:3])
+            if len(job_names) > 3:
+                job_summary += f" +{len(job_names) - 3} more"
+            rc_display = f"{n_tests} tests failed together in: {_h.escape(job_summary)}"
         else:
-            # Fallback: use titles from member fingerprints
+            # Single issue with no root cause — use title
             titles = list(dict.fromkeys(m.get("title", "Unknown") for _, m in members))
             rc_display = _h.escape(titles[0]) if titles else "Unknown issue"
 
@@ -3502,11 +3567,13 @@ def _generate_issues_page(output_dir: Path) -> None:
         if len(affected_tests) > 15:
             tests_html += f'<span style="font-size:11px;color:#8b949e">+{len(affected_tests) - 15} more</span>'
 
-        # Collect all affected jobs across members (deduplicated by url)
+        # Collect all affected jobs across members (deduplicated, filtered to project)
         all_jobs: list[dict] = []
         seen_urls: set = set()
         for _, m in members:
             for j in m.get("affected_jobs", []):
+                if project_filter and project_filter not in j.get("name", ""):
+                    continue
                 url = j.get("url", "")
                 if url and url not in seen_urls:
                     seen_urls.add(url)
