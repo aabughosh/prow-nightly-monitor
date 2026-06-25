@@ -3029,7 +3029,10 @@ def _render_only():
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     run_dir = OUTPUT_DIR / "runs" / today
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "index.html").write_text(html)
+    # Per-run copy: fix relative links to point back to project root
+    run_html = html.replace('href="history.html"', 'href="../../history.html"')
+    run_html = run_html.replace('href="issues.html"', 'href="../../issues.html"')
+    (run_dir / "index.html").write_text(run_html)
     (OUTPUT_DIR / "index.html").write_text(html)
     log.info("Dashboard re-rendered with AI analysis")
 
@@ -3251,7 +3254,10 @@ def main():
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     run_dir = OUTPUT_DIR / "runs" / today
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "index.html").write_text(html)
+    # Per-run copy: fix relative links to point back to project root
+    run_html = html.replace('href="history.html"', 'href="../../history.html"')
+    run_html = run_html.replace('href="issues.html"', 'href="../../issues.html"')
+    (run_dir / "index.html").write_text(run_html)
     log.info("Run dashboard written to %s", run_dir / "index.html")
 
     html_path = OUTPUT_DIR / "index.html"
