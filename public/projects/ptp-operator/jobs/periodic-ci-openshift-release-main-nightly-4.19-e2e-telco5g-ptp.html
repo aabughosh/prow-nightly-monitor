@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.19-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-06-24T21:26:16.469514+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-06-25T23:14:04.279507+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-4.19-e2e-telco5g-ptp">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.19-e2e-telco5g-ptp/2069284528223948800" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.19-e2e-telco5g-ptp/2070009302407450624" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#3fb950">success</div>
+    <div class="info-value" style="color:#f85149">failure</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,16 +62,19 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">141m</div>
+    <div class="info-value">33m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
   </div>
-  
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
+  </div>
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-06-23T05:00</div>
+    <div class="info-value" style="font-size:12px">2026-06-25T05:00</div>
   </div>
 </div>
 
@@ -81,7 +84,44 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#10003;</div><div style="font-size:18px;font-weight:600;color:#3fb950">Job Passed</div><div style="color:#8b949e;margin-top:8px">All tests passed — no AI analysis needed.</div></div>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Telco lab cluster (ptpcimno) was unreachable; no PTP tests ran due to infra failure.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Telco lab cluster not provisioned / API server unreachable</strong> (affects: all job steps post-setup)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">scp: /root/ocp/auth/kubeconfig: No such file or directory</p>
+<p style="margin:4px 0">(cluster-setup step, 2026-06-25T05:19:38Z, exit status 1)</p>
+<br>
+<p style="margin:4px 0">ClusterVersion: Installing "" for <unknown>: <unknown></p>
+<p style="margin:4px 0">clusteroperators are missing</p>
+<br>
+<p style="margin:4px 0">dial tcp 10.8.34.117:6443: i/o timeout</p>
+<p style="margin:4px 0">(gather-must-gather, gather-extra, gather-audit-logs — all fail hitting 10.8.34.117:6443)</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The Ansible playbook <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fetch-kubeconfig.yml</code> attempted to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli scp root@ptpcimno-installer:/root/ocp/auth/kubeconfig</code> but the file was absent, indicating the OCP installation on the baremetal lab cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code> never completed. The API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.8.34.117:6443</code> was unreachable for every subsequent step. The cluster-setup step exited with code 1 at 05:19:38Z — all downstream gather steps cascaded from this single infra failure. No PTP-operator code or tests ever ran.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — lab environment state issue, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — transient lab cluster provisioning failure; no code change triggered it.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job; if it recurs, inspect the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code> lab cluster provisioning pipeline and verify the installer VM has a completed kubeconfig at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/root/ocp/auth/kubeconfig</code> before CI jobs are scheduled against it.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All steps — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">e2e-telco5g-ptp-telco5g-ptp-cluster-setup</code> (failed), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-must-gather</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-extra</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-audit-logs</code> (all cascaded failures). Zero PTP e2e tests executed.</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — lab cluster not ready cascades into every subsequent step.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.19: Confirmed — lab cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code> API unreachable, cluster-setup step failed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.21: Likely same infra root cause if using the same telco lab pool; no separate evidence available.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.23: Likely same infra root cause if using the same telco lab pool; no separate evidence available.</div>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> None — image imports all succeeded (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.19.0-0.nightly-2026-06-24-152413</code>, 187 images imported cleanly). No image pull failures.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
 </div>
 
 <div class="footer">

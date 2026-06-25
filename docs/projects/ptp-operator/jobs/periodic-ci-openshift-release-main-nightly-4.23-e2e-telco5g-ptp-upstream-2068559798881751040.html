@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.23-e2e-telco5g-ptp-upstream</code></h1>
-  <div class="meta">Generated: 2026-06-24T12:43:07.403598+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-06-25T23:14:04.279507+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -84,37 +84,40 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <p style="margin:4px 0">I have all the evidence I need. The test results show 0 failures (147 pass, 121 skip), and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">finished.json</code> shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true,"result":"SUCCESS"</code>. The job failed in the POST phase gather steps due to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> API server errors — a CI framework issue, not a project regression.</p>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Telco lab cluster (ptpcimno) was unreachable; no PTP tests ran due to infra failure.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Telco lab cluster not provisioned / API server unreachable</strong> (affects: all job steps post-setup)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">scp: /root/ocp/auth/kubeconfig: No such file or directory</p>
+<p style="margin:4px 0">(cluster-setup step, 2026-06-25T05:19:38Z, exit status 1)</p>
+<br>
+<p style="margin:4px 0">ClusterVersion: Installing "" for <unknown>: <unknown></p>
+<p style="margin:4px 0">clusteroperators are missing</p>
+<br>
+<p style="margin:4px 0">dial tcp 10.8.34.117:6443: i/o timeout</p>
+<p style="margin:4px 0">(gather-must-gather, gather-extra, gather-audit-logs — all fail hitting 10.8.34.117:6443)</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The Ansible playbook <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fetch-kubeconfig.yml</code> attempted to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kcli scp root@ptpcimno-installer:/root/ocp/auth/kubeconfig</code> but the file was absent, indicating the OCP installation on the baremetal lab cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code> never completed. The API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.8.34.117:6443</code> was unreachable for every subsequent step. The cluster-setup step exited with code 1 at 05:19:38Z — all downstream gather steps cascaded from this single infra failure. No PTP-operator code or tests ever ran.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — lab environment state issue, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — transient lab cluster provisioning failure; no code change triggered it.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job; if it recurs, inspect the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code> lab cluster provisioning pipeline and verify the installer VM has a completed kubeconfig at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/root/ocp/auth/kubeconfig</code> before CI jobs are scheduled against it.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All steps — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">e2e-telco5g-ptp-telco5g-ptp-cluster-setup</code> (failed), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-must-gather</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-extra</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-audit-logs</code> (all cascaded failures). Zero PTP e2e tests executed.</div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0">PROJECT TESTS PASSED — failure is from CI framework</p>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — lab cluster not ready cascades into every subsequent step.</p>
 <br>
-<p style="margin:4px 0">The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-ptp-tests</code> step completed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true,"result":"SUCCESS"</code> (finished.json) and all 147 executed tests passed (0 failures, 0 errors per test_results.json). No PTP-operator or linuxptp-daemon test failed.</p>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.19: Confirmed — lab cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code> API unreachable, cluster-setup step failed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.21: Likely same infra root cause if using the same telco lab pool; no separate evidence available.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.23: Likely same infra root cause if using the same telco lab pool; no separate evidence available.</div>
 <br>
-<p style="margin:4px 0">The job-level failure originated in the <strong>post phase</strong>, specifically in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-extra</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-audit-logs</code> CI steps, which could not authenticate to the cluster API server. Verbatim evidence from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-operator-build-log.txt</code>:</p>
-<br>
-<pre style="background:#161b22;padding:10px;border-radius:6px;overflow-x:auto;font-size:12px"><code>
-error: You must be logged in to the server (Unauthorized)
-error completing cluster type inspection: error running backup collection: the server has asked for the client to provide credentials
-error getting cluster version: Unauthorized
-ClusterVersion: Installing &quot;&quot; for &lt;unknown&gt;: &lt;unknown&gt;
-error: creating temp namespace: Unauthorized
-Step e2e-telco5g-ptp-upstream-gather-audit-logs failed after 11s.
-Step phase post failed after 15m7s.
-</code></pre>
-<br>
-<p style="margin:4px 0">The cluster API server returned <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> for every request the gather containers made (oc adm inspect, log fetching, namespace creation). This caused both post-step containers to exit with code 1, which ci-operator converted into a job-level failure (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">executing_graph:step_failed:executing_multi_stage_test</code>). The suspicious <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ClusterVersion: Installing "" for <unknown></code> suggests the cluster may have been in a partially degraded or re-installing state by the time the post phase ran, invalidating the CI service-account credentials used by the gather steps.</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> All 147 PTP tests passed; job failed because post-phase gather steps got Unauthorized from the API server.</p>
-<br>
-<p style="margin:4px 0"><strong>Relation Between Failures:</strong> Both <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-extra</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-audit-logs</code> failed for exactly the same reason — the cluster API server was returning <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> to the CI service account at the time the post phase executed (≈07:30–07:45 UTC). Neither failure has any connection to PTP-operator code; they are sequential post-steps that both hit the same expired/invalidated credential state.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.23 nightly (4.23.0-0.nightly-2026-06-20-065515) — cluster API auth degraded in post-phase; all project tests passed on this nightly build.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-20-065515</code> (cluster under test); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (gather step runner). No PTP-operator or linuxptp-daemon images were affected.</p>
+<p style="margin:4px 0"><strong>Affected Images:</strong> None — image imports all succeeded (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.19.0-0.nightly-2026-06-24-152413</code>, 187 images imported cleanly). No image pull failures.</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
 <br>

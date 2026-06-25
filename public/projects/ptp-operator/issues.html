@@ -45,15 +45,495 @@
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">123</div>Active</div>
-    <div class="stat"><div class="stat-num" style="color:#c9d1d9">123</div>Fingerprints</div>
-    <div class="stat"><div class="stat-num" style="color:#a371f7">37</div>Issues</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">178</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">178</div>Fingerprints</div>
+    <div class="stat"><div class="stat-num" style="color:#a371f7">44</div>Issues</div>
   </div>
   <table>
     <thead><tr>
       <th>Root Cause</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
-    <tbody><tr id="91b59bcf6e86a6d3">
+    <tbody><tr id="ce6143779aae984d">
+  <td class="col-rc">
+    <div class="rc-text">The test step&#x27;s pre-flight script (`telco5g-ptp-tests`) checks that all cluster nodes are `Ready` before launching PTP tests. Worker node `cnfdf30.telco5gran.eng.rdu2.redhat.com` was in `NotReady,SchedulingDisabled` with condition `Unknown` at the time the test pod started. The script detected this via `oc get nodes` and exited 1 immediately — no PTP tests ran at all. The node being in `SchedulingDisabled/Unknown` indicates it was either mid-reboot, cordoned by a prior step, or lost contact with the control plane. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">I now have all the data needed. 
+
+---
+
+**TL;DR:** Worker node `cnfdf30` was `NotReady/Unknown` at test start; pre-flight check aborted before any PTP tests ran.
+
+**Root Cause Groups:**
+
+- **Group 1: Unhealthy cluster node prevented test execution** (affects Tests: `e2e-telco5g-ptp-upstream-telco5g-ptp-tests`)
+  - **Evidence:**
+    ```
+    cnfdf30.telco5gran.eng.rdu2.redhat.com   NotReady,SchedulingDisabled   worker   15m
+    NOT_READY_NODES=&#x27;cnfdf30.telco5gran.eng.rdu2.redhat.com Unknown&#x27;
+    [ERROR] All nodes must be Ready before starting PTP tests. Aborting.
+    + exit 1
+    ```
+  - **Root Cause:** The test step&#x27;s pre-flight script (`telco5g-ptp-tests`) checks that all cluster nodes are `Ready` before launching PTP tests. Worker node `cnfdf30.telco5gran.eng.rdu2.redhat.com` was in `NotReady,SchedulingDisabled` with condition `Unknown` at the time the test pod started. The script detected this via `oc get nodes` and exited 1 immediately — no PTP tests ran at all. The node being in `SchedulingDisabled/Unknown` indicates it was either mid-reboot, cordoned by a prior step, or lost contact with the control plane.
+  - **Breaking PR/Commit:** Unknown — this is a transient infrastructure/cluster state issue.
+  - **Is it a flake?** Yes — node `NotReady/Unknown` at test start time is a classic transient infra flake caused by hardware or network instability in the bare-metal telco5g pool.
+  - **Suggested Fix:** Re-run the job; if the node is consistently unhealthy, investigate the bare-metal host `cnfdf30` in the telco5g pool and re-provision or replace it. Optionally extend the pre-flight check to wait/retry for node readiness instead of immediately aborting.
+  - **Affected tests:** All PTP tests (none ran; job aborted at pre-flight)
+
+---
+
+**Relation Between Groups:** Single root cause — one bad cluster node. No code regression involved.
+
+**Per-Version Notes:** OCP 4.22 (nightly 2026-06-07-152904) — cluster infrastructure issue on bare-metal telco5g pool; unrelated to the OCP version itself.
+
+**Affected Images:** `registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-06-07-152904` (successfully imported; not the cause)
+
+**Overall Issue Class:** infra_other
+
+**Overall Severity:** MEDIUM</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-tests"><ul><li>No meaningful output found in logs</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/80182/rehearse-80182-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2063912719072890880" target="_blank">rehearse-80182-4.22-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-06-25)</span></li></ul></td>
+</tr>
+<tr id="0ee2995536491c6a">
+  <td class="col-rc">
+    <div class="rc-text">The T-GM node never achieved clock class 6 (LOCKED), remaining at class 248 (FREERUN/default) for the entire run, as shown by the tgm-serial suite failures. Without a locked grandmaster advertising a valid PTP clock, the follower interfaces on `cnfdf31` have no master to sync from: `ptp4l` on `ens2f0np0` never reaches the `s2` servo state that would trigger `updateClockStateMetrics()` (`pkg/daemon/metrics.go:~line 299`) to emit the `openshift_ptp_clock_state{iface=&quot;ens2f0np0&quot;}` Prometheus metric — so the test&#x27;s metric lookup returns &quot;not found&quot;. `ens2f3np3` is left in `LISTENING` (it received no Announce from a master, never promoted to `SLAVE`). The `register.go` in `pkg/metrics` registers `ClockState` as a `GaugeVec` with `{process, node, iface}` labels; the vector entry for `ens2f0np0` is simply never written. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">**TL;DR:** T-GM never achieved GNSS lock (FREERUN/clockClass=248), cascading to all 25 BC/follower sync failures job-wide.
+
+---
+
+**Root Cause Groups:**
+
+- **20/25 failures — T-GM stuck in FREERUN (clock class 248, never GNSS-locked):** The grandmaster node (`linuxptp-daemon-pljkt`, `cnfdf30`) never achieved clock class 6, starving every downstream node of a valid PTP source. This is the primary root cause, confirmed across all four suites: tgm (5/5), dualnicbc (3/9 directly, 3/9 indirectly via BC never locking), dualnicbcha (5/8 directly via BC FREERUN), and dualfollower (3/3 — follower metrics never populated). The linuxptp RPM pulled from CentOS Stream 9 at image build time likely introduced a ptp4l/ts2phc interface regression preventing GNSS-lock propagation.
+
+- **5/25 failures — `pmc` argument-split bug in `ci/telco-runner:latest` image:** Three dualnicbc tests (&quot;Slave can sync to master&quot;, &quot;Downstream slave can sync to BC master&quot;, &quot;Can provide a profile with higher priority&quot;) and two dualnicbcha tests (&quot;Slave can sync to master&quot;, &quot;Downstream slave can sync to BC master&quot;) fail with `bad command: GET` / `bad command: PARENT_DATA_SET` — the pmc management command was split into two separate argv tokens in the pre-built image, whereas the current source passes them as a single string. This is a deterministic, non-flaky regression in the `ci/telco-runner:latest` image.
+
+---
+
+**Cross-Suite Patterns:**
+
+| Root Cause | tgm | dualnicbc | dualnicbcha | dualfollower |
+|---|---|---|---|---|
+| T-GM FREERUN (clock class 248) | 5/5 (primary) | 6/9 (GM &amp; BC) | 3/8 (BC via GM) | 3/3 (follower metrics absent) |
+| pmc argv-split bug | — | 3/9 | 2/8 | — |
+
+All four suites share the T-GM FREERUN root cause — it is job-wide, not suite-specific. The pmc argv-split bug is confined to dualnicbc and dualnicbcha (suites that use pmc-based clock-ID or parent-data-set queries). The tgm and dualfollower suites do not invoke pmc directly and are unaffected by it.
+
+---
+
+**Actionable Recommendations:**
+
+1. **Fix the T-GM GNSS lock (highest priority, unblocks 20/25 failures):** Pin the `linuxptp` RPM version in the Dockerfile (or lock to a known-good snapshot repo) instead of pulling the latest CentOS Stream 9 package at build time. Verify that ts2phc is correctly receiving GNSS signal on `cnfdf30` and that the ptp4l/ts2phc IPC interface is intact for the pinned version. Run `yum downgrade linuxptp` to the last known-good version as an immediate mitigation.
+
+2. **Rebuild `ci/telco-runner:latest` from current `main` (fixes 5/25 pmc failures):** The current ptp-operator `main` branch has already replaced the broken pmc-based `getForeignClockIDViaPMC` path with log-based detection (`ptphelper.GetClockIDForeign`), eliminating the argv-split bug entirely. The telco-runner image just needs to be rebuilt from HEAD.
+
+3. **Pin image build timestamps or use digest-locked base images:** Both root causes originate from unpinned external package versions (`yum -y update` + `yum -y install linuxptp` at build time). Introduce digest pinning or a locked RPM repo to make builds reproducible and prevent silent regressions from upstream package updates.
+
+---
+
+**Overall Issue Class:** `test_regression` (the infrastructure/hardware environment appears functional; both failures trace to software regressions — a linuxptp RPM version change and a stale pre-built image)
+
+**Overall Severity:** CRITICAL (20/25 failures cascade from a single unresolved T-GM lock failure; the entire PTP synchronization chain is broken job-wide)
+
+
+---
+
+# Per-Suite Details
+
+
+## dualfollower
+
+---
+
+### Suite: dualfollower (3 failures)
+
+**Suite TL;DR:** All three dualfollower ClockSync tests timed out because the follower node `cnfdf31` never achieved a LOCKED state on either slave interface — traced upstream to the T-GM itself never locking to GNSS (clock class stuck at 248 / FREERUN).
+
+**Root Cause Groups:**
+
+- **Group 1: T-GM not locked → follower clock state metrics never populated** (affects: all 3 tests)
+  - **Evidence:**
+    ```
+    # From junit-failures.txt — Tests 1 &amp; 3:
+    no Follower port in expected LOCKED state for ptpconfig test-slave1
+    (node=cnfdf31.telco5gran.eng.rdu2.redhat.com, label=&quot;ptp/clock-under-test&quot;,
+    slaveIfs=[ens2f0np0 ens2f3np3]). Per-interface results:
+      ens2f0np0: clock state metric error: metric: openshift_ptp_clock_state,
+      nodeName: cnfdf31.telco5gran.eng.rdu2.redhat.com, aIf: ens2f0np0 not found,
+      available openshift_ptp_clock_state metri...
+
+    # From junit-failures.txt — Test 2:
+      ens2f3np3: role mismatch (expected=SLAVE, got=LISTENING)
+      ens2f0np0: clock state metric error: metric: openshift_ptp_clock_state,
+      nodeName: cnfdf31...
+
+    # From junit-failures.txt — upstream cause (tgm suite):
+    Test: [tgm-serial] WPC GM Verification Tests is verifying WPC GM state based on metrics
+    Expected ptp4l clock class to eventually be 6 for GM
+    Expected &lt;bool&gt;: false to be true
+
+    Test: [tgm-serial] WPC GM Verification Tests is verifying WPC GM state based on logs
+    could not find regex in log stream for openshift-ptp/linuxptp-daemon-pljkt
+    container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded
+    ```
+  - **Root Cause:** The T-GM node never achieved clock class 6 (LOCKED), remaining at class 248 (FREERUN/default) for the entire run, as shown by the tgm-serial suite failures. Without a locked grandmaster advertising a valid PTP clock, the follower interfaces on `cnfdf31` have no master to sync from: `ptp4l` on `ens2f0np0` never reaches the `s2` servo state that would trigger `updateClockStateMetrics()` (`pkg/daemon/metrics.go:~line 299`) to emit the `openshift_ptp_clock_state{iface=&quot;ens2f0np0&quot;}` Prometheus metric — so the test&#x27;s metric lookup returns &quot;not found&quot;. `ens2f3np3` is left in `LISTENING` (it received no Announce from a master, never promoted to `SLAVE`). The `register.go` in `pkg/metrics` registers `ClockState` as a `GaugeVec` with `{process, node, iface}` labels; the vector entry for `ens2f0np0` is simply never written.
+  - **Breaking PR/Commit:** Unknown — the test ran on 2026-06-21 against code built from the `main` branches of `linuxptp-daemon`, `cloud-event-proxy`, and `ptp-operator`. The next recorded commit to `linuxptp-daemon` is `0459bc0` (merged 2026-06-23, &quot;CNF-24996, OCPBUGS-90708: Sync from upstream 22-Jun-2026&quot;), which post-dates the run and is therefore not the direct cause. Check commits to `linuxptp-daemon` and `ptp-operator` main merged on or before 2026-06-20/21 that touch ts2phc, GNSS driver, or GM locking logic.
+  - **Is it a flake?** Possibly — a transient GNSS signal loss at the lab would produce this exact pattern across all suites. However the simultaneous `pmc bad command: GET / bad command: PARENT_DATA_SET` failures in the dualnicbc/dualnicbcha suites point toward a software regression (pmc protocol rejection by ptp4l) rather than pure infra. Treat as **not a confirmed flake** until the job is retried and the tgm lock state is verified.
+  - **Suggested Fix:** Rerun the job immediately; if the T-GM still fails to lock, bisect recent `linuxptp-daemon` and `ptp-operator` commits touching ts2phc GNSS acquisition or ptp4l management interface (the `pmc` &quot;bad command&quot; in other suites is a correlated signal). If the GM locks on retry, file as an infra flake (GNSS intermittency) and monitor frequency.
+
+**Suite Issue Class:** infra_other (upstream GM never locked; may also involve a software regression)
+**Suite Severity:** HIGH
+
+## dualnicbc
+
+---
+
+### Suite: dualnicbc (9 failures)
+
+**Suite TL;DR:** All 9 failures stem from two independent causes: ptp4l on the BC never reaching locked state (clock class stuck at 248/FREERUN rather than 6/LOCKED), and a pmc command invocation incompatibility in the ci-telco-runner test binary causing &quot;bad command&quot; responses.
+
+**Root Cause Groups:**
+
+- **Group 1: pmc non-interactive command format incompatibility** (affects: &quot;Slave can sync to master&quot;, &quot;Downst</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-tests"><ul><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails [Serial]</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2068778616849698816" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-06-25)</span></li></ul></td>
+</tr>
+<tr id="af71962cadde906c">
+  <td class="col-rc">
+    <div class="rc-text">The `openshift_ptp_clock_state` metric (registered in `linuxptp-daemon/pkg/metrics/register.go:57-63` with labels `{process, node, iface}`) is only set when `UpdateClockStateMetrics()` in `pkg/metrics/exporter.go:15-23` is called with a servo state change for that interface. A metric label combination `{node=cnfdf31, iface=ens2f0np0}` being entirely absent means linuxptp-daemon on `cnfdf31` never processed a servo state log line for `ens2f0np0` — i.e., ptp4l never elected that port as SLAVE and never emitted a servo lock event. The explicit `role mismatch (expected=SLAVE, got=LISTENING)` in Test 3 for `ens2f3np3` corroborates this: both follower ports are stuck in LISTENING/unelected state. The tgm suite failures (clock class 248 = freerun, never 6) indicate the upstream Grandmaster never achieved GNSS lock; with the T-GM in freerun the entire downstream chain — BC → dualfollower slave — cannot lock, which is consistent with all suites failing in the same run. Additionally, the `pmc ba</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">**TL;DR:** WPC T-GM grandmaster never achieved GNSS lock (class 248), collapsing all 4 suites; pmc argument bug added 5 independent failures.
+
+---
+
+**Root Cause Groups:**
+
+- **20/25 failures — GM in FREERUN (clock class 248), cascading to all BC/slave/follower sync tests**
+  Affects: tgm (5/5), dualnicbcha (~6/8), dualnicbc (~6/9), dualfollower (3/3). The WPC T-GM node hosting `linuxptp-daemon-7g7z8` never transitioned out of FREERUN during the run. With no locked GM advertising Announce messages, the entire downstream chain — BC → dualnicbc → dualnicbcha → dualfollower slaves — could not lock. The tgm log stream stayed open but hit `context deadline exceeded` after 340 s without ever emitting a LOCKED event; all four state-based tgm tests timed out on `Expected ptp4l clock class to eventually be 6 for GM` / `&lt;bool&gt;: false`. The dualfollower node `cnfdf31` exhibits both missing `openshift_ptp_clock_state` metric for `ens2f0np0` and `ens2f3np3` stuck in LISTENING — consistent with no upstream Announce to trigger SLAVE election.
+
+- **5/25 failures — pmc invoked with split arguments; `GET PARENT_DATA_SET` rejected as two bad commands**
+  Affects: dualnicbc (&quot;Slave can sync to master&quot;, &quot;Downstream slave can sync to BC master&quot;, &quot;Can provide a profile with higher priority&quot;) and dualnicbcha (&quot;Slave can sync to master&quot;, &quot;Downstream slave can sync to BC master&quot;). `pmc` is called with `GET` and `PARENT_DATA_SET` as separate argv elements; the binary responds `bad command: GET` / `bad command: PARENT_DATA_SET`. Identical verbatim error appears in both suites, ruling out a flake. Likely triggered by the RHCOS 10.2 pmc binary (linuxptp ≥ 4.3, el10_2) changing batch-mode argument tokenization, or the test helper failing to quote the combined string. Other pmc queries (e.g. `GET DEFAULT_DATA_SET`) still succeed, confirming the socket and ptp4l process are reachable.
+
+---
+
+**Cross-Suite Patterns:**
+
+| Root Cause | dualfollower | dualnicbc | dualnicbcha | tgm |
+|---|---|---|---|---|
+| GM FREERUN / GNSS never locked | All 3 | ~6 | ~6 | All 5 |
+| pmc split-arg bug | — | 3 | 2 | — |
+
+- The GM FREERUN failure is **shared across all 4 suites** — it is the single largest driver and the only failure in tgm and dualfollower.
+- The pmc split-arg bug is **shared between dualnicbc and dualnicbcha only** (suites that exercise `PARENT_DATA_SET` queries via the BC node).
+- No failures are genuinely suite-specific; the dualfollower and tgm failures are pure downstream consequences of the shared GM not locking.
+
+---
+
+**Actionable Recommendations:**
+
+1. **Re-run the job and inspect GM GNSS hardware first.** Confirm whether the WPC T-GM node achieves GNSS/DPLL lock in a fresh run. If it fails again, check the GNSS antenna cable, receiver status, and `ts2phc` DPLL netlink events on that node. This single fix would resolve ~20/25 failures.
+
+2. **Fix pmc invocation to pass `GET PARENT_DATA_SET` as a single quoted argument.** In both the test helper (`ptp-operator-conformance-test`) and any `exec.Command` / shell call in `linuxptp-daemon`, ensure the action+management-ID are passed as one argument string (e.g. `exec.Command(&quot;pmc&quot;, ..., &quot;GET PARENT_DATA_SET&quot;)`), or switch to the interactive `RunPMCExpGetParentDS` path with lowercase command (`&quot;get PARENT_DATA_SET&quot;`) to match the RHCOS 10.2 pmc binary&#x27;s expected input. This resolves the remaining 5 failures.
+
+3. **Add a pre-flight GM-lock gate to the CI job.** Before running any BC/slave/follower suite, assert that the T-GM node has clock class ≤ 7 (LOCKED); fail fast with a clear infra error rather than letting all 4 suites time out. This would surface the GNSS issue immediately and save ~30 min of wasted CI time per run.
+
+---
+
+**Overall Issue Class:** `test_flake` (dominant: GNSS hardware failure is a known lab environmental flake) + `test_regression` (secondary: pmc argument bug introduced with RHCOS 10.2 / linuxptp upstream sync `0459bc0`)
+
+**Overall Severity:** CRITICAL — 25/25 failures, 4/4 suites completely down in a nightly periodic job.
+
+
+---
+
+# Per-Suite Details
+
+
+## dualfollower
+
+---
+
+### Suite: dualfollower (3 failures)
+
+**Suite TL;DR:** All 3 dualfollower ClockSync tests timed out waiting for node `cnfdf31`&#x27;s follower interfaces to reach LOCKED state because the `openshift_ptp_clock_state` metric for `ens2f0np0` was never emitted by linuxptp-daemon, and `ens2f3np3` was stuck in LISTENING rather than SLAVE role.
+
+**Root Cause Groups:**
+
+- **Group 1: Slave node never locked — missing clock_state metric and port stuck in LISTENING** (affects: all 3 tests)
+  - **Evidence:**
+    ```
+    # Tests 1 &amp; 2 — identical error
+    no Follower port in expected LOCKED state for ptpconfig test-slave1
+    (node=cnfdf31.telco5gran.eng.rdu2.redhat.com, label=&quot;ptp/clock-under-test&quot;,
+     slaveIfs=[ens2f0np0 ens2f3np3]). Per-interface results:
+      ens2f0np0: clock state metric error: metric: openshift_ptp_clock_state,
+        nodeName: cnfdf31.telco5gran.eng.rdu2.redhat.com, aIf: ens2f0np0 not found,
+        available op[tions: ...]
+    ```
+    ```
+    # Test 3 — additional symptom
+    no Follower port in expected LOCKED state for ptpconfig temp
+    (node=cnfdf31.telco5gran.eng.rdu2.redhat.com, label=&quot;&lt;nil&gt;&quot;,
+     slaveIfs=[ens2f3np3 ens2f0np0]). Per-interface results:
+      ens2f3np3: role mismatch (expected=SLAVE, got=LISTENING)
+      ens2f0np0: clock state metric error: metric: openshift_ptp_clock_state,
+        nodeName: cnfdf31.telco5gran.eng.rdu2.redhat.com, aIf: ens2f0np0 not found
+    ```
+    ```
+    # Broader context from other suites (junit-failures.txt)
+    parentPortIdentity.clockIdentity not found in pmc output for /var/run/ptp4l.1.config:
+      bad command: GET
+      bad command: PARENT_DATA_SET
+    ```
+    ```
+    # tgm suite (junit-failures.txt)
+    Expected ptp4l clock class state to eventually be Locked (class 6)
+    ...clock class: 248  (← default/FREERUN value, never reached 6)
+    ```
+  - **Root Cause:** The `openshift_ptp_clock_state` metric (registered in `linuxptp-daemon/pkg/metrics/register.go:57-63` with labels `{process, node, iface}`) is only set when `UpdateClockStateMetrics()` in `pkg/metrics/exporter.go:15-23` is called with a servo state change for that interface. A metric label combination `{node=cnfdf31, iface=ens2f0np0}` being entirely absent means linuxptp-daemon on `cnfdf31` never processed a servo state log line for `ens2f0np0` — i.e., ptp4l never elected that port as SLAVE and never emitted a servo lock event. The explicit `role mismatch (expected=SLAVE, got=LISTENING)` in Test 3 for `ens2f3np3` corroborates this: both follower ports are stuck in LISTENING/unelected state. The tgm suite failures (clock class 248 = freerun, never 6) indicate the upstream Grandmaster never achieved GNSS lock; with the T-GM in freerun the entire downstream chain — BC → dualfollower slave — cannot lock, which is consistent with all suites failing in the same run. Additionally, the `pmc bad command: GET / PARENT_DATA_SET` errors in the dualnicbc suite (same run, `linuxptp-daemon` branch `release-5.0`) indicate a ptp4l management interface issue. The commit `OCPBUGS-90708: Sync from upstream (22-Jun-2026)` in linuxptp-daemon (merged 2026-06-23, two days after this run) and the commit `OCPBUGS-88369: Fix CLOCK_REALTIME dual-publisher conflict in ParseTBCLogs` in cloud-event-proxy (merged 2026-06-25) were both pending at the time of this job.
+  - **Breaking PR/Commit:** Likely pre-dates the fix in linuxptp-daemon PR #613 (`OCPBUGS-90708 / CNF-24996`, merged 2026-06-23, SHA `0459bc0`) and cloud-event-proxy PR #701 (`OCPBUGS-88369`, merged 2026-06-25, SHA `fc5d567`) — both merged after this CI run on 2026-06-21. The breaking change introducing the regression is Unknown (upstream/downstream commit not visible in the shallow clone).
+  - **Is it a flake?** No — all four test suites in the same job (dualfollower, dualnicbc, dualnicbcha, tgm) failed with consistent, correlated errors. The T-GM staying at clock class 248 is a systematic fa</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-tests"><ul><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Verify clockClass when locking PTP source on dual NIC boundary clock [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP metric is present verifies on slave [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests Running with event enabled Should receive events after linuxptp-daemon pod restart [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP Outage recovery The slave node network interface is taken down and up [Serial]</li><li class='more'>+15 more</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2068672922322472960" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-06-25)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2068778616849698816" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-06-25)</span></li></ul></td>
+</tr>
+<tr id="ba422e8f8af0f424">
+  <td class="col-rc">
+    <div class="rc-text">After GNSS signal loss on node `cnfdf32.telco5gran.eng.rdu2.redhat.com`, the WPC hardware DPLL transitions directly from LOCKED to FREERUN (class 248) without sustaining HOLDOVER (class 7). In `pkg/event/event.go`, clock class 7 requires `dpllState == PTP_HOLDOVER`; since the DPLL reports FREERUN immediately, that path is never taken. In test 2, HOLDOVER was briefly entered (class 7 visible in the event stream) but exhausted faster than the metric-polling step could verify it — confirming the DPLL holdover window on this hardware is abnormally short. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** WPC T-GM node cnfdf32 DPLL never entered HOLDOVER (clock class 7) after GNSS coldboot.
+
+**Root Cause Groups:**
+
+- **Group 1: DPLL fails to reach/maintain clock class 7 (HOLDOVER) after GNSS loss** (affects Tests: both)
+  - **Evidence:**
+    ```
+    # Test 1 — DPLL stuck at FREERUN for full 200s after GNSS disabled:
+    Matched line: [ptp4l 248]  → GNSS disabled → Clock class not yet 7, retrying... (×32+)
+    → GNSS enabled → [FAILED] Timed out waiting for clock class 7 (ptp.go:3802, 3m20s elapsed)
+
+    # Test 2 — class 7 transient, immediately overtaken by 248:
+    PtpClockClassChange Event recieved  map[metric:6], map[metric:7], map[metric:248]
+    GnssStateChange Event recieved  map[metric:0 notification:FAILURE-NOFIX]
+    → STEP: Verifying ClockClass value to 7 → [FAILED] expected a metric [7.000000] but got map[metric:248] (ptp.go:3898)
+    ```
+  - **Root Cause:** After GNSS signal loss on node `cnfdf32.telco5gran.eng.rdu2.redhat.com`, the WPC hardware DPLL transitions directly from LOCKED to FREERUN (class 248) without sustaining HOLDOVER (class 7). In `pkg/event/event.go`, clock class 7 requires `dpllState == PTP_HOLDOVER`; since the DPLL reports FREERUN immediately, that path is never taken. In test 2, HOLDOVER was briefly entered (class 7 visible in the event stream) but exhausted faster than the metric-polling step could verify it — confirming the DPLL holdover window on this hardware is abnormally short.
+  - **Breaking PR/Commit:** Unknown — the upstream sync PR #613 (`0459bc0`, CNF-24996/OCPBUGS-90708, merged 2026-06-23) was an upstream sync to the main branch and does not directly affect the `release-4.22` branch under test; no code regression identified.
+  - **Is it a flake?** Yes — test 2 shows holdover *does* occur but transiently; this is a hardware-timing sensitivity, consistent with intermittent failures when DPLL holdover duration is at the margins.
+  - **Suggested Fix:** Investigate DPLL holdover configuration on `cnfdf32` (check `LocalHoldoverTimeout` configured for the WPC hardware); if hardware is degraded or misconfigured for holdover, reprovisioning or reconfiguring the node should resolve it. Retry the job to confirm transience.
+  - **Affected tests:**
+    - `[It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]`
+    - `[It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]`
+
+---
+
+**Relation Between Groups:** Single group — both failures share the same root cause: DPLL on cnfdf32 not sustaining HOLDOVER state long enough after GNSS loss. Test 1 never sees class 7 at all; test 2 sees it transiently. Both are direct manifestations of the same abnormally short holdover window on this hardware.
+
+**Per-Version Notes:** OCP 4.22 (nightly-2026-06-23-164229) — both failures in the `[tgm-serial]` suite only; all other suites (bc, dualfollower, dualnicbc) show 0 failures and passed cleanly.
+
+**Affected Images:** `image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.22`, `image-registry.openshift-image-registry.svc:5000/openshift-ptp/linuxptp-daemon:4.22`, `image-registry.openshift-image-registry.svc:5000/openshift-ptp/cloud-event-proxy:4.22`
+
+**Overall Issue Class:** test_flake
+
+**Overall Severity:** LOW</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-tests"><ul><li>[It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2070046903499755520" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-06-25)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2070122417379872768" target="_blank">4.22-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-06-25)</span></li></ul></td>
+</tr>
+<tr id="ac942a3d0e1e6ca0">
+  <td class="col-rc">
+    <div class="rc-text">The test helper `GetProfileLogID` in `test/pkg/ptphelper/ptphelper.go` opens a live Kubernetes log stream (`Follow: true`, no `TailLines`) via `pods.GetPodLogsRegex` searching for the regex `(?m).*?Ptp4lConf: #profile: &lt;name&gt;(.|\n)*?message_tag \[([^\]]*)\]` within a 3-minute timeout. The stream — opened with `context.TODO()` so no test-side deadline — is being terminated by the infrastructure with `context deadline exceeded` before the regex can be matched. This error pattern repeats identically across all ClockSync tests in bc, dualfollower, dualnicbc, and dualnicbcha suites, confirming a cluster-wide log streaming connectivity issue rather than a daemon log format regression. The `linuxptp-daemon` does emit this log line (`printNodeProfile` in `pkg/daemon/daemon.go:1369` writes the rendered `Ptp4lConf` with `#profile:` prefix and `message_tag`), but the HTTP connection carrying the pod log stream is dropped before the data reaches the test. The progressive `Unauthorized` failures at</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">**TL;DR:** Cluster log-stream collapse + API auth expiry wiped 22 of 24 tests; a linuxptp-daemon state-machine regression caused the remaining 2 TGM holdover failures.
+
+---
+
+**Root Cause Groups:**
+
+- **12/24 failures — linuxptp-daemon log stream unreachable (ClockSync `GetProfileLogID`/`GetClockIDForeign` timeout):** All ClockSync tests in bc (3), dualfollower (3), dualnicbc (3), dualnicbcha (2), and oc-serial test 1 (1) hit `could not find regex in log stream … error reading from stream: context deadline exceeded` or `timedout waiting for matches`. The test helper opens a live `kubectl logs --follow` stream and waits for a ptp4l profile or sync line that never arrives within 3–10 minutes. Two compounding factors: (a) ptp4l may not be reaching SLAVE state cluster-wide (no grandmaster reachable or log format changed by PR #613), and (b) when the API server began degrading, streaming connections were silently severed rather than cleanly refused.
+
+- **10/24 failures — Kubernetes API server Unauthorized mid-run (oc-serial tests 2–11):** After the first oc-serial test completed at ~07:29 UTC, the kubeconfig credentials expired or the API server rejected them (`Unauthorized` / `couldn&#x27;t get current server API group list: the server has asked for the client to provide credentials`). Every subsequent test aborted immediately at the DaemonSet readiness check (`linuxptp-daemon DaemonSet must exist before readiness wait → Unauthorized`). One variant also showed `dial tcp 10.8.34.117:6443: connection refused`, indicating the API server briefly went fully unreachable.
+
+- **2/24 failures — TGM holdover state-machine regression (tgm suite):** Both T-GM holdover tests fail deterministically: disabling GNSS causes `ts2phcState` to be forced to `PTP_FREERUN` (not `PTP_HOLDOVER`) when `NoSourceTSCount == 2` in `linuxptp-daemon/pkg/event/event.go:402–403`, making ClockClass 7 unreachable. Test 1 exhausted its 3-minute poll; test 2 observed `map[metric:248]` (freerun) throughout the 10-second sampling window. This is a deterministic regression, not a flake.
+
+---
+
+**Cross-Suite Patterns:**
+
+| Pattern | Suites affected |
+|---|---|
+| `GetProfileLogID` / `GetClockIDForeign` log stream timeout | bc, dualfollower, dualnicbc, dualnicbcha, oc (test 1) |
+| API server Unauthorized cascade | oc (tests 2–11) |
+| GNSS → ClockClass 7 holdover state-machine bug | tgm |
+
+The log-stream failures are 100% cross-suite (5 of 6 suites, identical error text, different pod names) — confirming a cluster-wide cause rather than a suite-specific issue. The oc Unauthorized failures are oc-specific but are a secondary consequence of the same cluster degradation event. The tgm failures are suite-specific and code-driven.
+
+No suite is entirely clean. dualnicbcha is the only suite where the log-stream failure count is below its total suite size (2 of 2 failed; no &quot;passing&quot; baseline in that suite either).
+
+---
+
+**Actionable Recommendations:**
+
+1. **Re-run the job immediately and monitor the PTP grandmaster.** The log-stream and API-auth failures bear all hallmarks of a transient lab infrastructure event (grandmaster unreachable, credential rotation, API server instability on `telco5gran.eng.rdu2.redhat.com` around 2026-06-24 07:00–08:30 UTC). A clean re-run will confirm whether the 22 non-TGM failures are infra flakes.
+
+2. **Audit linuxptp-daemon PR #613 (`0459bc0`, &quot;upstream-sync-2026-06-22&quot;) for ptp4l log-format changes.** If the upstream sync altered the format of the `Ptp4lConf:` or `selected best master clock` log lines, the test regexes in `ptphelper.go` and `pods.go` will never match regardless of cluster health. Compare the ptp4l log output from a pre-PR-613 build against a post-PR-613 pod to confirm or rule out a log-format regression.
+
+3. **Fix the TGM holdover state machine in `event.go:402–403`.** Remove or guard the unconditional `ts2phcState = PTP_FREERUN` override when `NoSourceTSCount == 2`; instead, allow the state to transition to `PTP_HOLDOVER` so the existing ClockClass 7 branch at lines 459–461 and 430–433 becomes reachable. This is a deterministic code regression and will not self-heal with a re-run.
+
+---
+
+**Overall Issue Class:** `infra_other` (dominant — 22/24 failures) with an embedded `test_regression` (2/24 tgm failures from PR #613 state-machine change)
+
+**Overall Severity:** CRITICAL — the entire 24-test job failed; the cluster experienced mid-run auth collapse, and a code regression in the TGM holdover path is deterministic and will recur on every re-run.
+
+
+---
+
+# Per-Suite Details
+
+
+## bc
+
+---
+
+### Suite: bc (3 failures)
+
+**Suite TL;DR:** All 3 ClockSync tests failed because Kubernetes log streaming to `linuxptp-daemon` pods returned `context deadline exceeded` / timeout errors during the `GetProfileLogID` step, preventing the test from locating the ptp4l config log line needed to derive the foreign master clock ID.
+
+**Root Cause Groups:**
+
+- **Group 1: Kubernetes pod log stream failure in `GetProfileLogID`** (affects: all 3 tests — &quot;Slave can sync to master&quot;, &quot;Downstream slave can sync to BC master&quot;, &quot;Can provide a profile with higher priority&quot;)
+  - **Evidence:**
+    ```
+    could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-hrsj8 container=linuxptp-daemon-container, err=timedout waiting for matches
+
+    could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-fpgx7 container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded
+    ```
+    From the detailed agent logs (prior identical run same day, pod `linuxptp-daemon-5mcqg`):
+    ```
+    [ptphelper.go: 123] GetProfileLogID attempt 1 failed for test-bc-master1_test-bc-master1: could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-5mcqg container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded, retrying...
+    [ptphelper.go: 123] GetProfileLogID attempt 2 failed for test-bc-master1_test-bc-master1: ... err=error reading from stream: context deadline exceeded, retrying...
+    [ptptesthelper.go: 68] GetClockIDForeign retry due to err: could not get any profile line, err=could not find regex in log stream ... err=error reading from stream: context deadline exceeded
+    ```
+    Additionally, the API server was returning `Unauthorized` by 08:29 UTC (end of job), with the bc ClockSync tests running at 07:02–08:29 UTC — indicating progressive auth/credential degradation throughout the long 3.5-hour job:
+    ```
+    error: You must be logged in to the server (Unauthorized)
+    E0624 08:29:47.118913 memcache.go:265] &quot;Unhandled Error&quot; err=&quot;couldn&#x27;t get current server API group list: the server has asked for the client to provide credentials&quot;
+    ```
+  - **Root Cause:** The test helper `GetProfileLogID` in `test/pkg/ptphelper/ptphelper.go` opens a live Kubernetes log stream (`Follow: true`, no `TailLines`) via `pods.GetPodLogsRegex` searching for the regex `(?m).*?Ptp4lConf: #profile: &lt;name&gt;(.|\n)*?message_tag \[([^\]]*)\]` within a 3-minute timeout. The stream — opened with `context.TODO()` so no test-side deadline — is being terminated by the infrastructure with `context deadline exceeded` before the regex can be matched. This error pattern repeats identically across all ClockSync tests in bc, dualfollower, dualnicbc, and dualnicbcha suites, confirming a cluster-wide log streaming connectivity issue rather than a daemon log format regression. The `linuxptp-daemon` does emit this log line (`printNodeProfile` in `pkg/daemon/daemon.go:1369` writes the rendered `Ptp4lConf` with `#profile:` prefix and `message_tag`), but the HTTP connection carrying the pod log stream is dropped before the data reaches the test. The progressive `Unauthorized` failures at job end suggest the kubeconfig token was near expiry, which may also have disrupted API server proxy connections to node kubelets mid-run.
+  - **Breaking PR/Commit:**</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-tests"><ul><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li class='more'>+14 more</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2069646892442062848" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-06-25)</span></li></ul></td>
+</tr>
+<tr id="99476252f94e0776">
+  <td class="col-rc">
+    <div class="rc-text">The Ansible playbook `fetch-kubeconfig.yml` attempted to `kcli scp root@ptpcimno-installer:/root/ocp/auth/kubeconfig` but the file was absent, indicating the OCP installation on the baremetal lab cluster `ptpcimno` never completed. The API server at `10.8.34.117:6443` was unreachable for every subsequent step. The cluster-setup step exited with code 1 at 05:19:38Z — all downstream gather steps cascaded from this single infra failure. No PTP-operator code or tests ever ran. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** Telco lab cluster (ptpcimno) was unreachable; no PTP tests ran due to infra failure.
+
+**Root Cause Groups:**
+
+- **Group 1: Telco lab cluster not provisioned / API server unreachable** (affects: all job steps post-setup)
+  - **Evidence:**
+    ```
+    scp: /root/ocp/auth/kubeconfig: No such file or directory
+    (cluster-setup step, 2026-06-25T05:19:38Z, exit status 1)
+
+    ClusterVersion: Installing &quot;&quot; for &lt;unknown&gt;: &lt;unknown&gt;
+    clusteroperators are missing
+
+    dial tcp 10.8.34.117:6443: i/o timeout
+    (gather-must-gather, gather-extra, gather-audit-logs — all fail hitting 10.8.34.117:6443)
+    ```
+  - **Root Cause:** The Ansible playbook `fetch-kubeconfig.yml` attempted to `kcli scp root@ptpcimno-installer:/root/ocp/auth/kubeconfig` but the file was absent, indicating the OCP installation on the baremetal lab cluster `ptpcimno` never completed. The API server at `10.8.34.117:6443` was unreachable for every subsequent step. The cluster-setup step exited with code 1 at 05:19:38Z — all downstream gather steps cascaded from this single infra failure. No PTP-operator code or tests ever ran.
+  - **Breaking PR/Commit:** Unknown — lab environment state issue, not a code regression.
+  - **Is it a flake?** Yes — transient lab cluster provisioning failure; no code change triggered it.
+  - **Suggested Fix:** Retry the job; if it recurs, inspect the `ptpcimno` lab cluster provisioning pipeline and verify the installer VM has a completed kubeconfig at `/root/ocp/auth/kubeconfig` before CI jobs are scheduled against it.
+  - **Affected tests:** All steps — `e2e-telco5g-ptp-telco5g-ptp-cluster-setup` (failed), `gather-must-gather`, `gather-extra`, `gather-audit-logs` (all cascaded failures). Zero PTP e2e tests executed.
+
+---
+
+**Relation Between Groups:** Single root cause — lab cluster not ready cascades into every subsequent step.
+
+**Per-Version Notes:**
+- 4.19: Confirmed — lab cluster `ptpcimno` API unreachable, cluster-setup step failed.
+- 4.21: Likely same infra root cause if using the same telco lab pool; no separate evidence available.
+- 4.23: Likely same infra root cause if using the same telco lab pool; no separate evidence available.
+
+**Affected Images:** None — image imports all succeeded (`registry.ci.openshift.org/ocp/release:4.19.0-0.nightly-2026-06-24-152413`, 187 images imported cleanly). No image pull failures.
+
+**Overall Issue Class:** infra_other
+
+**Overall Severity:** LOW</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-tests"><ul><li>Timeout — context deadline exceeded</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.19-e2e-telco5g-ptp/2070009302407450624" target="_blank">4.19-e2e-telco5g-ptp</a> <span class="date">(2026-06-25)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-e2e-telco5g-ptp/2069933980555153408" target="_blank">4.21-e2e-telco5g-ptp</a> <span class="date">(2026-06-25)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-e2e-telco5g-ptp-upstream/2068559798881751040" target="_blank">4.23-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-06-25)</span></li></ul></td>
+</tr>
+<tr id="c8887cfbeba86a64">
+  <td class="col-rc">
+    <div class="rc-text">The `ptp-operator` Dockerfile (`FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17`) references a CI builder image that no longer exists at registry.ci.openshift.org (manifest unknown). The build pod&#x27;s script uses `set +xe` / `set -x` (without restoring `-e`), so `make docker-build` and `podman push` both fail silently and the pod exits 0. The outer deploy script then runs `make deploy` pointing at an image that was never pushed; the ptp-operator pod cannot start, so it never reconciles the `PtpOperatorConfig` and the `linuxptp-daemon` DaemonSet is never created. The 400-second wait times out and the step exits 1. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">Now I have everything I need. 
+
+---
+
+**TL;DR:** CI builder image `registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17` was missing, preventing ptp-operator image build and deployment.
+
+**Root Cause Groups:**
+
+- **Group 1: CI builder image unavailable (`manifest unknown`)** (affects: deployment setup / `linuxptp-daemon` DaemonSet wait timeout)
+  - **Evidence:**
+    ```
+    [1/2] STEP 1/6: FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17 AS builder
+    Trying to pull registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17...
+    Error: creating build container: initializing source docker://registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17: reading manifest rhel-9-golang-1.22-openshift-4.17 in registry.ci.openshift.org/ocp/builder: manifest unknown
+    make: *** [Makefile:122: docker-build] Error 125
+    + podman push image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17 --tls-verify=false
+    Error: image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17: image not known
+    ```
+    Then operator is deployed with the unpushed image → DaemonSet never created:
+    ```
+    Error from server (NotFound): daemonsets.apps &quot;linuxptp-daemon&quot; not found
+    + &#x27;[&#x27; 1781942433 -gt 1781942431 &#x27;]&#x27;
+    + return 1
+    ```
+  - **Root Cause:** The `ptp-operator` Dockerfile (`FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17`) references a CI builder image that no longer exists at registry.ci.openshift.org (manifest unknown). The build pod&#x27;s script uses `set +xe` / `set -x` (without restoring `-e`), so `make docker-build` and `podman push` both fail silently and the pod exits 0. The outer deploy script then runs `make deploy` pointing at an image that was never pushed; the ptp-operator pod cannot start, so it never reconciles the `PtpOperatorConfig` and the `linuxptp-daemon` DaemonSet is never created. The 400-second wait times out and the step exits 1.
+  - **Breaking PR/Commit:** Unknown — the builder image `rhel-9-golang-1.22-openshift-4.17` was likely pruned or never promoted to registry.ci for this nightly; no source code change is responsible.
+  - **Is it a flake?** No — the builder image tag is deterministically absent; every run on 4.17 (and likely 4.18 with its equivalent tag) will reproduce this until the image is re-published or the Dockerfile is updated.
+  - **Suggested Fix:** Re-publish or pin to an available builder image in the `ptp-operator` Dockerfile (e.g. a quay.io mirror or a tag that is known to be retained). Additionally, restore `set -e` after the credential-hiding `set +e` block so that image build failures are not silently swallowed.
+  - **Affected tests:** `e2e-telco5g-ptp-telco5g-ptp-tests` (the sole test step; no individual test names extracted because deployment never completed)
+
+---
+
+**Relation Between Groups:** Single root cause — the missing CI builder image cascades: build fails → image not pushed → operator pod cannot start → DaemonSet not created → timeout.
+
+**Per-Version Notes:**
+- 4.17: confirmed — `registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17` returns `manifest unknown`
+- 4.18: same root cause expected — the equivalent tag `rhel-9-golang-1.22-openshift-4.18` is likely also absent; no direct evidence in this run but the failure pattern is identical
+
+**Affected Images:** `registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17` (missing); `image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17` (never built/pushed)
+
+**Overall Issue Class:** `infra_other`
+
+**Overall Severity:** HIGH — the entire ptp-operator deployment is blocked on every nightly run until the builder image is restored or the Dockerfile is fixed.</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-tests"><ul><li>Cluster in error state (must-gather triggered)</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.17-e2e-telco5g-ptp/2068212470513668096" target="_blank">4.17-e2e-telco5g-ptp</a> <span class="date">(2026-06-25)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.18-e2e-telco5g-ptp/2070220604283293696" target="_blank">4.18-e2e-telco5g-ptp</a> <span class="date">(2026-06-25)</span></li></ul></td>
+</tr>
+<tr id="91b59bcf6e86a6d3">
   <td class="col-rc">
     <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework No PTP project tests were executed. The `telco5g-ptp-tests` step exited in 1 second with a pre-flight node readiness guard, before any test code ran. *(No failed test sections — zero project tests were run; see explanation below)* Relation Between Failures: There is a single root cause: worker node `cnfdf30.telco5gran.eng.rdu2.redhat.com` was in `NotReady,SchedulingDisabled` / status `Unknown` at job start time (2026-06-08T09:18:07Z). The `telco5g-ptp-tests` entrypoint script performs a hard pre-flight check (`oc get nodes … | grep -v &#x27;True$&#x27;`) and aborts with exit 1 if any node is not Ready. This guard fired immediately, so the entire PTP test suite was skipped — no test results were produced and no project-level regression can be inferred. Per-Version Notes:</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the data needed. Here is the full analysis:
