@@ -38,7 +38,7 @@ OUTPUT_DIR = os.environ.get("OUTPUT_DIR", f"{REPO_DIR}/public")
 RESULTS = os.path.join(OUTPUT_DIR, "results.json")
 
 MAX_RESULTS_SIZE = 50 * 1024 * 1024
-AGENT_TIMEOUT = 900  # 15 minutes per issue
+AGENT_TIMEOUT = 1800  # 30 minutes per issue
 MIN_VERSION = os.environ.get("MIN_VERSION", "")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/cursor/")
@@ -104,13 +104,93 @@ def run_cursor_agent(prompt: str, cwd: str = INVESTIGATE_DIR) -> str:
             if stderr:
                 print(f"    stderr: {stderr[:500]}")
             if stdout:
-                return stdout.strip()[:8000]
+                return _dedup_output(stdout.strip())
             return ""
 
-        return stdout.strip()[:8000] if stdout.strip() else ""
+        return _dedup_output(stdout.strip()) if stdout.strip() else ""
     except Exception as e:
         print(f"    Agent error: {e}")
     return ""
+
+
+def _dedup_output(text: str) -> str:
+    """Remove repetition loops from AI agent output.
+
+    The Cursor CLI sometimes gets stuck repeating the same analysis block.
+    Detects repetition by finding repeated structural anchors and keeps the
+    longest complete block.
+    """
+    import re as _re
+
+    # All possible repetition boundaries -- preambles AND structural markers
+    boundary_re = _re.compile(
+        r"(?:(?:Now )?I (?:now )?have (?:all the |sufficient |enough )?(?:evidence|information)[^\n]*"
+        r"|Let me (?:write|compile) (?:the |all )?(?:final |full )?analysis[^\n]*"
+        r"|Here is the (?:final |full )?analysis[^\n]*)",
+        _re.IGNORECASE,
+    )
+
+    # Structural anchors that should appear only ONCE in a clean output.
+    # Ordered by specificity -- prefer splitting on unique top-level markers first.
+    anchors = [
+        "Cross-Suite Summary",
+        "Per-Suite Details",
+        "Actionable Recommendations",
+        "Cross-Suite Patterns",
+        "Overall Severity:",
+    ]
+
+    # Find the best anchor to split on (the one that repeats most)
+    best_anchor = None
+    best_count = 1
+    for anchor in anchors:
+        count = text.count(anchor)
+        if count > best_count:
+            best_anchor = anchor
+            best_count = count
+
+    if best_anchor and best_count > 1:
+        # Split on the repeating structural anchor
+        parts = text.split(best_anchor)
+        # Reconstruct blocks: each block starts with the anchor
+        blocks = []
+        for i in range(1, len(parts)):
+            # Find the end of this block (next occurrence or end)
+            end_idx = i + 1
+            block = best_anchor + parts[i]
+            # If next part starts with content before the anchor, include it
+            if i == 1 and parts[0].strip():
+                block = parts[0].rstrip() + "\n" + block
+            blocks.append(block)
+
+        if blocks:
+            # Pick the longest block (most complete)
+            best = max(blocks, key=len)
+            print(f"    Dedup: '{best_anchor}' repeated {best_count}x, "
+                  f"keeping best ({len(best)} chars out of {len(text)} total)")
+            text = best
+
+    # Also strip preamble markers
+    preamble_positions = [m.start() for m in boundary_re.finditer(text)]
+
+    if len(preamble_positions) > 1:
+        # Multiple preambles remain -- extract blocks, keep longest
+        blocks = []
+        for i, pos in enumerate(preamble_positions):
+            end = preamble_positions[i + 1] if i + 1 < len(preamble_positions) else len(text)
+            block = text[pos:end]
+            first_nl = block.find("\n")
+            content = block[first_nl:].strip() if first_nl != -1 else block.strip()
+            blocks.append(content)
+        text = max(blocks, key=len)
+        print(f"    Dedup: stripped {len(preamble_positions)} preamble markers")
+
+    # Strip remaining preamble fragments
+    text = boundary_re.sub("", text).strip()
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+
+    return text[:16000]
 
 
 MAX_EVIDENCE_FILES = 12
@@ -126,6 +206,7 @@ _SKIP_PATTERNS = (
 )
 _KEEP_PATTERNS = (
     "junit.xml", "test_results", "build-log", "finished.json",
+    "pod-logs/", "pod-logs__", "pod_logs",
     "commatrix-e2e/", "network-flow-matrix",
     "matrix-diff", "doc-diff", "raw-ss", "communication-matrix",
     "nftables", "mc-master", "mc-worker", "ss-generated",
@@ -187,22 +268,25 @@ def dump_evidence(job: dict) -> list[str]:
             gcs_raw = f"https://storage.googleapis.com/test-platform-results/logs"
             urls = [
                 f"Prow UI: {prow_url}",
-                f"Artifacts: {gcs_base}/{job_path}/{build_id}/artifacts/",
-                f"Build log: {gcs_base}/{job_path}/{build_id}/build-log.txt",
+                f"Artifacts (browse): {gcs_base}/{job_path}/{build_id}/artifacts/",
+                f"Artifacts (raw curl): {gcs_raw}/{job_path}/{build_id}/artifacts/",
+                f"Build log: {gcs_raw}/{job_path}/{build_id}/build-log.txt",
+                f"Tip: to curl a file, use: curl -s {gcs_raw}/{job_path}/{build_id}/artifacts/<workflow>/<step>/artifacts/<file>",
             ]
             with open(os.path.join(EVIDENCE_DIR, "prow-urls.txt"), "w") as f:
                 f.write("\n".join(urls))
             evidence_files.append("prow-urls.txt")
 
-            # Fetch the top-level build log (last 8KB) — shows which steps passed/failed
+            # Fetch the top-level build log — beginning (image builds/pulls) + end (step results)
             try:
                 build_log_url = f"{gcs_raw}/{job_path}/{build_id}/build-log.txt"
-                resp = _req.get(build_log_url, timeout=15)
+                resp = _req.get(build_log_url, timeout=30)
                 if resp.status_code == 200:
                     text = resp.text
-                    # Keep the last 8000 chars (contains step results and failure reason)
-                    if len(text) > 8000:
-                        text = "... (truncated, showing last 8000 chars) ...\n" + text[-8000:]
+                    if len(text) > 16000:
+                        head = text[:8000]
+                        tail = text[-8000:]
+                        text = head + "\n\n... (middle truncated) ...\n\n" + tail
                     with open(os.path.join(EVIDENCE_DIR, "ci-operator-build-log.txt"), "w") as f:
                         f.write(text)
                     evidence_files.append("ci-operator-build-log.txt")
@@ -417,45 +501,59 @@ You have the source code cloned locally. Search it with grep/find to find the te
 {evidence_listing}
 
 CRITICAL FIRST STEP — determine the REAL failure source:
-1. Read ci-operator-build-log.txt FIRST — it shows ALL job steps, which passed, which failed, and the final error.
-2. Check finished.json in the test step. If it says "passed":true / "result":"SUCCESS", the PROJECT's tests passed!
-3. If the project's tests passed but the job still failed, the failure is from the CI FRAMEWORK (MonitorTest, operator-state-analyzer, lease-checker, openshift-e2e, etc.) — NOT from {UPSTREAM_REPO.split('/')[-1]} code.
-4. For CI framework failures: classify as infra_other, explain that the project tests passed, and describe what CI component actually failed (e.g. "MonitorTest detected node-not-ready during intentional reboot").
-5. Only investigate source code regressions if the PROJECT's OWN tests actually failed (check test_results.json, junit.xml in the test step).
+1. Read ci-operator-build-log.txt FIRST — it shows ALL job steps, which passed, which failed, and the final error. Pay special attention to the BEGINNING of the log which shows image builds and pulls.
+2. CHECK FOR IMAGE PULL FAILURES: Look for "error", "failed", "not found", "unauthorized", "ImagePull" in the first half of ci-operator-build-log.txt. If images from registry.ci failed to build or pull, that is the root cause — it means the operator/daemon never deployed and all downstream failures (DaemonSet not found, timeouts, gather failures) are cascades.
+3. Check finished.json in the test step. If it says "passed":true / "result":"SUCCESS", the PROJECT's tests passed!
+4. If the project's tests passed but the job still failed, the failure is from the CI FRAMEWORK (MonitorTest, operator-state-analyzer, lease-checker, openshift-e2e, etc.) — NOT from {UPSTREAM_REPO.split('/')[-1]} code.
+5. For CI framework failures: classify as infra_other, explain that the project tests passed, and describe what CI component actually failed (e.g. "MonitorTest detected node-not-ready during intentional reboot").
+6. Only investigate source code regressions if the PROJECT's OWN tests actually failed (check test_results.json, junit.xml in the test step).
 
 You can use `curl` to fetch more details from the Prow job: {job.get('url', '')}
-The ci-operator-build-log.txt already contains the last 8KB of the top-level build log showing the overall job results.
+The ci-operator-build-log.txt contains both the BEGINNING (first 8KB — image builds/pulls) and END (last 8KB — step results/failures) of the top-level build log.
 
 Read the evidence files (especially JUnit XML, test_results.json, build-log.txt, and finished.json). Find the EXACT test names, error messages, and line numbers from the source code.
 Then search the source repo for the relevant test code and recent PRs/commits that may have caused the regression.
 
-EVIDENCE RULE: You MUST present verbatim log quotes as proof for every conclusion. Do NOT guess or assume root causes — find the actual error in the logs. For example, if a DaemonSet was not created, check the build log for image pull errors or registry failures before assuming hardware issues.
+DEEP INVESTIGATION RULE — DO NOT just report the test error message. You MUST trace back to the UPSTREAM cause:
+- If tests say "pod not found" or "DaemonSet not found" → WHY wasn't it created? Check: image pull errors, operator crash logs, deployment failures in ci-operator-build-log.txt and pod-logs.
+- If tests say "timeout" or "not ready" → WHY didn't it become ready? Check: pod status, events, operator logs.
+- Check pod-logs/ files in ci-evidence/ — they contain operator/daemon container logs showing crashes, image pulls, or startup failures.
+- Use `curl` to fetch more files from GCS if needed. See prow-urls.txt for the raw URL pattern. Example: `curl -s <raw_artifacts_url>/<workflow>/<step>/artifacts/pod-logs/<pod-name>.log`
+- NEVER conclude "cluster error state" or "systematic failure" without explaining WHAT caused it. The user needs the FIRST domino, not the last.
 
-CRITICAL: You MUST cover ALL failed tests listed above. Keep each test CONCISE (max 6 lines per field).
+EVIDENCE RULE: You MUST present verbatim log quotes as proof for every conclusion. Do NOT guess or assume root causes — find the actual error in the logs.
+
+CRITICAL IMAGE-PULL CHECK: If a DaemonSet or Pod was "not found" or never created, the #1 cause is an IMAGE PULL FAILURE from registry.ci (e.g. "image not found", "manifest unknown", "unauthorized", "ErrImagePull"). Look at the BEGINNING of ci-operator-build-log.txt for lines containing "error", "failed to pull", "registry.ci", "ImagePullBackOff", or "tag not found". Do NOT conclude "no PTP-capable NICs" or "hardware issue" unless you have explicit log evidence that the operator started successfully and detected no hardware — an image pull failure prevents the operator from ever running.
+
 If the failure is from the CI framework (not the project's tests), state "PROJECT TESTS PASSED — failure is from CI framework".
 
-Respond with EXACTLY this format:
+CRITICAL OUTPUT RULES:
+1. Write your analysis ONCE. Do NOT restart or repeat. Output each section exactly once.
+2. GROUPING: First scan ALL failed tests. Group them by root cause. If N tests share the same error (e.g. all hit "i/o timeout"), write ONE deep analysis for the group, not N separate analyses.
+3. Keep it concise — max 6 lines per field.
+
+Respond with EXACTLY this format (write it ONCE, do not repeat):
 
 ---
-FOR EACH FAILED TEST (you MUST include ALL of them, do NOT skip any):
 
-### Test N: `[exact.test.suite] exact test name`
-- **Duration:** Xs
-- **Error:** one-line error
-- **Evidence:** quote the exact log line(s) that prove the root cause (verbatim, max 2 lines)
-- **Root Cause:** 2-3 sentences. Reference function/file/line.
-- **Breaking PR/Commit:** link or "Unknown"
-- **Source File:** GitHub link to test code
-- **Is it a flake?** yes/no — one sentence
-- **Suggested Fix:** 1-2 sentences
+**TL;DR:** One sentence (max 15 words) summarizing all failures
 
-(REPEAT for EVERY test above — if there are 4 tests, you must write 4 sections)
+**Root Cause Groups:**
+For each distinct root cause, list:
+- **Group N: [root cause name]** (affects Tests: list them)
+  - **Evidence:** verbatim log lines proving this root cause
+  - **Root Cause:** 2-3 sentences. Reference function/file/line. Explain the FIRST domino.
+  - **Breaking PR/Commit:** link or "Unknown"
+  - **Is it a flake?** yes/no — one sentence
+  - **Suggested Fix:** 1-2 sentences
+  - **Affected tests:** list each test name in this group
+
+If ALL tests share ONE root cause, write ONE group. Do NOT write separate sections per test.
+If tests have DIFFERENT root causes, write one group per distinct cause.
 
 ---
-AFTER all tests:
 
-**TL;DR:** One sentence (max 15 words) summarizing the failure — e.g. "PTP hardware not locked, all 4 BC clockClass tests timed out" or "MonitorTest flagged node-not-ready during intentional SNO reboot"
-**Relation Between Failures:** 2-3 sentences — common root cause?
+**Relation Between Groups:** How do the root cause groups relate? Common upstream cause?
 **Per-Version Notes:** one line per version
 **Affected Images:** container images list
 **Overall Issue Class:** infra_timeout | infra_quota | infra_other | test_regression | test_flake | test_failure | matrix_mismatch | build_error | unknown
@@ -469,19 +567,216 @@ AFTER all tests:
 
 
 
+def _group_tests_by_suite(job: dict) -> dict[str, list[dict]]:
+    """Group failed tests by suite prefix (e.g. dualfollower, dualnicbc, tgm).
+
+    Extracts the suite name from test names like:
+      [It] [dualnicbc-serial] PTP e2e tests ...  → suite "dualnicbc"
+      [dualfollower-parallel] Event based tests   → suite "dualfollower"
+    Falls back to a single "all" group if no suite prefixes found.
+    """
+    analysis = job.get("analysis", {})
+    inv = analysis.get("investigation", {})
+    tests_list = inv.get("failed_tests", []) or analysis.get("junit_failures", [])
+
+    suites: dict[str, list[dict]] = {}
+    for t in tests_list:
+        name = t.get("name", t.get("step", ""))
+        m = re.search(r"\[(\w+?)[-_](serial|parallel)\]", name)
+        suite = m.group(1) if m else "all"
+        suites.setdefault(suite, []).append(t)
+
+    return suites
+
+
+MAX_SUITE_TESTS = 12
+
+
+def build_suite_prompt(
+    job: dict, evidence_files: list[str], suite_name: str, suite_tests: list[dict]
+) -> str:
+    """Build a prompt for analyzing one test suite's failures."""
+    analysis = job.get("analysis", {})
+    category = analysis.get("category", "")
+    reason = analysis.get("reason", "")
+
+    failed_tests = "\n".join(
+        f"  - {t.get('name', '?')}: {t.get('message', '')[:400]}"
+        for t in suite_tests
+    )
+
+    evidence_listing = "\n".join(f"  - {f}" for f in evidence_files)
+
+    project = _load_project_config()
+    project_desc = project.get("description", "N/A") if project else "N/A"
+    related_repos_info = ""
+    if project:
+        related = project.get("related_repos", [])
+        if related:
+            repo_names = [r.rstrip("/").split("/")[-1].replace(".git", "") for r in related]
+            related_repos_info = (
+                "\n**Related source repos (cloned locally for you to search):**\n"
+                + "\n".join(f"  - ./{name}/" for name in repo_names)
+            )
+
+    version = ""
+    _ver_match = re.search(r"nightly-(\d+\.\d+)", job['name'])
+    if _ver_match:
+        version = _ver_match.group(1)
+
+    return f"""Analyze the **{suite_name}** test suite failures from this CI job.
+Evidence files are in ./ci-evidence/ — read them directly.
+Focus on OCP version {version or 'unknown'}.
+
+**Project:** {project_desc}
+**Source repo:** https://github.com/{UPSTREAM_REPO}
+{related_repos_info}
+You have the source code cloned locally. Search it with grep/find.
+
+**Job:** {job['name']}
+**Prow URL:** {job.get('url', 'N/A')}
+**Suite:** {suite_name} ({len(suite_tests)} failed tests)
+
+**Failed tests in this suite:**
+{failed_tests}
+
+**Evidence files in ./ci-evidence/:**
+{evidence_listing}
+
+INSTRUCTIONS:
+1. Read ci-operator-build-log.txt FIRST to understand what happened at the job level.
+2. Check for image pull failures in the first half of the build log.
+3. Read the JUnit XML for this suite (test_results_{suite_name}.xml if it exists).
+4. Search the source repo for test code and recent commits.
+
+DEEP INVESTIGATION: Trace back to the UPSTREAM cause. If tests say "timeout" or "not found", find WHY.
+EVIDENCE RULE: Quote verbatim log lines as proof. Do NOT guess.
+
+CRITICAL OUTPUT RULES:
+1. Write your analysis ONCE. Do NOT restart or repeat.
+2. GROUPING: First scan ALL {len(suite_tests)} tests. Group by root cause. If N tests share the same error, write ONE deep analysis for the group — not N copies.
+
+Respond with EXACTLY this format (write it ONCE, do not repeat):
+
+---
+
+### Suite: {suite_name} ({len(suite_tests)} failures)
+
+**Suite TL;DR:** One sentence summarizing this suite's failures
+
+**Root Cause Groups:**
+For each distinct root cause:
+- **Group N: [root cause name]** (affects: list test names)
+  - **Evidence:** verbatim log lines
+  - **Root Cause:** 2-3 sentences. Reference function/file/line.
+  - **Breaking PR/Commit:** link or "Unknown"
+  - **Is it a flake?** yes/no
+  - **Suggested Fix:** 1-2 sentences
+
+**Suite Issue Class:** infra_timeout | infra_other | test_regression | test_flake | test_failure | build_error | unknown
+**Suite Severity:** CRITICAL / HIGH / MEDIUM / LOW
+"""
+
+
+def build_summary_prompt(
+    job: dict, suite_analyses: dict[str, str], total_failures: int
+) -> str:
+    """Build a prompt for the cross-suite summary."""
+    version = ""
+    _ver_match = re.search(r"nightly-(\d+\.\d+)", job['name'])
+    if _ver_match:
+        version = _ver_match.group(1)
+
+    suite_sections = ""
+    for suite_name, analysis in suite_analyses.items():
+        suite_sections += f"\n\n--- {suite_name} ---\n{analysis[:3000]}"
+
+    return f"""You are given per-suite AI analyses of a CI job with {total_failures} total test failures.
+Your task is to produce a CROSS-SUITE SUMMARY that identifies common patterns.
+
+**Job:** {job['name']}
+**Version:** {version}
+**Total failures:** {total_failures}
+**Suites analyzed:** {', '.join(suite_analyses.keys())}
+
+INDIVIDUAL SUITE ANALYSES:
+{suite_sections}
+
+Based on the above, produce this summary:
+
+**TL;DR:** One sentence (max 20 words) covering the whole job
+**Root Cause Groups:** Group the {total_failures} failures by root cause. Example:
+  - "18/25 failures: GM in FREERUN (clock class 248), cascading to all BC/slave sync tests"
+  - "7/25 failures: pmc argument bug in commit 3b93c9f4"
+**Cross-Suite Patterns:** Which suites share root causes? Are any suite-specific?
+**Actionable Recommendations:** 1-3 concrete steps to fix the most failures
+**Overall Issue Class:** infra_timeout | infra_other | test_regression | test_flake | test_failure | build_error | unknown
+**Overall Severity:** CRITICAL / HIGH / MEDIUM / LOW
+"""
+
+
 def analyze_job(job: dict) -> str:
-    """Deep investigation: dump evidence, build prompt, run agent."""
+    """Deep investigation with per-suite splitting for large jobs.
+
+    For jobs with many failures across multiple test suites, runs one AI call
+    per suite (keeping each call small enough for clean output), then produces
+    a cross-suite summary.
+    """
     evidence_files = dump_evidence(job)
     print(f"    Dumped {len(evidence_files)} evidence files")
-    prompt = build_prompt(job, evidence_files)
-    result = run_cursor_agent(prompt)
 
+    suites = _group_tests_by_suite(job)
+
+    # If only one suite or few total tests, use the original single-call approach
+    total_tests = sum(len(tests) for tests in suites.values())
+    if len(suites) <= 1 and total_tests <= MAX_SUITE_TESTS:
+        prompt = build_prompt(job, evidence_files)
+        result = run_cursor_agent(prompt)
+        _reset_repo()
+        return result
+
+    print(f"    Split into {len(suites)} suites: "
+          f"{', '.join(f'{s}({len(t)})' for s, t in suites.items())}")
+
+    # Per-suite analysis
+    suite_analyses: dict[str, str] = {}
+    for suite_name, suite_tests in suites.items():
+        print(f"    Suite '{suite_name}' ({len(suite_tests)} tests)...")
+        prompt = build_suite_prompt(job, evidence_files, suite_name, suite_tests)
+        result = run_cursor_agent(prompt)
+        if result:
+            suite_analyses[suite_name] = result
+            print(f"      Done ({len(result)} chars)")
+        else:
+            print(f"      No analysis returned")
+        _reset_repo()
+
+    if not suite_analyses:
+        return ""
+
+    # Cross-suite summary
+    print(f"    Generating cross-suite summary...")
+    summary_prompt = build_summary_prompt(job, suite_analyses, total_tests)
+    summary = run_cursor_agent(summary_prompt)
+    _reset_repo()
+
+    # Combine: summary first, then each suite's detail
+    parts = []
+    if summary:
+        parts.append(summary)
+    parts.append("\n\n---\n\n# Per-Suite Details\n")
+    for suite_name, analysis in suite_analyses.items():
+        parts.append(f"\n## {suite_name}\n\n{analysis}")
+
+    return "\n".join(parts)
+
+
+def _reset_repo():
+    """Reset the investigation repo to clean state between agent calls."""
     subprocess.run(["git", "checkout", "."], cwd=INVESTIGATE_DIR,
                    capture_output=True)
     subprocess.run(["git", "checkout", "main"], cwd=INVESTIGATE_DIR,
                    capture_output=True)
-
-    return result
 
 
 def _checkout_source_repos() -> None:
@@ -602,7 +897,7 @@ def _analyze_per_job(data: dict, failed: list[dict], fp_db: dict) -> None:
         print(f"  [{i}/{len(new_failures)}] {short_name}...")
         ai = analyze_job(job)
         if ai:
-            job.setdefault("analysis", {})["ai_summary"] = ai[:8000]
+            job.setdefault("analysis", {})["ai_summary"] = ai[:16000]
             fp = job["analysis"].get("fingerprint", compute_fingerprint(job))
             record_fingerprint(fp_db, fp, job, ai)
             success_count += 1
@@ -674,15 +969,20 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
     for fp, issue_data in unique_issues.items():
         if is_known_issue(fp_db, fp) and not FORCE_REANALYZE:
             prev = get_issue(fp_db, fp)
+            saved_ai = prev.get("ai_summary_short", "") or prev.get("ai_summary", "")
+
+            # If the issue exists but has no analysis, treat as new (re-analyze)
+            if not saved_ai:
+                print(f"  RE-ANALYZE (empty analysis): {issue_data['test_name'][:60]}")
+                new_issues[fp] = issue_data
+                continue
+
             # Update affected_jobs for each job this issue appears in
             for j in issue_data["jobs"]:
                 mark_issue_seen(fp_db, fp, j["name"], j["url"])
             reused_count += 1
             short = issue_data["test_name"][:60]
             print(f"  SKIP (recurring #{prev.get('occurrences',1)+1}): {short}")
-
-            # Tag the affected jobs with recurring info (including saved ai_summary)
-            saved_ai = prev.get("ai_summary_short", "") or prev.get("ai_summary", "")
             for j in issue_data["jobs"]:
                 for job in failed:
                     if job["name"] == j["name"]:
@@ -781,7 +1081,7 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
                                 "is_recurring": False,
                                 "classification": classification,
                                 "root_cause": root_cause,
-                                "ai_summary": ai[:8000],
+                                "ai_summary": ai[:16000],
                                 "is_flake": is_flake,
                             })
 

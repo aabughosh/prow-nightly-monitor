@@ -224,6 +224,10 @@ with open(os.path.join(repo_dir, 'public', 'cursor', 'index.html'), 'w') as f:
 print(f'Generated project index with {len(projects)} projects')
 PYEOF
 
+# Generate per-job analysis pages for GitLab Pages integration
+log "Generating per-job analysis pages..."
+python3 "$REPO_DIR/generate_job_pages.py" >> "$LOG_FILE" 2>&1 || log "WARNING: generate_job_pages.py failed"
+
 # Scrub secrets from results before pushing
 find "$REPO_DIR/public" -name "results.json" -exec sed -i '' 's|https://hooks.slack.com/services/[A-Za-z0-9/]*|REDACTED|g' {} + || true
 
@@ -241,6 +245,30 @@ if git diff --cached --quiet 2>/dev/null; then
 else
     git commit -m "dashboard: $(date '+%Y-%m-%d') nightly results (all projects)" >> "$LOG_FILE" 2>&1 || true
     git push origin main >> "$LOG_FILE" 2>&1 && log "Pushed to GitHub Pages" || log "WARNING: git push failed"
+fi
+
+# Push to GitLab Pages (prow-ai-analysis) for prow-status integration
+GITLAB_REPO="${GITLAB_REPO:-git@gitlab.cee.redhat.com:security-and-platform-team/prow-ai-analysis.git}"
+GITLAB_DIR="/tmp/prow-ai-analysis"
+if [ -n "$GITLAB_REPO" ]; then
+    log "Pushing to GitLab Pages..."
+    rm -rf "$GITLAB_DIR" 2>/dev/null
+    if git clone --depth=1 "$GITLAB_REPO" "$GITLAB_DIR" >> "$LOG_FILE" 2>&1; then
+        rsync -a --delete --exclude='.git' "$REPO_DIR/public/" "$GITLAB_DIR/public/"
+        cp "$REPO_DIR/.gitlab-ci.yml" "$GITLAB_DIR/.gitlab-ci.yml" 2>/dev/null || true
+        cd "$GITLAB_DIR"
+        git add -A >> "$LOG_FILE" 2>&1
+        if ! git diff --cached --quiet 2>/dev/null; then
+            git commit -m "update: $(date '+%Y-%m-%d') AI analysis" >> "$LOG_FILE" 2>&1 || true
+            git push >> "$LOG_FILE" 2>&1 && log "Pushed to GitLab Pages" || log "WARNING: GitLab push failed"
+        else
+            log "No GitLab changes to push"
+        fi
+        cd "$REPO_DIR"
+        rm -rf "$GITLAB_DIR"
+    else
+        log "WARNING: Could not clone GitLab repo — skipping GitLab push"
+    fi
 fi
 
 # Send Slack summary (for the primary project)

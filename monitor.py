@@ -265,7 +265,9 @@ def fetch_junit_results(job: dict) -> list[dict]:
     job_path = match.group(1)
     build_id = match.group(2)
 
-    junit_paths = [
+    # Per-suite XMLs go first; junit_operator.xml is the fallback (step-level only)
+    junit_paths: list[str] = []
+    fallback_paths = [
         f"{GCS_BASE}/{job_path}/{build_id}/artifacts/junit_operator.xml",
         f"{GCS_BASE}/{job_path}/{build_id}/artifacts/e2e-report/junit.xml",
         f"{GCS_BASE}/{job_path}/{build_id}/artifacts/test-results/junit.xml",
@@ -293,6 +295,15 @@ def fetch_junit_results(job: dict) -> list[dict]:
                                   f"{base_url}/{wf}/{step}/artifacts/test_results_all.xml",
                                   f"{base_url}/{wf}/{step}/junit.xml"]:
                         junit_paths.append(jpath)
+                    # Discover per-suite XMLs (test_results_dualfollower.xml, etc.)
+                    try:
+                        art_resp = requests.get(f"{base_url}/{wf}/{step}/artifacts/", timeout=6)
+                        if art_resp.status_code == 200:
+                            suite_xmls = re.findall(r'href="[^"]*?(test_results_\w+\.xml)"', art_resp.text)
+                            for sx in suite_xmls:
+                                junit_paths.append(f"{base_url}/{wf}/{step}/artifacts/{sx}")
+                    except Exception:
+                        pass
     except Exception:
         pass
 
@@ -332,18 +343,25 @@ def fetch_junit_results(job: dict) -> list[dict]:
     except Exception:
         pass
 
-    # Fallback: try JUnit XML
+    # Append fallback paths (junit_operator.xml etc.) only if no per-suite XMLs found
+    if not junit_paths:
+        junit_paths = fallback_paths
+    # Try JUnit XML — aggregate from all found files
+    all_results = []
+    seen_names: set[str] = set()
     for junit_url in junit_paths:
         try:
             resp = requests.get(junit_url, timeout=15)
             if resp.status_code == 200 and ("<testsuites" in resp.text[:200] or "<?xml" in resp.text[:200]):
                 results = _parse_junit_xml(resp.text)
-                if results:
-                    return results
+                for r in results:
+                    if r.get("name") not in seen_names:
+                        all_results.append(r)
+                        seen_names.add(r.get("name", ""))
         except Exception:
             continue
 
-    return []
+    return all_results
 
 
 def _parse_junit_xml(xml_text: str) -> list[dict]:
@@ -671,26 +689,30 @@ def fetch_step_junit(job: dict, workflow: str, step: str) -> list[dict]:
             pass
 
     artifacts_url = f"{GCS_BASE}/{job_path}/{build_id}/artifacts/{workflow}/{step}/artifacts/"
+    all_results = []
+    seen_names: set[str] = set()
     try:
         resp = requests.get(artifacts_url, timeout=10)
         if resp.status_code == 200:
             xml_files = re.findall(r'href="[^"]*?(junit[^"]*\.xml)"', resp.text)
             if not xml_files:
                 xml_files = re.findall(r'href="[^"]*?([^/"]+\.xml)"', resp.text)
-            for xf in xml_files[:3]:
+            for xf in xml_files[:10]:
                 xf_url = f"{artifacts_url}{xf}" if not xf.startswith("http") else xf
                 try:
                     xresp = requests.get(xf_url, timeout=10)
                     if xresp.status_code == 200:
                         results = _parse_junit_xml(xresp.text)
-                        if results:
-                            return results
+                        for r in results:
+                            if r.get("name") not in seen_names:
+                                all_results.append(r)
+                                seen_names.add(r.get("name", ""))
                 except Exception:
                     pass
     except Exception:
         pass
 
-    return []
+    return all_results
 
 
 # ---------------------------------------------------------------------------
@@ -2905,7 +2927,7 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
                 summary_html += f'<div style="font-size:10px;color:#8b949e;margin-top:2px">{_fail_count} failed test{"s" if _fail_count != 1 else ""}</div>'
 
         rows.append(
-            f'<tr class="{row_class}" data-state="{state}" data-category="{category}">'
+            f'<tr id="{job["name"]}" class="{row_class}" data-state="{state}" data-category="{category}">'
             f'<td>{emoji} {state}</td>'
             f'<td><span class="version-badge">{version}</span></td>'
             f'<td><a href="{url}" target="_blank" title="{job["name"]}">{name_short}</a></td>'
