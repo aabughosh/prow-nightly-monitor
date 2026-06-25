@@ -3460,14 +3460,14 @@ def _generate_issues_page(output_dir: Path) -> None:
             return ""
         m = _re.search(r"\*\*Root Cause:\*\*\s*(.+?)(?:\n\n|\*\*Breaking)", summary, _re.DOTALL)
         if m:
-            return _re.sub(r"\s+", " ", m.group(1)).strip()[:500]
+            return _re.sub(r"\s+", " ", m.group(1)).strip()[:1000]
         m = _re.search(r"###?\s*Root Cause\s*\n+(.+?)(?:\n\n|\n###|\*\*)", summary, _re.DOTALL)
         if m:
-            return _re.sub(r"\s+", " ", m.group(1)).strip()[:500]
+            return _re.sub(r"\s+", " ", m.group(1)).strip()[:1000]
         lines = [l.strip() for l in summary.split("\n") if l.strip()
                  and not l.strip().startswith("#") and not l.strip().startswith("---")]
         if lines:
-            return _re.sub(r"\s+", " ", " ".join(lines[:3])).strip()[:500]
+            return _re.sub(r"\s+", " ", " ".join(lines[:5])).strip()[:1000]
         return ""
 
     def _job_set_key(issue: dict) -> str:
@@ -3516,11 +3516,11 @@ def _generate_issues_page(output_dir: Path) -> None:
     total_active = len([i for i in issues.values() if i.get("status") == "active"])
     total_groups = len(group_metas)
 
-    cards_html = ""
+    rows_html = ""
     for key, members, any_active, last_seen_grp, total_occ in group_metas:
         first_seen_grp = min((m[1].get("first_seen", "") for m in members), default="")
 
-        # Aggregate classification: pick most severe or most common
+        # Aggregate classification
         cls_counts: dict[str, int] = {}
         for _, m in members:
             c = m.get("classification", "unknown")
@@ -3529,45 +3529,38 @@ def _generate_issues_page(output_dir: Path) -> None:
         cls_color, cls_label = CLASS_COLORS.get(cls, ("#484f58", cls))
 
         any_flake = any(m.get("is_flake", False) for _, m in members)
-        flake_badge = ' <span style="color:#d29922;font-size:10px">⚡flake</span>' if any_flake else ""
-        status_badge = (
-            '<span style="color:#3fb950;font-size:11px">● active</span>'
-            if any_active
-            else '<span style="color:#484f58;font-size:11px">○ resolved</span>'
-        )
+        flake_badge = ' <span class="badge-flake">flake</span>' if any_flake else ""
+        status_icon = "●" if any_active else "○"
+        status_color = "#3fb950" if any_active else "#484f58"
 
-        # Root cause display (primary heading)
+        # Root cause — full text, no truncation
         if not key.startswith("__"):
-            # Has real root cause text
-            rc_display = _h.escape(key[:300])
-            if len(key) > 300:
-                rc_display += "…"
+            rc_display = _h.escape(key)
         elif key.startswith("__jobs__"):
-            # Grouped by shared affected jobs — synthesize a description
             job_names = sorted(set(
                 j.get("name", "") for _, m in members for j in m.get("affected_jobs", [])
+                if not project_filter or project_filter in j.get("name", "")
             ))
             n_tests = len(members)
-            job_summary = ", ".join(job_names[:3])
-            if len(job_names) > 3:
-                job_summary += f" +{len(job_names) - 3} more"
-            rc_display = f"{n_tests} tests failed together in: {_h.escape(job_summary)}"
+            job_summary = ", ".join(job_names[:4])
+            if len(job_names) > 4:
+                job_summary += f" +{len(job_names) - 4} more"
+            rc_display = f"<em>{n_tests} tests failed together in:</em> {_h.escape(job_summary)}"
         else:
-            # Single issue with no root cause — use title
             titles = list(dict.fromkeys(m.get("title", "Unknown") for _, m in members))
             rc_display = _h.escape(titles[0]) if titles else "Unknown issue"
 
-        # Collect unique affected tests (titles)
+        # Affected tests
         affected_tests = list(dict.fromkeys(
             m.get("title", "Unknown") for _, m in members
         ))
-        tests_html = ""
-        for t in affected_tests[:15]:
-            tests_html += f'<span style="display:inline-block;background:#21262d;border:1px solid #30363d;border-radius:4px;padding:2px 8px;margin:2px 4px 2px 0;font-size:11px;color:#c9d1d9">{_h.escape(t)}</span>'
-        if len(affected_tests) > 15:
-            tests_html += f'<span style="font-size:11px;color:#8b949e">+{len(affected_tests) - 15} more</span>'
+        tests_items = ""
+        for t in affected_tests[:10]:
+            tests_items += f"<li>{_h.escape(t)}</li>"
+        if len(affected_tests) > 10:
+            tests_items += f"<li class='more'>+{len(affected_tests) - 10} more</li>"
 
-        # Collect all affected jobs across members (deduplicated, filtered to project)
+        # Affected jobs (filtered to project)
         all_jobs: list[dict] = []
         seen_urls: set = set()
         for _, m in members:
@@ -3582,40 +3575,31 @@ def _generate_issues_page(output_dir: Path) -> None:
                     all_jobs.append(j)
         all_jobs.sort(key=lambda j: j.get("date", ""), reverse=True)
 
-        jobs_html = ""
-        for j in all_jobs[:12]:
+        jobs_items = ""
+        for j in all_jobs[:8]:
             name = j.get("name", "?")
             url = j.get("url", "")
             date = j.get("date", "")
             if url:
-                jobs_html += f'<a href="{url}" target="_blank" style="color:#58a6ff;font-size:11px;display:inline-block;margin:2px 6px 2px 0">{_h.escape(name)} ({date})</a>'
+                jobs_items += f'<li><a href="{url}" target="_blank">{_h.escape(name)}</a> <span class="date">({date})</span></li>'
             else:
-                jobs_html += f'<span style="font-size:11px;color:#8b949e;display:inline-block;margin:2px 6px 2px 0">{_h.escape(name)} ({date})</span>'
-        if len(all_jobs) > 12:
-            jobs_html += f'<span style="font-size:11px;color:#8b949e">+{len(all_jobs) - 12} more</span>'
+                jobs_items += f"<li>{_h.escape(name)} <span class='date'>({date})</span></li>"
+        if len(all_jobs) > 8:
+            jobs_items += f"<li class='more'>+{len(all_jobs) - 8} more runs</li>"
 
-        fp_ids = " ".join(fp_id for fp_id, _ in members)
-        cards_html += f"""<div class="issue-card" id="{members[0][0]}" data-fps="{fp_ids}">
-  <div class="issue-header">
-    <div class="issue-meta-row">
-      <span class="cls-badge" style="color:{cls_color}">{cls_label}</span>
-      {flake_badge} {status_badge}
-      <span class="meta-sep">|</span>
-      <span class="meta-text">{_h.escape(first_seen_grp[:10])} → {_h.escape(last_seen_grp[:10])}</span>
-      <span class="meta-sep">|</span>
-      <span class="meta-text">{total_occ} occurrence{"s" if total_occ != 1 else ""}</span>
-      <span class="meta-sep">|</span>
-      <span class="meta-text">{len(members)} fingerprint{"s" if len(members) != 1 else ""}</span>
-    </div>
-    <div class="root-cause">{rc_display}</div>
-  </div>
-  <div class="issue-body">
-    <div class="section-label">Affected Tests</div>
-    <div class="tests-list">{tests_html}</div>
-    <div class="section-label">Affected Jobs</div>
-    <div class="jobs-list">{jobs_html if jobs_html else '<span style="font-size:11px;color:#484f58">None recorded</span>'}</div>
-  </div>
-</div>\n"""
+        rows_html += f"""<tr id="{members[0][0]}">
+  <td class="col-rc">
+    <div class="rc-text">{rc_display}</div>
+  </td>
+  <td class="col-meta">
+    <span class="cls" style="color:{cls_color}">{cls_label}</span>{flake_badge}<br>
+    <span style="color:{status_color}">{status_icon}</span>
+    <span class="dates">{_h.escape(first_seen_grp[:10])} → {_h.escape(last_seen_grp[:10])}</span><br>
+    <span class="count">{total_occ}× ({len(members)} test{"s" if len(members) != 1 else ""})</span>
+  </td>
+  <td class="col-tests"><ul>{tests_items}</ul></td>
+  <td class="col-jobs"><ul>{jobs_items if jobs_items else "<li class='none'>—</li>"}</ul></td>
+</tr>\n"""
 
     page_html = f"""<!DOCTYPE html>
 <html lang="en"><head>
@@ -3627,7 +3611,7 @@ def _generate_issues_page(output_dir: Path) -> None:
   .header {{ background: linear-gradient(135deg, #1a1e2e 0%, #2d1b4e 100%); padding: 24px 32px; border-bottom: 1px solid #30363d; }}
   .header h1 {{ font-size: 22px; color: #f0f6fc; margin: 0; }}
   .header .meta {{ color: #8b949e; font-size: 13px; margin-top: 6px; }}
-  .container {{ max-width: 1100px; margin: 0 auto; padding: 24px 32px; }}
+  .container {{ max-width: 1400px; margin: 0 auto; padding: 24px 32px; }}
   a {{ color: #58a6ff; text-decoration: none; }}
   a:hover {{ text-decoration: underline; }}
   .nav {{ margin-bottom: 20px; display: flex; gap: 8px; }}
@@ -3635,24 +3619,28 @@ def _generate_issues_page(output_dir: Path) -> None:
   .summary {{ display: flex; gap: 24px; margin-bottom: 24px; font-size: 14px; }}
   .summary .stat {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 20px; }}
   .summary .stat-num {{ font-size: 24px; font-weight: 700; }}
-  .issue-card {{ background: #161b22; border: 1px solid #30363d; border-radius: 10px; margin-bottom: 16px; overflow: hidden; transition: border-color 0.15s; }}
-  .issue-card:hover {{ border-color: #484f58; }}
-  .issue-header {{ padding: 14px 18px 10px; border-bottom: 1px solid #21262d; }}
-  .issue-meta-row {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }}
-  .cls-badge {{ font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }}
-  .meta-sep {{ color: #30363d; font-size: 11px; }}
-  .meta-text {{ color: #8b949e; font-size: 11px; }}
-  .root-cause {{ color: #e1e4e8; font-size: 13px; line-height: 1.5; }}
-  .issue-body {{ padding: 12px 18px 14px; }}
-  .section-label {{ color: #8b949e; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin: 8px 0 6px; }}
-  .section-label:first-child {{ margin-top: 0; }}
-  .tests-list {{ margin-bottom: 8px; }}
-  .jobs-list {{ line-height: 1.8; }}
+  table {{ width: 100%; border-collapse: separate; border-spacing: 0; background: #161b22; border-radius: 12px; overflow: hidden; border: 1px solid #30363d; }}
+  th {{ background: #1c2128; color: #8b949e; padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; position: sticky; top: 0; }}
+  td {{ padding: 14px; border-bottom: 1px solid #21262d; vertical-align: top; font-size: 13px; }}
+  tr:hover td {{ background: #1c2128; }}
+  .col-rc {{ max-width: 500px; }}
+  .rc-text {{ color: #e1e4e8; line-height: 1.6; }}
+  .col-meta {{ white-space: nowrap; min-width: 130px; }}
+  .cls {{ font-weight: 700; font-size: 11px; text-transform: uppercase; }}
+  .badge-flake {{ background: #d2992233; color: #d29922; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 4px; }}
+  .dates {{ color: #8b949e; font-size: 11px; }}
+  .count {{ color: #8b949e; font-size: 11px; }}
+  .col-tests ul, .col-jobs ul {{ margin: 0; padding: 0; list-style: none; }}
+  .col-tests li, .col-jobs li {{ font-size: 12px; color: #c9d1d9; padding: 1px 0; }}
+  .col-jobs li a {{ font-size: 12px; }}
+  .col-jobs .date {{ color: #6e7681; font-size: 11px; }}
+  li.more {{ color: #8b949e; font-style: italic; }}
+  li.none {{ color: #484f58; }}
 </style>
 </head><body>
 <div class="header">
   <h1>Known Issues</h1>
-  <div class="meta">Fingerprinted issues grouped by root cause — showing why jobs fail, with affected tests and runs</div>
+  <div class="meta">Grouped by root cause — full analysis of why jobs fail</div>
 </div>
 <div class="container">
   <div class="nav">
@@ -3660,11 +3648,16 @@ def _generate_issues_page(output_dir: Path) -> None:
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">{total_active}</div>Active issues</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">{total_active}</div>Active</div>
     <div class="stat"><div class="stat-num" style="color:#c9d1d9">{len(issues)}</div>Fingerprints</div>
-    <div class="stat"><div class="stat-num" style="color:#a371f7">{total_groups}</div>Root causes</div>
+    <div class="stat"><div class="stat-num" style="color:#a371f7">{total_groups}</div>Issues</div>
   </div>
-  {cards_html}
+  <table>
+    <thead><tr>
+      <th>Root Cause</th><th>Info</th><th>Affected Tests</th><th>Affected Jobs</th>
+    </tr></thead>
+    <tbody>{rows_html}</tbody>
+  </table>
 </div>
 </body></html>"""
 
