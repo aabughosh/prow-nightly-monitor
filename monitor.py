@@ -3594,9 +3594,10 @@ def _generate_issues_page(output_dir: Path) -> None:
   <td class="col-meta">
     <span class="cls" style="color:{cls_color}">{cls_label}</span>{flake_badge}<br>
     <span style="color:{status_color}">{status_icon}</span>
-    <span class="dates">{_h.escape(first_seen_grp[:10])} → {_h.escape(last_seen_grp[:10])}</span><br>
     <span class="count">{total_occ}× ({len(members)} test{"s" if len(members) != 1 else ""})</span>
   </td>
+  <td class="col-date">{_h.escape(first_seen_grp[:10])}</td>
+  <td class="col-date">{_h.escape(last_seen_grp[:10])}</td>
   <td class="col-tests"><ul>{tests_items}</ul></td>
   <td class="col-jobs"><ul>{jobs_items if jobs_items else "<li class='none'>—</li>"}</ul></td>
 </tr>\n"""
@@ -3625,10 +3626,10 @@ def _generate_issues_page(output_dir: Path) -> None:
   tr:hover td {{ background: #1c2128; }}
   .col-rc {{ max-width: 500px; }}
   .rc-text {{ color: #e1e4e8; line-height: 1.6; }}
-  .col-meta {{ white-space: nowrap; min-width: 130px; }}
+  .col-meta {{ white-space: nowrap; min-width: 100px; }}
+  .col-date {{ white-space: nowrap; color: #8b949e; font-size: 12px; }}
   .cls {{ font-weight: 700; font-size: 11px; text-transform: uppercase; }}
   .badge-flake {{ background: #d2992233; color: #d29922; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 4px; }}
-  .dates {{ color: #8b949e; font-size: 11px; }}
   .count {{ color: #8b949e; font-size: 11px; }}
   .col-tests ul, .col-jobs ul {{ margin: 0; padding: 0; list-style: none; }}
   .col-tests li, .col-jobs li {{ font-size: 12px; color: #c9d1d9; padding: 1px 0; }}
@@ -3654,7 +3655,7 @@ def _generate_issues_page(output_dir: Path) -> None:
   </div>
   <table>
     <thead><tr>
-      <th>Root Cause</th><th>Info</th><th>Affected Tests</th><th>Affected Jobs</th>
+      <th>Root Cause</th><th>Info</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
     <tbody>{rows_html}</tbody>
   </table>
