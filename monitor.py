@@ -3414,11 +3414,36 @@ def _generate_issues_page(output_dir: Path) -> None:
         "unknown": ("#484f58", "Unknown"),
     }
 
+    def _extract_root_cause(issue: dict) -> str:
+        """Get root cause text: prefer root_cause field, fall back to ai_summary_short."""
+        rc = (issue.get("root_cause") or "").strip()
+        if rc:
+            return rc
+        summary = (issue.get("ai_summary_short") or "").strip()
+        if not summary:
+            return ""
+        # Extract from **Root Cause:** pattern common in AI summaries
+        import re as _re
+        m = _re.search(r"\*\*Root Cause:\*\*\s*(.+?)(?:\n\n|\*\*Breaking)", summary, _re.DOTALL)
+        if m:
+            return _re.sub(r"\s+", " ", m.group(1)).strip()[:500]
+        # Try "### Root Cause" heading
+        m = _re.search(r"###?\s*Root Cause\s*\n+(.+?)(?:\n\n|\n###|\*\*)", summary, _re.DOTALL)
+        if m:
+            return _re.sub(r"\s+", " ", m.group(1)).strip()[:500]
+        # Just use first meaningful paragraph (skip headers/metadata)
+        lines = [l.strip() for l in summary.split("\n") if l.strip()
+                 and not l.strip().startswith("#") and not l.strip().startswith("---")]
+        if lines:
+            text = " ".join(lines[:3])
+            return _re.sub(r"\s+", " ", text).strip()[:500]
+        return ""
+
     # --- Group fingerprints by shared root_cause ---
     # Key: root_cause text (or unique sentinel for empty root causes)
     groups: OrderedDict[str, list] = OrderedDict()
     for fp_id, issue in issues.items():
-        rc = (issue.get("root_cause") or "").strip()
+        rc = _extract_root_cause(issue)
         key = rc if rc else f"__empty__{fp_id}"
         groups.setdefault(key, []).append((fp_id, issue))
 
