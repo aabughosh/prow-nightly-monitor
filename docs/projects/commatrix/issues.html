@@ -55,7 +55,7 @@
     </tr></thead>
     <tbody><tr id="fca6f45c2d025b31">
   <td class="col-rc">
-    <div class="rc-text">The commatrix nftables test (`nftables_test.go`) intentionally applies a MachineConfig to the SNO node and reboots it as part of verifying firewall rules after reboot. The node `ip-10-0-20-68.us-west-…</div>
+    <div class="rc-text">The commatrix nftables test (`nftables_test.go`) intentionally applies a MachineConfig to the SNO node and reboots it as part of verifying firewall rules after reboot. The node `ip-10-0-20-68.us-west-1.compute.internal` went NotReady at 13:50:22. The `single-node-e2e-test` CI framework step&#x27;s `openshift-tests` suite was running MonitorTests (including `apiserver-external-availability`) that recorded the API server disruption during this intentional reboot and treated it as a test failure. The commatrix project&#x27;s own 3 tests all passed and its `finished.json` reports `&quot;result&quot;:&quot;SUCCESS&quot;`. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the evidence needed. Let me produce the analysis.
 
 ---
@@ -119,7 +119,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="619736034fa08d43">
   <td class="col-rc">
-    <div class="rc-text">PR #400 (commit `7d56343`, merged `1fec55d`) removed `getLinuxDynamicPrivateRange()` from `GetDynamicRanges()` in `pkg/dynamic-ranges/dynamic-ranges.go`. After this, `commatrix.DynamicRanges` only con…</div>
+    <div class="rc-text">PR #400 (commit `7d56343`, merged `1fec55d`) removed `getLinuxDynamicPrivateRange()` from `GetDynamicRanges()` in `pkg/dynamic-ranges/dynamic-ranges.go`. After this, `commatrix.DynamicRanges` only contains the Kubernetes NodePort range (30000–32767), so `filterOutPortsInDynamicRanges()` at `validation_test.go:159` no longer filters out crio&#x27;s randomly-assigned ephemeral ports (37059, 37919, etc.). The test at line 161 then calls `Fail()` because `missingEPSMat.Ports` is non-empty. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
 
 **TL;DR:** crio ephemeral TCP ports (32768–60999) now escape the dynamic-range filter after PR #400 removed Linux ephemeral range tracking.
@@ -166,7 +166,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="460e27f6a9d3919d">
   <td class="col-rc">
-    <div class="rc-text">PR #400 (commit `7d56343`, merged `1fec55d` on 2026-04-28) intentionally removed `LinuxDynamicPrivateDefaultDynamicRange` (TCP/UDP 32768–60999) from the generated commatrix&#x27;s `DynamicRanges`. The test…</div>
+    <div class="rc-text">PR #400 (commit `7d56343`, merged `1fec55d` on 2026-04-28) intentionally removed `LinuxDynamicPrivateDefaultDynamicRange` (TCP/UDP 32768–60999) from the generated commatrix&#x27;s `DynamicRanges`. The test at `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` to suppress ephemeral-port false positives before asserting. After the PR, `commatrix.DynamicRanges` only contains the NodePort range (30000–32767), so Linux ephemeral ports are no longer filtered. CRI-O binds random ephemeral TCP ports on the node IP (confirmed in `raw-ss-tcp`: e.g. `192.168.111.22:43067 ... crio,pid=2911`); those ports have no Kubernetes EndpointSlice and now pass through to the `Fail()` call. The fix was intentional for nftables generation (opening the entire ephemeral range in a firewall is undesirable), but the test suppression was a side effect that was not replaced. The `filterOutPortsOfKnownServices` function at line 221–239 skips `rpc.statd`, `dnsmasq`, and `</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the evidence needed. Let me write the full analysis.
 
 ---
@@ -215,7 +215,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="247397c154fc4d00">
   <td class="col-rc">
-    <div class="rc-text">The `baremetalds-devscripts-setup` step (bare metal IPI cluster provisioning on Equinix Metal hardware) ran for the full 2h allowed budget and then exceeded the 10-minute grace period. During the tail…</div>
+    <div class="rc-text">The `baremetalds-devscripts-setup` step (bare metal IPI cluster provisioning on Equinix Metal hardware) ran for the full 2h allowed budget and then exceeded the 10-minute grace period. During the tail of the run, SSH/SCP operations to provisioned nodes (172.22.0.56 and IPv6 link-local addresses) were failing with connection timeouts and permission denied — indicating the bare metal nodes were partially reachable but not fully operational. Cluster setup never completed, so no tests (including commatrix) ran at all. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
 
 **TL;DR:** Bare metal cluster provisioning timed out after 2h; commatrix tests never ran.
@@ -258,7 +258,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="40aa32e4f02a0625">
   <td class="col-rc">
-    <div class="rc-text">CRI-O (container runtime) opened an ephemeral listening socket on TCP/40359 (Linux ephemeral range 32768–60999). `filterOutPortsOfKnownServices()` at `validation_test.go:221` only skips `rpc.statd`, `…</div>
+    <div class="rc-text">CRI-O (container runtime) opened an ephemeral listening socket on TCP/40359 (Linux ephemeral range 32768–60999). `filterOutPortsOfKnownServices()` at `validation_test.go:221` only skips `rpc.statd`, `dnsmasq`, and `dig` — not `crio`. `filterOutPortsInDynamicRanges()` only covers NodePort range 30000–32767 (`KubeletNodePortDefaultDynamicRange`), so 40359 is not filtered and the `Fail()` at line 161 is triggered. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have all the information I need. Let me write the final analysis:
 
 ---
@@ -304,7 +304,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="0ebb2588eae8300c">
   <td class="col-rc">
-    <div class="rc-text">`crio` opens random ephemeral TCP ports (OS-assigned, non-deterministic, in range 32768–60999) on both master and worker nodes. These have no Kubernetes EndpointSlice, so they land in `missingEPSMat`.…</div>
+    <div class="rc-text">`crio` opens random ephemeral TCP ports (OS-assigned, non-deterministic, in range 32768–60999) on both master and worker nodes. These have no Kubernetes EndpointSlice, so they land in `missingEPSMat`. `filterOutPortsOfKnownServices` (`validation_test.go:221`) skips `rpc.statd`, `dnsmasq`, and `dig` but does NOT skip `crio`. `filterOutPortsInDynamicRanges` (`validation_test.go:241`) uses `commatrix.DynamicRanges` which only covers the NodePort range (30000–32767), so ports 33699–39497 are not excluded. Both filters pass, and `Fail()` is called at `validation_test.go:161`. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have all the information needed. Let me write the final analysis.
 
 ---
@@ -366,7 +366,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="b5ce232da1324993">
   <td class="col-rc">
-    <div class="rc-text">CRI-O&#x27;s container streaming server (used for `kubectl exec`/`attach`/`port-forward`) binds an ephemeral TCP port to the node&#x27;s machine-network IP (192.168.111.x range) on every boot. These ports fall …</div>
+    <div class="rc-text">CRI-O&#x27;s container streaming server (used for `kubectl exec`/`attach`/`port-forward`) binds an ephemeral TCP port to the node&#x27;s machine-network IP (192.168.111.x range) on every boot. These ports fall in the Linux ephemeral range (32768–60999), which is entirely above the Kubernetes NodePort range (30000–32767). The test&#x27;s `filterOutPortsInDynamicRanges()` at `validation_test.go:241` only covers 30000–32767 (from `GetDynamicRanges()` in `pkg/dynamic-ranges/dynamic-ranges.go:38`), so these crio ports are never suppressed. The `filterOutPortsOfKnownServices()` at `validation_test.go:221` excludes `rpc.statd`, `dnsmasq`, and `dig` but has no entry for `crio`. Since crio&#x27;s streaming port always lands in 32768–60999 (above the NodePort ceiling), this failure is deterministic on every run, not probabilistic.</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `[Validation] [It] should validate the communication matrix ports match the node&#x27;s open ports`
 
 - **Duration:** 38s
@@ -419,7 +419,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="6ec71e7b1a5a1d8d">
   <td class="col-rc">
-    <div class="rc-text">CRI-O&#x27;s internal stream server (used for exec/attach/port-forward) binds to an ephemeral port at startup — here TCP 33085, which is in the Linux ephemeral range (32768–60999) but **outside** the Kuber…</div>
+    <div class="rc-text">CRI-O&#x27;s internal stream server (used for exec/attach/port-forward) binds to an ephemeral port at startup — here TCP 33085, which is in the Linux ephemeral range (32768–60999) but **outside** the Kubernetes NodePort dynamic range (30000–32767). The `filterOutPortsOfKnownServices` function in `validation_test.go:221–239` only skips `rpc.statd`, `dnsmasq`, and `dig`; it has no exemption for `crio`. After all filters are applied, port 33085 survives and triggers `Fail()` at line 161. The NodePort dynamic range filter (`filterOutPortsInDynamicRanges`) would have caught ports 30998/31262/32110 (ovnkube NodePorts), but 33085 is above 32767 so it is not filtered. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `[Validation] should validate the communication matrix ports match the node&#x27;s open ports`
 - **Duration:** 48.9s
 - **Error:** Port TCP/33085 (crio) is open on the node but has no EndpointSlice entry
@@ -462,7 +462,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="37f6253b530cea2d">
   <td class="col-rc">
-    <div class="rc-text">The bare-metal SNO node for cluster `cnfdu7` failed to complete OCP installation. After ~2.5 hours, the `ocp-install.yml` Ansible playbook&#x27;s cluster-readiness `oc` check hit &quot;no route to host&quot; on the …</div>
+    <div class="rc-text">The bare-metal SNO node for cluster `cnfdu7` failed to complete OCP installation. After ~2.5 hours, the `ocp-install.yml` Ansible playbook&#x27;s cluster-readiness `oc` check hit &quot;no route to host&quot; on the kube-apiserver (192.168.17.114:6443), indicating the node lost network routing or the OCP bootstrap/install process failed before the API came up. This is a hardware/infra-level failure in the telco5g lab, not a commatrix code issue. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the evidence needed. Let me write the analysis.
 
 ---
@@ -561,7 +561,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="96c00bcf51759889">
   <td class="col-rc">
-    <div class="rc-text">Port TCP 44463 is bound by the CRI-O container runtime process (pid=2677) as an ephemeral host-level socket (`LISTEN 0 4096 10.0.82.179:44463 0.0.0.0:*`). Because it is a host process, no Kubernetes E…</div>
+    <div class="rc-text">Port TCP 44463 is bound by the CRI-O container runtime process (pid=2677) as an ephemeral host-level socket (`LISTEN 0 4096 10.0.82.179:44463 0.0.0.0:*`). Because it is a host process, no Kubernetes EndpointSlice exists for it. Prior to PR #400, the generated `commatrix.DynamicRanges` included the Linux ephemeral private port range (32768–60999), and the call to `filterOutPortsInDynamicRanges` at `validation_test.go:159` would have silently discarded port 44463 (which falls in that range). PR #400 removed `getLinuxDynamicPrivateRange` from `pkg/dynamic-ranges/dynamic-ranges.go` and deleted `types.LinuxDynamicPrivateDefaultDynamicRange`, leaving only the Kubernetes NodePort range (30000–32767) as a dynamic filter. Port 44463 is outside that range, and `filterOutPortsOfKnownServices` (`validation_test.go:221–239`) only exempts `rpc.statd`, `dnsmasq`, and `dig` — not `crio` — so the port survives all filtering and causes the `Fail` at line 161. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have everything I need to write the complete analysis.
 
 ---
@@ -589,7 +589,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="1deff738e6145158">
   <td class="col-rc">
-    <div class="rc-text">The `telco5g-cluster-setup` step ran `ocp-install.yml` which polls via SSH until an install-complete file appears on the cluster node. The bare-metal cluster (`cnfdu5`) was unreachable at SSH level fr…</div>
+    <div class="rc-text">The `telco5g-cluster-setup` step ran `ocp-install.yml` which polls via SSH until an install-complete file appears on the cluster node. The bare-metal cluster (`cnfdu5`) was unreachable at SSH level from the first attempt; all 150 retries in the Ansible loop (`until`/`retries: 150`) failed identically. This is a CI infra connectivity issue, not a commatrix code regression. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have all the evidence I need. Here is the analysis:
 
 ---
@@ -670,7 +670,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="0d71592f48824232">
   <td class="col-rc">
-    <div class="rc-text">`crio` is binding random ephemeral TCP ports (one per node, range 32768-60999) bound to the node&#x27;s management IP. These have no Kubernetes EndpointSlice. The test&#x27;s `filterOutPortsOfKnownServices()` i…</div>
+    <div class="rc-text">`crio` is binding random ephemeral TCP ports (one per node, range 32768-60999) bound to the node&#x27;s management IP. These have no Kubernetes EndpointSlice. The test&#x27;s `filterOutPortsOfKnownServices()` in `validation_test.go:221-239` already filters `rpc.statd`, `dnsmasq`, and `dig` for exactly this reason (non-Kubernetes host-level processes with random ports), but `crio` is not included in that list. `KubeletNodePortDefaultDynamicRange` only covers 30000–32767, so the crio ephemeral ports (&gt;32767) also survive the `filterOutPortsInDynamicRanges` call. The failure fires at `validation_test.go:161` when `missingEPSMat` is non-empty. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `[Validation] [It] should validate the communication matrix ports match the node&#x27;s open ports`
 
 - **Duration:** 410s (6m50s for this spec, overall suite 568s)
@@ -716,7 +716,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="ba2f256f168cd862">
   <td class="col-rc">
-    <div class="rc-text">`validation_test.go:161` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)`. The `commatrix.DynamicRanges` parsed from the generated `communication-matrix.csv` contains only…</div>
+    <div class="rc-text">`validation_test.go:161` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)`. The `commatrix.DynamicRanges` parsed from the generated `communication-matrix.csv` contains only the NodePort range (TCP/UDP 30000-32767). Port 36515 is in the Linux ephemeral range (32768-60999), which was previously part of the generated commatrix but was removed by PR #400 (commit 7d56343: &quot;Remove Linux Dynamic ranges from generated communication matrix&quot;). Since `commatrix.DynamicRanges` no longer covers 32768-60999, `filterOutPortsInDynamicRanges` does not suppress port 36515, leaving it as an unfiltered &quot;open port without EndpointSlice,&quot; which triggers `Fail()` at line 161. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have a complete picture. Let me compile the analysis.
 
 ---
@@ -759,7 +759,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="9e039b83fa0dd823">
   <td class="col-rc">
-    <div class="rc-text">The cluster API server at `10.1.104.200:64415` was unreachable before the test script ran. The `network-flow-matrix-tests-commands.sh` script calls `get_cluster_version()` which runs `oc version | gre…</div>
+    <div class="rc-text">The cluster API server at `10.1.104.200:64415` was unreachable before the test script ran. The `network-flow-matrix-tests-commands.sh` script calls `get_cluster_version()` which runs `oc version | grep &quot;Server Version:&quot; | awk &#x27;{print $3}&#x27;` — because the API was down this returns empty string, so `major=&quot;&quot;`, `minor=&quot;&quot;`, and the function echoes `&quot;$major.$minor&quot;` → `&quot;.&quot;`. Then `testing_branch=&quot;release-$cluster_version&quot;` → `&quot;release-.&quot;`. `git checkout release-.` fails because no such branch exists. The first domino is the unreachable API server. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `network-flow-matrix-tests` — main test step
 - **Duration:** 71s
 - **Error:** `error: pathspec &#x27;release-.&#x27; did not match any file(s) known to git` (exit code 1)
@@ -881,7 +881,7 @@ PROJECT TESTS PASSED — failure is from CI framework
 </tr>
 <tr id="f17b3fa908a46117">
   <td class="col-rc">
-    <div class="rc-text">The SNO cluster API at `10.1.104.200:64422` was unreachable when the test step started. The test script&#x27;s `get_cluster_version()` function runs `oc version | grep &quot;Server Version:&quot;` — but since the cl…</div>
+    <div class="rc-text">The SNO cluster API at `10.1.104.200:64422` was unreachable when the test step started. The test script&#x27;s `get_cluster_version()` function runs `oc version | grep &quot;Server Version:&quot;` — but since the cluster is unreachable, `oc version` emits only a connection error to stderr and the grep matches nothing, leaving `version=&quot;&quot;`. The function then computes `echo &quot;$major.$minor&quot;` where both are empty, returning `.`. This makes `cluster_version=&quot;.&quot;` and `testing_branch=&quot;release-.&quot;`, causing `git checkout release-.` to fail. The git error is a cascade; the first domino is the unreachable cluster API. Source: `get_cluster_version()` in the `network-flow-matrix-tests` step script at [steps.ci.openshift.org/reference/network-flow-matrix-tests](https://steps.ci.openshift.org/reference/network-flow-matrix-tests). -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the evidence needed. Let me write the full analysis.
 
 ---
@@ -979,7 +979,7 @@ Tests 3–4: `gather-extra` (31s) and `gather-audit-logs` (545s) — **same root
 </tr>
 <tr id="1f83c483e4cc71b7">
   <td class="col-rc">
-    <div class="rc-text">The bare-metal cluster API server at `10.1.104.200:64416` was completely unreachable when the test pod started. The `oc` client could not reach the cluster before any commatrix test code ran. A second…</div>
+    <div class="rc-text">The bare-metal cluster API server at `10.1.104.200:64416` was completely unreachable when the test pod started. The `oc` client could not reach the cluster before any commatrix test code ran. A secondary error (`error: pathspec &#x27;release-.&#x27; did not match any file(s) known to git`) shows the OCP version env var was empty/unset when the script tried to `git checkout release-${OCP_VERSION}`, meaning the cluster environment was never properly initialized. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have enough information to write the full analysis.
 
 ---
@@ -1069,7 +1069,7 @@ Tests 3–4: `gather-extra` (31s) and `gather-audit-logs` (545s) — **same root
 </tr>
 <tr id="358c6188bf274360">
   <td class="col-rc">
-    <div class="rc-text">The cluster API at `10.1.104.200:64414` was unreachable when the test container started. The test script `network-flow-matrix-tests-commands.sh` calls `get_cluster_version()` which runs `oc version | …</div>
+    <div class="rc-text">The cluster API at `10.1.104.200:64414` was unreachable when the test container started. The test script `network-flow-matrix-tests-commands.sh` calls `get_cluster_version()` which runs `oc version | grep &quot;Server Version:&quot;` — when `oc version` fails silently, `version` is empty, `major` and `minor` are both empty strings, so `cluster_version` evaluates to `.` (just a period), and `testing_branch=&quot;release-$cluster_version&quot;` becomes `release-.`. The branch `release-.` does not exist; the valid branch `release-4.21` does exist in `openshift-kni/commatrix`. The first domino is the unreachable API server (`10.1.104.200:64414`), not a code regression. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `[network-flow-matrix-tests] telco5g-network-flow-matrix-bm-network-flow-matrix-tests container test`
 - **Duration:** 72s
 - **Error:** `error: pathspec &#x27;release-.&#x27; did not match any file(s) known to git` (after silent API server timeout)
@@ -1188,7 +1188,7 @@ Tests 3–4: `gather-extra` (31s) and `gather-audit-logs` (545s) — **same root
 </tr>
 <tr id="4993e2f4a833768e">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix `network-flow-matrix-tests` step (13:45:55–13:55:30) **passed** (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`). The nftables e…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix `network-flow-matrix-tests` step (13:45:55–13:55:30) **passed** (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`). The nftables e2e test intentionally rebooted the SNO node (`ip-10-0-20-68.us-west-1.compute.internal`) at 13:50:04 UTC as part of verifying nftables rules survive a reboot. After the commatrix step exited, the CI framework launched the standard `single-node-e2e-test` (openshift-tests suite), whose MonitorTest recorded 120,703 intervals including the node-not-ready event at 13:50:22 and treated it as a failure, even though the reboot was intentional. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `[single-node-e2e-test] Run multi-stage test aws-ovn-network-flow-matrix-single-node - aws-ovn-network-flow-matrix-single-node-single-node-e2e-test container test`
 
 - **Duration:** ~7206s (2h0m46s)
@@ -1239,7 +1239,7 @@ Tests 2: Same root cause as Test 1 — `&quot;aws-ovn-network-flow-matrix-single
 </tr>
 <tr id="00c3bf5f30f12e37">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix `network-flow-matrix-tests` step completed successfully (Ginkgo: `1 Passed | 0 Failed`). That step intentionally rebooted `master-0` …</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix `network-flow-matrix-tests` step completed successfully (Ginkgo: `1 Passed | 0 Failed`). That step intentionally rebooted `master-0` at 20:35:21 Z to verify nftables rules survive reboot; the node went NotReady at 20:36:13 Z and recovered by 20:39:36 Z. The subsequent `baremetalds-e2e-test` step runs the general OpenShift conformance suite on a cluster that had just executed an upgrade *and* a deliberate control-plane node reboot. The CRDValidationRatcheting blocking failure and the 10 OVN-OTE informing failures are unrelated to commatrix logic — they reflect residual cluster state disruption from the upgrade+reboot sequence. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `[baremetalds-e2e-test] [Feature:NetworkSegmentation][ovn-kubernetes-ote][sig-network] Network Segmentation when primary network exist, UserDefinedNetwork status should report not-ready [Suite:openshift/conformance/parallel]`
 - **Duration:** ~3h8m (entire baremetalds-e2e-test step; individual test duration not available in artifacts)
 - **Error:** 10 informing OVN NetworkSegmentation test failures + 1 blocking CRDValidationRatcheting failure in the OpenShift conformance suite
@@ -1298,7 +1298,7 @@ Tests 2: Same root cause as Test 1 — `&quot;aws-ovn-network-flow-matrix-single
 </tr>
 <tr id="edd3f1ad3dbb5bff">
   <td class="col-rc">
-    <div class="rc-text">The commatrix nftables test (`test/e2e/nftables_test.go:85`) intentionally reboots the SNO node to verify that nftables firewall rules persist across reboots — this is expected test behavior. The node…</div>
+    <div class="rc-text">The commatrix nftables test (`test/e2e/nftables_test.go:85`) intentionally reboots the SNO node to verify that nftables firewall rules persist across reboots — this is expected test behavior. The node-not-ready window (19:15:28–20:59:35) also covers the SNO upgrade reboot (upgrade completed at 19:42:34). The subsequent `single-node-e2e-test` step&#x27;s `pathological-event-analyzer` MonitorTest captured this node-not-ready interval as a failure even though all 1943 openshift-tests passed. The ComMatrix project&#x27;s own step (`network-flow-matrix-tests`) completed with `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the evidence needed. Here is my final analysis:
 
 ---
@@ -1356,7 +1356,7 @@ Same root cause as Test 1 — `&quot;e2e-aws-upgrade-ovn-single-node-network-flo
 </tr>
 <tr id="2ec9ce3ddd19b14c">
   <td class="col-rc">
-    <div class="rc-text">The commatrix `network-flow-matrix-tests` step intentionally rebooted the SNO node `ip-10-0-77-148.ec2.internal` at 19:48 as part of the nftables firewall verification test. The `single-node-e2e-test`…</div>
+    <div class="rc-text">The commatrix `network-flow-matrix-tests` step intentionally rebooted the SNO node `ip-10-0-77-148.ec2.internal` at 19:48 as part of the nftables firewall verification test. The `single-node-e2e-test` step runs the OpenShift platform e2e suite concurrently and its MonitorTest infrastructure (`legacy-etcd-invariants`) captured this node-not-ready event across 126,676 monitor intervals, triggering an invariant violation and exit code 1. The commatrix project&#x27;s own tests (`network-flow-matrix-tests`) completed with `&quot;result&quot;:&quot;SUCCESS&quot;` before the SNO reboot window fully closed. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have enough information to write the full analysis.
 
 ---
@@ -1421,7 +1421,7 @@ Same root cause as Test 1 — `&quot;e2e-aws-upgrade-ovn-single-node-network-flo
 </tr>
 <tr id="f2bdd566bd713321">
   <td class="col-rc">
-    <div class="rc-text">The bare-metal OCP cluster (host `10.1.104.200`, port `64414`) was completely unreachable by the time all post-test gather steps ran. The cluster setup phase (`telco5g-cluster-setup`) reported SUCCESS…</div>
+    <div class="rc-text">The bare-metal OCP cluster (host `10.1.104.200`, port `64414`) was completely unreachable by the time all post-test gather steps ran. The cluster setup phase (`telco5g-cluster-setup`) reported SUCCESS after 2h12m, but the API server was not responding to any connection from CI pods immediately thereafter. Every `oc`/`kubectl` call timed out at the TCP dial level. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have all the evidence needed. Let me write the analysis.
 
 ---
@@ -1523,7 +1523,7 @@ Same root cause as Test 1 — `&quot;e2e-aws-upgrade-ovn-single-node-network-flo
 </tr>
 <tr id="6c6a42226b5613f1">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix test intentionally applies MachineConfigs to deploy nftables rules, which triggers rolling node reboots. The `openshift-e2e-test` ste…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix test intentionally applies MachineConfigs to deploy nftables rules, which triggers rolling node reboots. The `openshift-e2e-test` step&#x27;s MonitorTest component detected the temporary node-not-ready periods during those reboots and reported a failure. This is expected behavior for nftables reboot validation, not a commatrix regression. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have all the evidence needed. Here is the analysis:
 
 ---
@@ -1586,7 +1586,7 @@ Same root cause as Test 1 — `&quot;e2e-aws-upgrade-ovn-single-node-network-flo
 </tr>
 <tr id="1823e78fe22138f5">
   <td class="col-rc">
-    <div class="rc-text">Two compounding failures. First, the target baremetal cluster API server (`10.1.104.200:64424`, cluster `cnfdu17`) was unreachable via TCP — every `oc` call timed out. Second, the test step script att…</div>
+    <div class="rc-text">Two compounding failures. First, the target baremetal cluster API server (`10.1.104.200:64424`, cluster `cnfdu17`) was unreachable via TCP — every `oc` call timed out. Second, the test step script attempted `git checkout release-.` (a malformed branch), indicating the OCP version environment variable that builds the branch name (e.g. `release-${OCP_VERSION}`) was empty at runtime. Both failures cause exit status 1 before any commatrix test code ran. The git pathspec `release-.` is a distinct script/config bug unrelated to the cluster timeout. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have all the evidence needed. Let me compose the full analysis.
 
 ---
@@ -1721,7 +1721,7 @@ Same root cause as Test 1 — `&quot;e2e-aws-upgrade-ovn-single-node-network-flo
 </tr>
 <tr id="70d6560533fb685b">
   <td class="col-rc">
-    <div class="rc-text">The test script&#x27;s `get_cluster_version()` calls `oc version | grep &quot;Server Version:&quot; | awk &#x27;{print $3}&#x27;`. Because the bare metal cluster API server at `10.1.104.200:64425` was unreachable (i/o timeout…</div>
+    <div class="rc-text">The test script&#x27;s `get_cluster_version()` calls `oc version | grep &quot;Server Version:&quot; | awk &#x27;{print $3}&#x27;`. Because the bare metal cluster API server at `10.1.104.200:64425` was unreachable (i/o timeout), `oc version` returns no server version — so `major=&quot;&quot;`, `minor=&quot;&quot;`, and `echo &quot;$major.$minor&quot;` returns `.` (a literal dot). This sets `cluster_version=&quot;.&quot;` and `testing_branch=&quot;release-.&quot;`, which does not exist in the repo. The cluster was healthy at setup completion (`cnfdu18-master-0/1/2` all `Ready`, cluster version confirmed `4.21.0-0.nightly-2026-06-20-204857`) but the API VIP became unreachable by the time the test pod launched — a transient bare metal network/infra failure. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `[network-flow-matrix-tests] network-flow-matrix-tests container test`
 - **Duration:** 1m43s
 - **Error:** API server unreachable → `get_cluster_version()` returns `.` → `git checkout release-.` fails with `pathspec &#x27;release-.&#x27; did not match any file(s) known to git`
@@ -1840,7 +1840,7 @@ Same root cause as Test 1 — `&quot;e2e-aws-upgrade-ovn-single-node-network-flo
 </tr>
 <tr id="6090e1385c1b7422">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — this failure is from the CI framework. The `network-flow-matrix-tests` step **succeeded** (`finished.json: {&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;}`). The commatrix nftables test inte…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — this failure is from the CI framework. The `network-flow-matrix-tests` step **succeeded** (`finished.json: {&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;}`). The commatrix nftables test intentionally rebooted the SNO node at 13:51 as part of its firewall-after-reboot verification. The subsequent standard OpenShift e2e suite (`single-node-e2e-test` step) caught a blocking failure in the unrelated `[sig-node] InPlacePodVerticalScaling` test. The &quot;Node not ready&quot; category reflects MonitorTest recording the intentional SNO reboot event (node was NotReady during commatrix test, before the e2e suite even started). The InPlace resize test failure on a post-reboot SNO node is a known flaky area; the node was rebooted at 13:51, the commatrix step finished at 13:59, and the e2e suite launched immediately after with potentially incomplete node recovery. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have all the evidence needed. Let me compose the final analysis:
 
 ---
@@ -1905,7 +1905,7 @@ Same root cause as Test 1 — `&quot;e2e-aws-upgrade-ovn-single-node-network-flo
 </tr>
 <tr id="3ef085e383ad19d6">
   <td class="col-rc">
-    <div class="rc-text">Two independent failures hit the test step. First, the OCP API server at `10.1.104.200:64415` (the bare-metal cluster `cnfdu8`) became unreachable with an i/o timeout immediately when the test step st…</div>
+    <div class="rc-text">Two independent failures hit the test step. First, the OCP API server at `10.1.104.200:64415` (the bare-metal cluster `cnfdu8`) became unreachable with an i/o timeout immediately when the test step started — the cluster setup had finished ~1 minute earlier at 15:18:26Z. Second, the test entrypoint script attempted `git checkout release-.` (a malformed branch name), indicating the OCP version variable was not properly interpolated — the expected branch (e.g., `release-5.0`) was reduced to `release-.` because `OCP_VERSION` or equivalent variable was empty/unset when the script ran. The API timeout alone would have caused job failure even without the git issue. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have all the information I need to write the full analysis.
 
 ---
@@ -2024,7 +2024,7 @@ Same root cause as Test 1 — `&quot;e2e-aws-upgrade-ovn-single-node-network-flo
 </tr>
 <tr id="e0dc492254f6c4e8">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The `network-flow-matrix-tests` step completed successfully (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`). The blocking failure comes from …</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The `network-flow-matrix-tests` step completed successfully (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`). The blocking failure comes from the OpenShift e2e CI framework&#x27;s `[sig-apps]` DaemonSet rolling update test. The category &quot;Node not ready&quot; indicates a node went `NotReady` during the long test window (~3.5 hours), preventing DaemonSet pods from being surged onto that node as expected by the test. This is a transient infrastructure condition, not a commatrix regression. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have all the information needed. Here is the full analysis:
 
 ---
@@ -2077,7 +2077,7 @@ Container test exited with code 1, reason Error
 </tr>
 <tr id="b4a828f816f35f00">
   <td class="col-rc">
-    <div class="rc-text">The bare-metal OCP cluster API server at `10.1.104.200:64424` was completely unreachable when the test pod started — all TCP connections timed out with i/o timeout (not connection refused, meaning the…</div>
+    <div class="rc-text">The bare-metal OCP cluster API server at `10.1.104.200:64424` was completely unreachable when the test pod started — all TCP connections timed out with i/o timeout (not connection refused, meaning the host or network path itself was down). The cluster setup step had succeeded 1m44m53s earlier, but the API became unreachable before the test phase. Additionally, the test script tried to `git checkout release-.` (malformed branch name), likely because it derived the OCP version string from the unresponsive cluster API, yielding an empty/partial version variable. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `network-flow-matrix-tests` — network-flow-matrix-tests container test
 
 - **Duration:** 1m11s
@@ -2210,7 +2210,7 @@ Container test exited with code 1, reason Error
 </tr>
 <tr id="0d8068cf42f09978">
   <td class="col-rc">
-    <div class="rc-text">The test script calls `oc version | grep &quot;Server Version:&quot;` to determine the cluster version. Because the API server at `10.1.104.200:64416` is unreachable (i/o timeout), `oc version` produces no &quot;Ser…</div>
+    <div class="rc-text">The test script calls `oc version | grep &quot;Server Version:&quot;` to determine the cluster version. Because the API server at `10.1.104.200:64416` is unreachable (i/o timeout), `oc version` produces no &quot;Server Version:&quot; line. The `get_cluster_version()` function then yields `major=&quot;&quot;`, `minor=&quot;&quot;` → `cluster_version=&quot;.&quot;`. Consequently `testing_branch=&quot;release-.&quot;` — a branch that does not exist in the commatrix repo — and `git checkout release-.` fails. The script has `set -eu` but the `oc version` failure in a subshell substitution does not abort it, so execution continues to the git checkout which aborts with exit 1. The unreachable API endpoint is the first domino; the `release-.` checkout failure is the immediate exit cause. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have everything I need. I found the exact test script from the pod spec — the `ENTRYPOINT_OPTIONS` reveals the complete bash script. Let me write the analysis.
 
 ---
@@ -2316,7 +2316,7 @@ Container test exited with code 1, reason Error
 </tr>
 <tr id="54b4d32b20a2bdc3">
   <td class="col-rc">
-    <div class="rc-text">The commatrix `nftables_test.go` nftables test (which ran in the preceding `network-flow-matrix-tests` step and **passed**) deliberately triggered a node reboot at 13:52:10 to verify nftables rules su…</div>
+    <div class="rc-text">The commatrix `nftables_test.go` nftables test (which ran in the preceding `network-flow-matrix-tests` step and **passed**) deliberately triggered a node reboot at 13:52:10 to verify nftables rules survive reboot. The CI framework&#x27;s MonitorTest runs continuously across the entire job and recorded 119,198 intervals; it detected the node-not-ready event from that intentional reboot and classified it as a failure. `finished.json` for the commatrix step confirms `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;` — the project&#x27;s own tests all passed. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have all the evidence I need. Let me now write the final analysis.
 
 ---
@@ -2382,7 +2382,7 @@ Container test exited with code 1, reason Error
 </tr>
 <tr id="2e09e5ecfe0ffa9d">
   <td class="col-rc">
-    <div class="rc-text">The CI test script clones the commatrix repo and immediately attempts `git checkout release-&lt;VERSION&gt;`, but the version variable resolves to an empty string, producing branch name `release-.` — which …</div>
+    <div class="rc-text">The CI test script clones the commatrix repo and immediately attempts `git checkout release-&lt;VERSION&gt;`, but the version variable resolves to an empty string, producing branch name `release-.` — which does not exist. The commatrix repo contains **only a `main` branch** (confirmed via `git branch -a`); there are no `release-X.Y` branches. For OCP 5.0, the version string substitution in the step script yields `release-.` instead of e.g. `release-5.0`, because the minor-version env var (`OCP_MINOR_VERSION` or similar) is undefined or empty for the 5.0 nightly variant. Additionally, the API server at `10.1.104.200:64413` is unreachable even before the git failure, indicating the test cluster&#x27;s control plane went down before tests could run. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have enough to write the full analysis. Let me write it to stdout:
 
 ---
@@ -2499,7 +2499,7 @@ Container test exited with code 1, reason Error
 </tr>
 <tr id="156bce6c27d95f3b">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from the CI framework. The commatrix `network-flow-matrix-tests` step succeeded in 9m48s (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`). The `single-node-e2e-t…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from the CI framework. The commatrix `network-flow-matrix-tests` step succeeded in 9m48s (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`). The `single-node-e2e-test` step runs the standard OpenShift e2e conformance suite on the SNO cluster. The commatrix test suite intentionally reboots the node (to verify nftables rule persistence), leaving the single-node cluster temporarily unavailable. The `[sig-node] Pod InPlace Resize Container` conformance test ran during or shortly after this reboot window, hitting a node-not-ready condition which caused the pod scheduling/execution to fail. This is a known hazard of running conformance tests on a SNO cluster that undergoes an intentional reboot. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have all the evidence needed. Let me now write the analysis.
 
 ---
@@ -2557,7 +2557,7 @@ Container test exited with code 1, reason Error
 </tr>
 <tr id="cfa6f1496b893ac4">
   <td class="col-rc">
-    <div class="rc-text">The bare-metal cluster API server at `10.1.104.200:64416` was unreachable from within the test pod immediately upon start. Cluster setup (`telco5g-cluster-setup`) reported SUCCESS after 1h40m, but by …</div>
+    <div class="rc-text">The bare-metal cluster API server at `10.1.104.200:64416` was unreachable from within the test pod immediately upon start. Cluster setup (`telco5g-cluster-setup`) reported SUCCESS after 1h40m, but by the time the test pod launched the API endpoint had gone silent. Because the test script derives the OCP version via `oc version` (which timed out), the version variables were empty — causing the subsequent `git checkout release-${MAJOR}.${MINOR}` to produce the malformed ref `release-.`, which git rejected. The cluster itself either crashed, rebooted, or its API LB dropped after provisioning. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have enough evidence for a complete analysis. Writing the final output:
 
 ---
@@ -2688,7 +2688,7 @@ Container test exited with code 1, reason Error
 </tr>
 <tr id="ff34148b38fe8f29">
   <td class="col-rc">
-    <div class="rc-text">The commatrix nftables test (`nftables_test.go:85`) intentionally applies a MachineConfig and reboots the SNO node at 13:46 UTC as part of its firewall validation. The concurrently-running openshift-t…</div>
+    <div class="rc-text">The commatrix nftables test (`nftables_test.go:85`) intentionally applies a MachineConfig and reboots the SNO node at 13:46 UTC as part of its firewall validation. The concurrently-running openshift-tests MonitorTest framework (`pod-network-avalibility`, `on-prem-haproxy`, `kubelet-container-restarts`) captured this node-not-ready event in its interval log (120620 intervals) and treated it as an unexpected availability disruption. The MonitorTest has no awareness that the downtime was intentional. The project&#x27;s own commatrix tests passed (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`). -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the evidence needed. Here is the analysis:
 
 ---
@@ -2755,7 +2755,7 @@ Container test exited with code 1, reason Error
 </tr>
 <tr id="f445c458e139db9d">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix e2e step (`network-flow-matrix-tests`) succeeded with `&quot;result&quot;:&quot;SUCCESS&quot;` (finished.json). The failing test is an OCP platform confo…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix e2e step (`network-flow-matrix-tests`) succeeded with `&quot;result&quot;:&quot;SUCCESS&quot;` (finished.json). The failing test is an OCP platform conformance test from the `openshift-e2e-test` step, which is a standard CI gate run after every commatrix job. The commatrix nftables verification rebooted node `ip-10-0-109-229.us-west-2.compute.internal` via MachineConfig; the subsequent EgressIP serial test — which requires nodes to be fully ready and EgressIPs to be consistently assigned — likely hit a timing window where a node was still recovering from the intentional reboot, causing EgressIP assignment to be inconsistent or unavailable. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `[openshift-e2e-test] [sig-network][Feature:EgressIP][apigroup:operator.openshift.io] [external-targets][apigroup:user.openshift.io][apigroup:security.openshift.io] pods should have the assigned EgressIPs and EgressIPs can be updated [Serial] [Suite:openshift/conformance/serial]`
 
 - **Duration:** 3h3m14s (full e2e suite)
@@ -2815,7 +2815,7 @@ Container test exited with code 1, reason Error
 </tr>
 <tr id="55118f3a90348146">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix nftables test (`nftables_test.go:85`) deliberately rebooted `master-0` to verify nftables rules persist across reboot (node was NotRe…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix nftables test (`nftables_test.go:85`) deliberately rebooted `master-0` to verify nftables rules persist across reboot (node was NotReady for ~2m31s, 20:34:59–20:37:30). The subsequent `baremetalds-e2e-test` step runs OpenShift&#x27;s `openshift-tests` suite which includes MonitorTest. MonitorTest processes the full-job interval timeline (40,563 intervals), detects the master-0 node-not-ready window, and raises exactly 1 failure — not knowing it was an intentional reboot by the test itself. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the evidence needed. Let me produce the analysis.
 
 ---
@@ -2880,7 +2880,7 @@ Container test exited with code 1, reason Error
 </tr>
 <tr id="03053bce5893d058">
   <td class="col-rc">
-    <div class="rc-text">The commatrix nftables e2e test intentionally rebooted the single-node cluster (`ip-10-0-21-109.us-west-1.compute.internal`) at 19:51:15 UTC to verify nftables rules persist after reboot — this is by …</div>
+    <div class="rc-text">The commatrix nftables e2e test intentionally rebooted the single-node cluster (`ip-10-0-21-109.us-west-1.compute.internal`) at 19:51:15 UTC to verify nftables rules persist after reboot — this is by design. The OpenShift CI MonitorTest framework, running concurrently inside the `single-node-e2e-test` step, detected the resulting node-not-ready condition and recorded it as a failing interval. The suite technically passed (&quot;suite passes despite failures&quot;) with only 1 informing fail, but the process still exited with code 1, which ci-operator treats as a step failure. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have all the evidence I need. Here is my analysis:
 
 ---
@@ -2952,7 +2952,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="417392976011df67">
   <td class="col-rc">
-    <div class="rc-text">Two concurrent failures. (1) The bare metal test cluster API server at `10.1.104.200:64415` was unreachable via i/o timeout the moment the test pod started — the cluster setup step succeeded (2h10m51s…</div>
+    <div class="rc-text">Two concurrent failures. (1) The bare metal test cluster API server at `10.1.104.200:64415` was unreachable via i/o timeout the moment the test pod started — the cluster setup step succeeded (2h10m51s) but connectivity to the OCP API was lost by test phase. (2) The CI step script attempted to `git checkout release-.` — a malformed branch name where the version suffix (expected to be e.g. `5.0`) was an empty string, producing `release-.` instead of `release-5.0`. Exit status 1 came from the git command, not the API failure. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `network-flow-matrix-tests` — network-flow-matrix-tests container test
 
 - **Duration:** 71s
@@ -3077,7 +3077,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="bb2fed6a20b17828">
   <td class="col-rc">
-    <div class="rc-text">The test script (`network-flow-matrix-tests-commands.sh`) calls `get_cluster_version()` which runs `oc version | grep &quot;Server Version:&quot; | awk &#x27;{print $3}&#x27;`. Because the cluster API at 10.1.104.200:644…</div>
+    <div class="rc-text">The test script (`network-flow-matrix-tests-commands.sh`) calls `get_cluster_version()` which runs `oc version | grep &quot;Server Version:&quot; | awk &#x27;{print $3}&#x27;`. Because the cluster API at 10.1.104.200:64424 was unreachable (i/o timeout), `oc version` returned no server version, causing `$major` and `$minor` to both be empty. `echo &quot;$major.$minor&quot;` then returned `.`, so `cluster_version=&quot;.&quot;`. The script then set `testing_branch=&quot;release-.&quot;` — since the commatrix repo has no release branches, `latest_release_version` was also empty, and `version_greater_than &quot;.&quot; &quot;&quot;` returned false (sort -V does not treat `.` &gt; empty string), so the fallback to `main` was skipped. `git checkout release-.` failed because no such branch exists. The entrypoint captured `exit status 1`. The **first domino** is the cluster API being unreachable via TCP — the `get_cluster_version()` function has no error-handling for the `oc version` failure. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have the complete picture. Let me write the full analysis.
 
 ---
@@ -3194,7 +3194,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="8b9c0333f28bf314">
   <td class="col-rc">
-    <div class="rc-text">The cluster API server at `10.1.104.200:64416` was unreachable from the CI test pod when the test step started. The step script&#x27;s `get_cluster_version()` function runs `oc version | grep &quot;Server Versi…</div>
+    <div class="rc-text">The cluster API server at `10.1.104.200:64416` was unreachable from the CI test pod when the test step started. The step script&#x27;s `get_cluster_version()` function runs `oc version | grep &quot;Server Version:&quot; | awk &#x27;{print $3}&#x27;` (steps.ci line 282); because the server was unreachable, `oc version` printed no &quot;Server Version:&quot; line, so `major=&quot;&quot;` and `minor=&quot;&quot;`, causing `echo &quot;$major.$minor&quot;` to return `&quot;.&quot;`. This fed `cluster_version=&quot;.&quot;` into `testing_branch=&quot;release-$cluster_version&quot;` = `&quot;release-.&quot;`, which then failed at `git checkout release-.`. No commatrix tests ever ran. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the evidence needed. Let me write the complete analysis.
 
 ---
@@ -3322,7 +3322,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="7d15af6b25ba3578">
   <td class="col-rc">
-    <div class="rc-text">The commatrix nftables e2e test (`nftables_test.go:85`) **intentionally reboots** the SNO node (`ip-10-0-127-120.ec2.internal`) at 13:50:30 to verify nftables firewall rules survive a reboot. This nod…</div>
+    <div class="rc-text">The commatrix nftables e2e test (`nftables_test.go:85`) **intentionally reboots** the SNO node (`ip-10-0-127-120.ec2.internal`) at 13:50:30 to verify nftables firewall rules survive a reboot. This node-not-ready event was observed by the OpenShift CI `node-state-analyzer` MonitorTest (which runs as part of the `single-node-e2e-test` step). The MonitorTest has no knowledge that the downtime was intentional and flags it as an anomalous cluster failure, causing the entire suite to return exit code 1. The commatrix project&#x27;s own tests **all passed** (`finished.json: &quot;result&quot;:&quot;SUCCESS&quot;`). -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">### Test 1: `[single-node-e2e-test] Run multi-stage test aws-ovn-network-flow-matrix-single-node - aws-ovn-network-flow-matrix-single-node-single-node-e2e-test container test`
 - **Duration:** 6147s (~1h45m)
 - **Error:** `Suite run returned error: failed due to a MonitorTest failure`
@@ -3383,7 +3383,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="b372e9e4ee97524e">
   <td class="col-rc">
-    <div class="rc-text">The OCP cluster API server at `10.1.104.200:64412` (cluster `cnfdu5`) was completely unreachable when the test container started. No commatrix tests ran at all. A secondary git error (`pathspec &#x27;relea…</div>
+    <div class="rc-text">The OCP cluster API server at `10.1.104.200:64412` (cluster `cnfdu5`) was completely unreachable when the test container started. No commatrix tests ran at all. A secondary git error (`pathspec &#x27;release-.&#x27;`) indicates the OCP version env variable was empty, causing the checkout to target a non-existent branch `release-.` instead of e.g. `release-5.0`. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the evidence needed. Here is the full analysis:
 
 ---
@@ -3499,7 +3499,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="a206dfa91b765dcb">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix Nftables e2e test intentionally rebooted SNO node `ip-10-0-32-208.us-east-2.compute.internal` at 19:50:42 UTC (node went NotReady at …</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix Nftables e2e test intentionally rebooted SNO node `ip-10-0-32-208.us-east-2.compute.internal` at 19:50:42 UTC (node went NotReady at 19:50:59 UTC) as part of its normal test flow. The OpenShift MonitorTest/kubelet-log-collector detected this expected node-not-ready event and flagged it, causing `openshift-tests` to exit with status 1. `finished.json` confirms `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;` for the commatrix step. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on my thorough review of all evidence files, here is my analysis:
 
 ---
@@ -3545,7 +3545,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="23ef2238f48ee49f">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix nftables test (`test/e2e/nftables_test.go:100`) intentionally reboots SNO node `ip-10-0-59-183.ec2.internal` at 19:52 UTC to verify n…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix nftables test (`test/e2e/nftables_test.go:100`) intentionally reboots SNO node `ip-10-0-59-183.ec2.internal` at 19:52 UTC to verify nftables rules persist. The OpenShift e2e MonitorTest framework collected this node-not-ready event in its 120,782-interval dataset and raised it as a suite-level invariant failure at 22:47 UTC, ~3h later. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
 
 ### Test 1: `[single-node-e2e-test] Run multi-stage test e2e-aws-upgrade-ovn-single-node-network-flow-matrix - e2e-aws-upgrade-ovn-single-node-network-flow-matrix-single-node-e2e-test container test`
@@ -3589,7 +3589,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="d05cff4cb8885102">
   <td class="col-rc">
-    <div class="rc-text">The `gather-must-gather` CI step (post phase) exited with code 56 after only 8 seconds. Exit code 56 in this context indicates `oc adm must-gather` could not reach the cluster API — likely because the…</div>
+    <div class="rc-text">The `gather-must-gather` CI step (post phase) exited with code 56 after only 8 seconds. Exit code 56 in this context indicates `oc adm must-gather` could not reach the cluster API — likely because the cluster was in a degraded or mid-reboot state following the upgrade from 4.20→4.21. This is a CI framework artifact-collection failure, not a commatrix test failure. The entrypoint is at `sigs.k8s.io/prow/pkg/entrypoint/run.go:84`. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on the evidence, I have a clear picture. The `finished.json` shows `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;` for the project&#x27;s own tests. The only failure is from the post-phase `gather-must-gather` CI infrastructure step. Let me write the analysis.
 
 ---
@@ -3628,7 +3628,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="e6fc85079d8fc398">
   <td class="col-rc">
-    <div class="rc-text">The commatrix project&#x27;s 4 e2e tests all passed (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`; build log: &quot;Ran 4 of 4 Specs... SUCCESS!&quot;). The step also ran the broader OpenShift e2e conformance…</div>
+    <div class="rc-text">The commatrix project&#x27;s 4 e2e tests all passed (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`; build log: &quot;Ran 4 of 4 Specs... SUCCESS!&quot;). The step also ran the broader OpenShift e2e conformance suite, which hit 1 blocking failure in a standard Kubernetes CRD conformance test (`[sig-api-machinery]`) — unrelated to commatrix code. The nftables test intentionally rebooted `master-0` (NotReady 14:40:03 → Ready 14:42:27), which MonitorTest recorded as a node-not-ready event, but this was not the blocking failure. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have all the information needed. Let me write the analysis.
 
 ---
@@ -3681,7 +3681,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="aac98b9c53ac8363">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The OpenShift e2e suite&#x27;s blocking failure `[sig-node] Pod InPlace Resize Container burstable pods - extended 6 containers - various operations per…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The OpenShift e2e suite&#x27;s blocking failure `[sig-node] Pod InPlace Resize Container burstable pods - extended 6 containers - various operations performed (including adding limits and requests) [MinimumKubeletVersion:1.34] [Conformance]` caused the test container to exit with code 1. This is a standard Kubernetes conformance test unrelated to commatrix, testing in-place pod resize on a single-node cluster. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on the evidence, I have all I need. The `finished.json` shows `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;` — the commatrix project&#x27;s own tests passed. The job failure is entirely from the CI framework&#x27;s OpenShift e2e suite.
 
 ---
@@ -3730,7 +3730,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="22f4de03400de5dd">
   <td class="col-rc">
-    <div class="rc-text">The Ansible playbook `get-cluster-name.yml` (task at line 14) invoked `upstream_cluster_all.py --get-cluster -e upstreambil --topology sno` against the Telco5G lab. The lab had no free SNO/1b1v bare-m…</div>
+    <div class="rc-text">The Ansible playbook `get-cluster-name.yml` (task at line 14) invoked `upstream_cluster_all.py --get-cluster -e upstreambil --topology sno` against the Telco5G lab. The lab had no free SNO/1b1v bare-metal cluster available at job execution time, causing immediate pre-phase failure before any commatrix tests ran. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on all evidence, here is the full analysis:
 
 ---
@@ -3791,7 +3791,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="bb96f553d0319aaa">
   <td class="col-rc">
-    <div class="rc-text">The CI step ran `~/telco5g-lab-deployment/scripts/upstream_cluster_all.py` to lease a bare-metal telco5g cluster from the `upstreambil` pool (excluding cnfdu1, cnfdu3). The pool was fully occupied, so…</div>
+    <div class="rc-text">The CI step ran `~/telco5g-lab-deployment/scripts/upstream_cluster_all.py` to lease a bare-metal telco5g cluster from the `upstreambil` pool (excluding cnfdu1, cnfdu3). The pool was fully occupied, so the script exited with rc=1 and the Ansible play failed (exit code 2). No cluster was ever provisioned; the commatrix tests never ran. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have enough information to write the analysis.
 
 ---
@@ -3852,7 +3852,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="395efea844a2782f">
   <td class="col-rc">
-    <div class="rc-text">The AWS IPI installer pod (`aws-ovn-network-flow-matrix-single-node-ipi-install-install`) timed out after 1h1m48s during cluster bootstrap. The control plane API never became reachable — all cluster o…</div>
+    <div class="rc-text">The AWS IPI installer pod (`aws-ovn-network-flow-matrix-single-node-ipi-install-install`) timed out after 1h1m48s during cluster bootstrap. The control plane API never became reachable — all cluster operators report `not available (&lt;missing&gt;)`, indicating the bootstrap node never handed off to the master. This is an AWS infrastructure provisioning failure in the CI environment, not a commatrix code issue. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on all the evidence, here is the full analysis:
 
 ---
@@ -3896,7 +3896,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="a5e802547e2112ec">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The `commatrix` nftables test intentionally rebooted node `ip-10-0-32-107.us-east-2.compute.internal` at 19:54:55Z as part of its firewall-validati…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The `commatrix` nftables test intentionally rebooted node `ip-10-0-32-107.us-east-2.compute.internal` at 19:54:55Z as part of its firewall-validation sequence. The OpenShift e2e MonitorTests (`apiserver-incluster-availability`, `faulty-load-balancer`, `machine-lifecycle`) ran across the entire job and flagged the resulting brief API-server outage (connection refused to port 6443) as a failure — even though the reboot was deliberate and the commatrix `network-flow-matrix-tests` step finished with `&quot;result&quot;:&quot;SUCCESS&quot;`. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on all the evidence gathered, here is my final analysis:
 
 ---
@@ -3940,7 +3940,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="8f220c236159bf88">
   <td class="col-rc">
-    <div class="rc-text">The CI bare-metal bastion host became unreachable via SSH (port 22) during Ansible OCP cluster provisioning. The `telco5g-sno-setup` step runs `ocp-install.yml` which uses `wait_for_connection` with r…</div>
+    <div class="rc-text">The CI bare-metal bastion host became unreachable via SSH (port 22) during Ansible OCP cluster provisioning. The `telco5g-sno-setup` step runs `ocp-install.yml` which uses `wait_for_connection` with retries (`get-cluster-name.yml:6`, `ocp-install.yml:7`). After exhausting all retries the host remained unreachable, causing `exit status 4`. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have all the information needed. Let me write the analysis.
 
 ---
@@ -4021,7 +4021,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="0b2c5e1fbbcea8ea">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The OpenShift e2e `MonitorTest` harness detected a &quot;node not ready&quot; interval (118,926 monitor intervals collected) and classified the run as failed…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The OpenShift e2e `MonitorTest` harness detected a &quot;node not ready&quot; interval (118,926 monitor intervals collected) and classified the run as failed. This is expected behaviour during the intentional node reboot that the commatrix nftables-after-reboot test performs; the CI framework does not know the reboot is intentional. The `single-node-e2e-test` step wraps the commatrix suite inside the OpenShift e2e monitor, so any node disruption triggers a `MonitorTest` failure via `sigs.k8s.io/prow/pkg/entrypoint/run.go:84`. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have all the information needed. The `finished.json` shows `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;` — the commatrix project&#x27;s tests passed. The failure is entirely in the CI framework&#x27;s `MonitorTest` layer. Here is the analysis:
 
 ---
@@ -4065,7 +4065,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="bcd5fe78f332fbf8">
   <td class="col-rc">
-    <div class="rc-text">The `telco5g-cluster-setup` step runs an Ansible playbook that provisions a baremetal cluster and then waits (up to 300s with 10s initial delay, retried once) for SSH on port 22. The target baremetal …</div>
+    <div class="rc-text">The `telco5g-cluster-setup` step runs an Ansible playbook that provisions a baremetal cluster and then waits (up to 300s with 10s initial delay, retried once) for SSH on port 22. The target baremetal node never became reachable, indicating the node failed to boot or had a network provisioning error. The commatrix project tests **never ran** — the cluster was never created. Additionally, a secondary error shows the Kubernetes Secret holding step output exceeded 1 MiB (`Secret &quot;telco5g-network-flow-matrix-bm&quot; is invalid: data: Too long`), indicating the verbose SSH debug output filled the secret. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have a complete picture. Let me write the analysis:
 
 ---
@@ -4103,7 +4103,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="2b0aca5e9abe8bb7">
   <td class="col-rc">
-    <div class="rc-text">`WaitForMCPUpdate` in `test/pkg/cluster/cluster.go:68` polls for `mcp.Status.Configuration.Name` to change away from `rendered-master-d873294ce376db9e8e30e96beac3d3c9`, but the MCO never rendered a ne…</div>
+    <div class="rc-text">`WaitForMCPUpdate` in `test/pkg/cluster/cluster.go:68` polls for `mcp.Status.Configuration.Name` to change away from `rendered-master-d873294ce376db9e8e30e96beac3d3c9`, but the MCO never rendered a new config from `98-nftables-commatrix-master` within the 20-minute window. The `build-log.txt` shows the same &quot;rendered MC unchanged&quot; message every 5s for the entire timeout — the MCO simply never acted on the applied MachineConfig. On this post-upgrade (4.22→4.23) SNO cluster, the MCO appears to have been in a delayed/stuck state immediately after the upgrade. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have enough information to write the complete analysis. Here it is:
 
 ---
@@ -4154,7 +4154,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="e079adf43b5dcc6e">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. `finished.json` for the commatrix test step shows `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`. The OpenShift e2e MonitorTest framework detected a &quot;node not …</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. `finished.json` for the commatrix test step shows `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`. The OpenShift e2e MonitorTest framework detected a &quot;node not ready&quot; event during the test run and failed the overall suite. The commatrix test suite intentionally reboots the node to verify nftables rules persist (see `nftables-after-reboot-ip-10-0-117-100.us-west-1.compute.internal` artifact), and the MonitorTest treated this expected reboot-induced node-not-ready as a CI-level failure. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on my analysis of the evidence files, here is the final output:
 
 ---
@@ -4200,7 +4200,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="8e9fe89bd15eb543">
   <td class="col-rc">
-    <div class="rc-text">The Prow e2e interval monitor detected a node-not-ready disruption event during the `single-node-e2e-test` run. The `network-flow-matrix-tests` step ran **concurrently** with `single-node-e2e-test` an…</div>
+    <div class="rc-text">The Prow e2e interval monitor detected a node-not-ready disruption event during the `single-node-e2e-test` run. The `network-flow-matrix-tests` step ran **concurrently** with `single-node-e2e-test` and deliberately rebooted the only node in the SNO cluster (`ip-10-0-100-89.ec2.internal`) at 20:03:33 UTC via `node.SoftRebootNodeAndWaitForDisconnect` (`test/pkg/node/node.go:L26`). On SNO, that node **is** the API server; rebooting it dropped the entire control plane mid-run. The `= 126606` token is an internal e2e-monitor interval counter recorded when the node-not-ready condition was detected; the broader e2e suite exited with &quot;1 blocking fail, 1940 pass&quot; caused by this connectivity loss. The commatrix test itself passed (finished.json: `&quot;result&quot;:&quot;SUCCESS&quot;`). -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the information needed. Let me produce the final analysis.
 
 ---
@@ -4240,7 +4240,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="dc117f6fc0fd45d2">
   <td class="col-rc">
-    <div class="rc-text">The CI framework attempted to resolve and import the OCP 4.23 nightly release image `4.23.0-0.nightly-2026-06-10-213308` (published 2026-06-10) into the job namespace `ci-op-cs7prjb7`. After 6 success…</div>
+    <div class="rc-text">The CI framework attempted to resolve and import the OCP 4.23 nightly release image `4.23.0-0.nightly-2026-06-10-213308` (published 2026-06-10) into the job namespace `ci-op-cs7prjb7`. After 6 successive import retries the image still did not appear on the image stream, and ci-operator timed out. This is a CI infrastructure-level failure: the release image tag either expired/was pruned from `registry.ci.openshift.org/ocp/release` between the time of resolution and import, or the internal registry was temporarily unavailable. The job was terminated immediately with reason `executing_graph:step_failed:importing_release` — no cluster was provisioned, no commatrix tests ran at all. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
 
 ### Test 1: `[release:latest] Import the release payload &quot;latest&quot; from an external source`
@@ -4277,7 +4277,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="786016bcc8f2c57d">
   <td class="col-rc">
-    <div class="rc-text">The CI framework&#x27;s `release:latest` import step resolved the nightly build `4.23.0-0.nightly-2026-06-10-213308` (from 2026-06-10) and attempted to import it into the job namespace `ci-op-bggnqnl5`. Af…</div>
+    <div class="rc-text">The CI framework&#x27;s `release:latest` import step resolved the nightly build `4.23.0-0.nightly-2026-06-10-213308` (from 2026-06-10) and attempted to import it into the job namespace `ci-op-bggnqnl5`. After 6 retry attempts the image was still not available on the image stream — the nightly image tag had likely been pruned or was no longer accessible on `registry.ci.openshift.org/ocp/release` by the time the job ran on 2026-06-12. This is a ci-operator infrastructure step (`step [release:latest]`), not any commatrix test code. The job reported failure reason `executing_graph:step_failed:importing_release`, confirming the failure is entirely in the CI pipeline setup phase, before any test or cluster provisioning step was reached. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on all evidence files, I have a complete picture of this failure. The project&#x27;s own tests never ran — the job failed in the CI framework&#x27;s release import step before any cluster was provisioned.
 
 ---
@@ -4314,7 +4314,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="cdd1d07313eb60d2">
   <td class="col-rc">
-    <div class="rc-text">This is a CI infrastructure failure, not a commatrix project test failure. The ci-operator resolved the `latest` nightly release to `4.22.0-0.nightly-2026-06-10-104337` (a build from June 10), but by …</div>
+    <div class="rc-text">This is a CI infrastructure failure, not a commatrix project test failure. The ci-operator resolved the `latest` nightly release to `4.22.0-0.nightly-2026-06-10-104337` (a build from June 10), but by the time the job ran on June 12, that specific nightly tag was no longer available on the `registry.ci.openshift.org/ocp/release` image stream — likely because it had been pruned or garbage-collected as newer nightlies were published. The import was retried 6 times and timed out. The job never proceeded past this first infrastructure step; no project tests ran at all. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on the evidence files, I have everything needed for the analysis. The build log shows the job ran for only 37 seconds total and failed at the very first step — before any project tests executed.
 
 ---
@@ -4351,7 +4351,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="da02b39a662385ff">
   <td class="col-rc">
-    <div class="rc-text">The ci-operator resolved the &quot;latest&quot; 4.22 nightly to `4.22.0-0.nightly-2026-06-10-104337` (a build from June 10). By the time this periodic job ran on June 12, that specific nightly tag had been prun…</div>
+    <div class="rc-text">The ci-operator resolved the &quot;latest&quot; 4.22 nightly to `4.22.0-0.nightly-2026-06-10-104337` (a build from June 10). By the time this periodic job ran on June 12, that specific nightly tag had been pruned or was no longer available in the `registry.ci.openshift.org/ocp/release` image stream. ci-operator attempted to import the tag into its working namespace (`ci-op-3jlrpp41`) six times before timing out. This is a pure CI infrastructure failure — the nightly payload referenced by the release stream API no longer exists in the backing registry. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on the evidence files, the picture is completely clear. The job ran for only 37 seconds and failed before any project tests executed. Here is the full analysis:
 
 ---
@@ -4390,7 +4390,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="bde7dff435ca2f9c">
   <td class="col-rc">
-    <div class="rc-text">The CI framework step `[release:latest]` attempted to import the OCP nightly release image `4.21.0-0.nightly-2026-06-10-151504` (published June 10) into the job&#x27;s ephemeral namespace (`ci-op-x18s7cbn`…</div>
+    <div class="rc-text">The CI framework step `[release:latest]` attempted to import the OCP nightly release image `4.21.0-0.nightly-2026-06-10-151504` (published June 10) into the job&#x27;s ephemeral namespace (`ci-op-x18s7cbn`). After 6 consecutive import attempts, the image was still not found on the image stream. This most likely means the June 10 nightly tag was pruned, expired, or never fully promoted to `registry.ci.openshift.org/ocp/release` by the time this periodic job ran on June 12. This is a CI infrastructure failure: the job never reached the cluster provisioning step, and the commatrix project tests were never executed at all. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
 
 ### Test 1: `[Import the release payload &quot;latest&quot; from an external source]`
@@ -4425,7 +4425,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="d1e7b6c748ba9324">
   <td class="col-rc">
-    <div class="rc-text">This is a CI infrastructure failure, not a commatrix project failure. The ci-operator resolved the `latest` 4.21 nightly to `4.21.0-0.nightly-2026-06-10-151504` (a build from June 10), but by the time…</div>
+    <div class="rc-text">This is a CI infrastructure failure, not a commatrix project failure. The ci-operator resolved the `latest` 4.21 nightly to `4.21.0-0.nightly-2026-06-10-151504` (a build from June 10), but by the time the job ran on June 12, that specific nightly tag was no longer available on `registry.ci.openshift.org/ocp/release`. After 6 retry attempts the import timed out. The job was killed at the very first step — the release import step — so the commatrix test suite never executed at all. The ci-operator reported the failure reason as `executing_graph:step_failed:importing_release`. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
 
 ### Test 1: `[release:latest] Import the release payload &quot;latest&quot; from an external source`
@@ -4458,7 +4458,7 @@ ci-operator detected the pod&#x27;s container exit code 1 and surfaced it as a s
 </tr>
 <tr id="79a36b3c3a8838e3">
   <td class="col-rc">
-    <div class="rc-text">This is a CI infrastructure failure, not a commatrix code regression. The ci-operator resolved the `latest` 4.21 nightly to `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-10-151504` (…</div>
+    <div class="rc-text">This is a CI infrastructure failure, not a commatrix code regression. The ci-operator resolved the `latest` 4.21 nightly to `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-10-151504` (built June 10), but when it attempted to import that image tag into the job&#x27;s namespace (`ci-op-y46wh9fw`), the image was not found on the image stream after 6 retries. The nightly image built on June 10 was likely pruned/garbage-collected from the CI registry by the time this periodic job ran on June 12, or there was a transient registry availability issue. The failure reason code reported by ci-operator is `executing_graph:step_failed:importing_release`, confirming this happened at the environment setup phase before any test step executed. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Based on the evidence, I have everything needed. The job failed at the release image import step — the project&#x27;s own tests never ran. Here is the full analysis:
 
 ---
@@ -4499,7 +4499,7 @@ The commatrix project&#x27;s own tests (communication matrix validation, port ch
 </tr>
 <tr id="121ca528284471bf">
   <td class="col-rc">
-    <div class="rc-text">The OpenShift e2e suite runner includes background MonitorTests that continuously observe cluster health (metrics API availability, operator state, node readiness, timeline). The commatrix test suite …</div>
+    <div class="rc-text">The OpenShift e2e suite runner includes background MonitorTests that continuously observe cluster health (metrics API availability, operator state, node readiness, timeline). The commatrix test suite deliberately reboots the single node to verify nftables rules survive a reboot (`nftables-after-reboot-ip-10-0-5-59.ec2.internal` artifact confirms reboot happened). During that reboot the node transitions to `NotReady`, which is a normal and expected part of the test. However, the MonitorTest framework — which is not aware that the reboot is intentional — flags the `node-not-ready` interval as a test failure. The commatrix project&#x27;s own tests finished successfully ~44 minutes in (sidecar upload at 14:01:38 UTC), but the MonitorTest harness continued running until it declared failure at 15:51:13 UTC. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have all the information I need. Here is the full analysis:
 
 ---
@@ -4537,7 +4537,7 @@ The commatrix project&#x27;s own tests (communication matrix validation, port ch
 </tr>
 <tr id="c90656df856d43d3">
   <td class="col-rc">
-    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix test step completed successfully (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`). After the commatrix tests finished, the OpenS…</div>
+    <div class="rc-text">PROJECT TESTS PASSED — failure is from CI framework. The commatrix test step completed successfully (`finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`). After the commatrix tests finished, the OpenShift e2e monitor framework ran its post-suite MonitorTests (`metrics-api-availability`, `operator-state-analyzer`, `timeline-serializer`) against 120,146 collected intervals spanning the full job window (13:17–15:49 UTC). One or more of those MonitorTests detected a node-not-ready condition — consistent with the intentional node reboot performed during the nftables-after-reboot verification phase (evidenced by `nftables-after-reboot-ip-10-0-5-59.ec2.internal` artifact). The MonitorTest framework treats node-not-ready as a hard failure unless the reboot is explicitly tolerated by the test configuration; on a single-node cluster there is no redundancy, so the monitor sees the sole node going down and fails the suite. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I have all the evidence needed. The `finished.json` shows `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;` — the commatrix project tests passed. Let me write the final analysis.
 
 ---
@@ -4567,7 +4567,7 @@ The commatrix project&#x27;s own tests (communication matrix validation, port ch
 </tr>
 <tr id="60c74fffef883327">
   <td class="col-rc">
-    <div class="rc-text">The job&#x27;s multi-stage `pre` phase runs an `ofcir-acquire` step that calls the OFCIR (OpenShift CI Resource) service to lease a bare-metal host for the IPI (Installer-Provisioned Infrastructure) test. …</div>
+    <div class="rc-text">The job&#x27;s multi-stage `pre` phase runs an `ofcir-acquire` step that calls the OFCIR (OpenShift CI Resource) service to lease a bare-metal host for the IPI (Installer-Provisioned Infrastructure) test. The OFCIR endpoint returned HTTP 404 on every attempt, meaning either the specific resource pool URL no longer exists, the OFCIR service had a partial outage at the time of this run, or the resource entry for this job was deleted/expired. Because no bare-metal host was ever allocated, the entire test pipeline was aborted before any commatrix e2e tests could run. The `ofcir-release` step also failed with a 404 (and could not find `/tmp/secret/install-status.txt`) because the acquire never succeeded and no installation state was written. This failure is entirely within the Prow CI infrastructure layer — no commatrix application code was executed. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">Now I have enough evidence to write the full analysis.
 
 ---
@@ -4600,7 +4600,7 @@ The commatrix project&#x27;s own tests (communication matrix validation, port ch
 </tr>
 <tr id="dbc49d9d30f25f76">
   <td class="col-rc">
-    <div class="rc-text">The test at `validation_test.go:161` calls `Fail()` when any open-node ports survive two successive filter passes — `filterOutPortsOfKnownServices` (line 157) and `filterOutPortsInDynamicRanges` (line…</div>
+    <div class="rc-text">The test at `validation_test.go:161` calls `Fail()` when any open-node ports survive two successive filter passes — `filterOutPortsOfKnownServices` (line 157) and `filterOutPortsInDynamicRanges` (line 159). Six TCP ports opened by the `crio` container-runtime on master-1 (39293), master-0 (41719, 42319), worker-0 (33183), worker-2 (33893), and worker-1 (46631) are all in the Linux ephemeral range (32768–60999). They appear in the raw `ss` output and thus in `matrix-diff-ss` as `-` (Missing) entries, but they are not backed by Kubernetes EndpointSlices. `filterOutPortsOfKnownServices` only skips `rpc.statd` and `dnsmasq`/`dig` — it has no rule for `crio`. `filterOutPortsInDynamicRanges` uses `commatrix.DynamicRanges`, which after PR #400 contains only TCP/UDP 30000–32767 (Kubelet NodePort range); all six crio ports fall in 32768–60999 and are **not** covered by that range. Before PR #400, `commatrix.DynamicRanges` also included `LinuxDynamicPrivateDefaultDynamicRange` (32768–60999), whi</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
 
 ### Test 1: `[TestE2e] Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`
@@ -4647,7 +4647,7 @@ The commatrix project&#x27;s own tests (communication matrix validation, port ch
 </tr>
 <tr id="169c2893e4908884">
   <td class="col-rc">
-    <div class="rc-text">Six CRI-O-owned TCP ports (confirmed via `ss` as `users:((&quot;crio&quot;,...))`) fall in the Linux ephemeral range (32768–60999). They appear in `ss` output but have no backing EndpointSlice, so they land in …</div>
+    <div class="rc-text">Six CRI-O-owned TCP ports (confirmed via `ss` as `users:((&quot;crio&quot;,...))`) fall in the Linux ephemeral range (32768–60999). They appear in `ss` output but have no backing EndpointSlice, so they land in `missingEPSMat` (lines prefixed with `-` in `matrix-diff-ss`). The test applies two filters: `filterOutPortsOfKnownServices` (line 157) — which only skips `rpc.statd`, `dnsmasq`, and `dig`, not `crio` — and then `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` (line 159). Previously, `commatrix.DynamicRanges` included the Linux ephemeral range (32768–60999 via `types.LinuxDynamicPrivateDefaultDynamicRange`), which silently absorbed these crio ports. PR #400 (commit `7d56343`) deliberately removed `getLinuxDynamicPrivateRange` from `GetDynamicRanges` in `pkg/dynamic-ranges/dynamic-ranges.go` and also dropped the corresponding `append(...LinuxDynamicPrivateDefaultDynamicRange...)` from `test/e2e/validation_test.go` (only the doc-matrix test path was patched). After the</div>
     <details><summary>Full analysis</summary><div class="full-analysis">I now have all the information needed for a complete analysis. Here is the full report:
 
 ---
@@ -4691,7 +4691,7 @@ The commatrix project&#x27;s own tests (communication matrix validation, port ch
 </tr>
 <tr id="33426329c0a51e2d">
   <td class="col-rc">
-    <div class="rc-text">The job failed during the `ofcir-acquire` pre-step, before any cluster provisioning or commatrix tests ran. The `ofcir-acquire` script POSTed to the OFCIR API (`https://ofcir.apps-int.master.ci.devclu…</div>
+    <div class="rc-text">The job failed during the `ofcir-acquire` pre-step, before any cluster provisioning or commatrix tests ran. The `ofcir-acquire` script POSTed to the OFCIR API (`https://ofcir.apps-int.master.ci.devcluster.openshift.com/v1/ofcir?name=&lt;job&gt;/&lt;build&gt;&amp;type=host_el9`) to acquire a bare-metal `host_el9` CI</div>
     <details><summary>Full analysis</summary><div class="full-analysis">**Root Cause:** The job failed during the `ofcir-acquire` pre-step, before any cluster provisioning or commatrix tests ran. The `ofcir-acquire` script POSTed to the OFCIR API (`https://ofcir.apps-int.master.ci.devcluster.openshift.com/v1/ofcir?name=&lt;job&gt;/&lt;build&gt;&amp;type=host_el9`) to acquire a bare-metal `host_el9` CI resource and received HTTP 404. The 46-byte error body was censored in logs, so the exact OFCIR error message is unavailable, but the failure is clearly at bare-metal host acquisition — not in commatrix logic. The downstream `ofcir-release` 404s are a consequence of no CIR ever being acquired (`/tmp/secret/install-status.txt` missing). The job acquired its `equinix-ocp-metal-quota-slice` lease successfully, so this is not a quota exhaustion issue.
 
 **Breaking PR/Commit:** Not identifiable in `openshift-kni/commatrix`. No commatrix code ran — the job never reached `baremetalds-devscripts-setup`, `network-flow-matrix-tests`, or any e2e step. This is an OpenShift CI infrastructure / OFCIR provisioning failure. A contributing factor is a pre-existing retry bug in the OFCIR acquire script: `timeout 70s` combined with `--retry-delay 60` effectively allows only ~1 attempt before failure. This is being addressed in https://github.com/openshift/release/pull/80393 (opened 2026-06-11, after this run). The most recent change to the acquire script was https://github.com/openshift/release/commit/6cf7de8e (PR https://github.com/openshift/release/pull/80081, OSAC cluster profile) — unrelated to `host_el9` acquisition.
@@ -4756,7 +4756,7 @@ That invariant is enforced by openshift/origin’s static-pod lifecycle monitor 
 </tr>
 <tr id="d929b7900562dbd4">
   <td class="col-rc">
-    <div class="rc-text">The analysis has been written to stdout. Summary: **This is not a commatrix code failure.** The `network-flow-matrix-tests` step passed; the job failed in `single-node-e2e-test` because the openshift-…</div>
+    <div class="rc-text">The analysis has been written to stdout. Summary: **This is not a commatrix code failure.** The `network-flow-matrix-tests` step passed; the job failed in `single-node-e2e-test` because the openshift-tests `staticpod-install-monitor` detected that `kube-apiserver` static pod revision 4 did not appear within 3m15s on the single control-plane node. The likely trigger is stacked disruption on SNO: the commatrix nftables test intentionally rebooted the only node (~19:49) while monitors were running, and the 4.20→4.21 upgrade followed (~20:34–21:25) with additional kube-apiserver `StaticPods_Error` events. Commatrix tolerates up to 20 minutes for recovery; the monitor allows only 3m15s. **Issue class:** `test_failure` | **Severity:** `MEDIUM` | **Flake:** likely yes, with caveats No breaking commatrix PR was identified. Recommended actions: retry the job, reconsider test ordering/cleanup of the nftables MachineConfig before upgrade, or adjust monitor tolerance for SNO upgrade jobs.</div>
     <details><summary>Full analysis</summary><div class="full-analysis">The analysis has been written to stdout. Summary:
 
 **This is not a commatrix code failure.** The `network-flow-matrix-tests` step passed; the job failed in `single-node-e2e-test` because the openshift-tests `staticpod-install-monitor` detected that `kube-apiserver` static pod revision 4 did not appear within 3m15s on the single control-plane node.

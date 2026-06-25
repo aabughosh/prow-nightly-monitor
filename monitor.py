@@ -3520,9 +3520,9 @@ def _generate_issues_page(output_dir: Path) -> None:
     for key, members, any_active, last_seen_grp, total_occ in group_metas:
         first_seen_grp = min((m[1].get("first_seen", "") for m in members), default="")
 
-        # Root cause summary (short version for the row)
+        # Root cause — show full extracted text
         if not key.startswith("__"):
-            rc_short = _h.escape(key[:200]) + ("…" if len(key) > 200 else "")
+            rc_short = _h.escape(key)
             rc_full = _h.escape(key)
         elif key.startswith("__jobs__"):
             job_names = sorted(set(
