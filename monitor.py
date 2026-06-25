@@ -3466,9 +3466,16 @@ def _generate_issues_page(output_dir: Path) -> None:
             return ""
         # Strip AI preamble boilerplate
         summary = _re.sub(
-            r"^(I now have all the data needed\.?|Here is the full analysis:?|"
-            r"The analysis has been written to stdout\.? Summary:?|"
-            r"I have all the evidence I need\.?)\s*",
+            r"^(I now have all the (data|evidence) needed\.?\s*|"
+            r"Here is the full analysis:?\s*|"
+            r"The analysis has been written to stdout\.?\s*Summary:?\s*|"
+            r"I have all the evidence I need\.?\s*|"
+            r"I have all the evidence needed\.?\s*|"
+            r"Let me produce the analysis\.?\s*|"
+            r"Let me write the (complete |full )?analysis\.?\s*|"
+            r"Now I have enough (evidence|information) [^.]*\.\s*|"
+            r"Writing the final output:?\s*|"
+            r"-+\s*)+",
             "", summary, flags=_re.IGNORECASE
         ).strip()
         m = _re.search(r"\*\*Root Cause:\*\*\s*(.+?)(?:\n\n|\*\*Breaking)", summary, _re.DOTALL)
