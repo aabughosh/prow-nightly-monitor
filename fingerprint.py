@@ -51,15 +51,17 @@ def _normalize_test_name(name: str) -> str:
 # ---------------------------------------------------------------------------
 
 def compute_issue_fingerprint(test_name: str, error_msg: str = "",
-                              category: str = "", version: str = "") -> str:
+                              category: str = "", version: str = "",
+                              job_filter: str = "") -> str:
     """Compute a fingerprint for a single test/error issue.
 
-    Uses: version + normalized test name + normalized error snippet + category.
-    Each OCP version gets its own fingerprint so analysis is version-specific.
+    Uses: job_filter + version + normalized test name + normalized error snippet + category.
+    Each project (job_filter) gets its own fingerprint namespace to prevent
+    cross-project collisions on generic error patterns.
     """
     norm_name = _normalize_test_name(test_name)
     norm_error = _normalize_error(error_msg)[:200]
-    raw = f"{version}::{category}::{norm_name}::{norm_error}"
+    raw = f"{job_filter}::{version}::{category}::{norm_name}::{norm_error}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 

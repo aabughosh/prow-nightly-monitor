@@ -943,7 +943,8 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
                      issue["test_name"].startswith("Last log lines:")
         fp_version = _ver if is_generic else ""
         fp = compute_issue_fingerprint(
-            issue["test_name"], issue["error_msg"], issue["category"], version=fp_version
+            issue["test_name"], issue["error_msg"], issue["category"],
+            version=fp_version, job_filter=os.environ.get("JOB_FILTER", "")
         )
         if fp not in unique_issues:
             unique_issues[fp] = {
