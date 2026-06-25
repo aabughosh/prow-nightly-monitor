@@ -3520,22 +3520,10 @@ def _generate_issues_page(output_dir: Path) -> None:
     for key, members, any_active, last_seen_grp, total_occ in group_metas:
         first_seen_grp = min((m[1].get("first_seen", "") for m in members), default="")
 
-        # Aggregate classification
-        cls_counts: dict[str, int] = {}
-        for _, m in members:
-            c = m.get("classification", "unknown")
-            cls_counts[c] = cls_counts.get(c, 0) + m.get("occurrences", 1)
-        cls = max(cls_counts, key=lambda c: cls_counts[c]) if cls_counts else "unknown"
-        cls_color, cls_label = CLASS_COLORS.get(cls, ("#484f58", cls))
-
-        any_flake = any(m.get("is_flake", False) for _, m in members)
-        flake_badge = ' <span class="badge-flake">flake</span>' if any_flake else ""
-        status_icon = "●" if any_active else "○"
-        status_color = "#3fb950" if any_active else "#484f58"
-
-        # Root cause — full text, no truncation
+        # Root cause summary (short version for the row)
         if not key.startswith("__"):
-            rc_display = _h.escape(key)
+            rc_short = _h.escape(key[:200]) + ("…" if len(key) > 200 else "")
+            rc_full = _h.escape(key)
         elif key.startswith("__jobs__"):
             job_names = sorted(set(
                 j.get("name", "") for _, m in members for j in m.get("affected_jobs", [])
@@ -3545,10 +3533,22 @@ def _generate_issues_page(output_dir: Path) -> None:
             job_summary = ", ".join(job_names[:4])
             if len(job_names) > 4:
                 job_summary += f" +{len(job_names) - 4} more"
-            rc_display = f"<em>{n_tests} tests failed together in:</em> {_h.escape(job_summary)}"
+            rc_short = f"<em>{n_tests} tests failed together in:</em> {_h.escape(job_summary)}"
+            rc_full = rc_short
         else:
             titles = list(dict.fromkeys(m.get("title", "Unknown") for _, m in members))
-            rc_display = _h.escape(titles[0]) if titles else "Unknown issue"
+            rc_short = _h.escape(titles[0]) if titles else "Unknown issue"
+            rc_full = rc_short
+
+        # Full AI analysis (collapsible)
+        full_analysis = ""
+        for _, m in members:
+            s = (m.get("ai_summary_short") or "").strip()
+            if s and len(s) > len(full_analysis):
+                full_analysis = s
+        details_html = ""
+        if full_analysis and full_analysis != key:
+            details_html = f'<details><summary>Full analysis</summary><div class="full-analysis">{_h.escape(full_analysis)}</div></details>'
 
         # Affected tests
         affected_tests = list(dict.fromkeys(
@@ -3589,12 +3589,8 @@ def _generate_issues_page(output_dir: Path) -> None:
 
         rows_html += f"""<tr id="{members[0][0]}">
   <td class="col-rc">
-    <div class="rc-text">{rc_display}</div>
-  </td>
-  <td class="col-meta">
-    <span class="cls" style="color:{cls_color}">{cls_label}</span>{flake_badge}<br>
-    <span style="color:{status_color}">{status_icon}</span>
-    <span class="count">{total_occ}× ({len(members)} test{"s" if len(members) != 1 else ""})</span>
+    <div class="rc-text">{rc_short}</div>
+    {details_html}
   </td>
   <td class="col-date">{_h.escape(first_seen_grp[:10])}</td>
   <td class="col-date">{_h.escape(last_seen_grp[:10])}</td>
@@ -3624,13 +3620,13 @@ def _generate_issues_page(output_dir: Path) -> None:
   th {{ background: #1c2128; color: #8b949e; padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; position: sticky; top: 0; }}
   td {{ padding: 14px; border-bottom: 1px solid #21262d; vertical-align: top; font-size: 13px; }}
   tr:hover td {{ background: #1c2128; }}
-  .col-rc {{ max-width: 500px; }}
+  .col-rc {{ max-width: 550px; }}
   .rc-text {{ color: #e1e4e8; line-height: 1.6; }}
-  .col-meta {{ white-space: nowrap; min-width: 100px; }}
   .col-date {{ white-space: nowrap; color: #8b949e; font-size: 12px; }}
-  .cls {{ font-weight: 700; font-size: 11px; text-transform: uppercase; }}
-  .badge-flake {{ background: #d2992233; color: #d29922; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 4px; }}
-  .count {{ color: #8b949e; font-size: 11px; }}
+  details {{ margin-top: 8px; }}
+  details summary {{ color: #58a6ff; font-size: 12px; cursor: pointer; }}
+  details summary:hover {{ text-decoration: underline; }}
+  .full-analysis {{ margin-top: 8px; color: #8b949e; font-size: 12px; line-height: 1.6; white-space: pre-wrap; max-height: 400px; overflow-y: auto; padding: 10px; background: #0d1117; border: 1px solid #21262d; border-radius: 6px; }}
   .col-tests ul, .col-jobs ul {{ margin: 0; padding: 0; list-style: none; }}
   .col-tests li, .col-jobs li {{ font-size: 12px; color: #c9d1d9; padding: 1px 0; }}
   .col-jobs li a {{ font-size: 12px; }}
@@ -3655,7 +3651,7 @@ def _generate_issues_page(output_dir: Path) -> None:
   </div>
   <table>
     <thead><tr>
-      <th>Root Cause</th><th>Info</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
+      <th>Root Cause</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
     <tbody>{rows_html}</tbody>
   </table>
