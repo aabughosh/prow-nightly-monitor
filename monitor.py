@@ -3464,16 +3464,26 @@ def _generate_issues_page(output_dir: Path) -> None:
         summary = (issue.get("ai_summary_short") or "").strip()
         if not summary:
             return ""
+        # Strip AI preamble boilerplate
+        summary = _re.sub(
+            r"^(I now have all the data needed\.?|Here is the full analysis:?|"
+            r"The analysis has been written to stdout\.? Summary:?|"
+            r"I have all the evidence I need\.?)\s*",
+            "", summary, flags=_re.IGNORECASE
+        ).strip()
         m = _re.search(r"\*\*Root Cause:\*\*\s*(.+?)(?:\n\n|\*\*Breaking)", summary, _re.DOTALL)
         if m:
             return _re.sub(r"\s+", " ", m.group(1)).strip()[:1000]
         m = _re.search(r"###?\s*Root Cause\s*\n+(.+?)(?:\n\n|\n###|\*\*)", summary, _re.DOTALL)
         if m:
             return _re.sub(r"\s+", " ", m.group(1)).strip()[:1000]
+        # Strip markdown bold markers for cleaner display
         lines = [l.strip() for l in summary.split("\n") if l.strip()
                  and not l.strip().startswith("#") and not l.strip().startswith("---")]
         if lines:
-            return _re.sub(r"\s+", " ", " ".join(lines[:5])).strip()[:1000]
+            text = _re.sub(r"\s+", " ", " ".join(lines[:5])).strip()[:1000]
+            text = _re.sub(r"\*\*", "", text)
+            return text
         return ""
 
     def _job_set_key(issue: dict) -> str:
