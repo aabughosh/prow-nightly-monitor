@@ -51,9 +51,16 @@ If the script returns "NOT_PRESENT", that commit is NOT on the release branch an
 ## Project-Specific Context
 
 ### PTP Operator (`e2e-telco5g-ptp`)
+- **Upstream repo:** https://github.com/k8snetworkplumbingwg/ptp-operator (mirrored to `openshift/ptp-operator`)
 - Deploys PTP Operator + linuxptp-daemon DaemonSet on bare-metal telco lab nodes
 - Tests require physical PTP-capable NICs and GNSS receivers
+- **Multi-image build** (see `ptp-tools/` directory): The operator is composed of multiple container images built together:
+  - `ptp-operator` (ptpop) — main operator managing PTP configurations
+  - `linuxptp-daemon` (lptpd) — daemon running ptp4l/phc2sys/ts2phc on nodes
+  - `cloud-event-proxy` (cep) — handles PTP events and cloud event publishing
+  - `kube-rbac-proxy` (krp) — RBAC proxy for secure metrics access
 - The telco CI script builds the operator image in-cluster; if the builder image is unreachable, the operator never deploys
+- **CI step registry:** Test execution is defined in `openshift/release` at `ci-operator/step-registry/telco5g/ptp/` — the `telco5g-ptp-tests` step clones the test repo, builds locally, and runs Ginkgo suites
 - Related repos: `openshift/linuxptp-daemon`, `redhat-cne/cloud-event-proxy`
 
 ### Commatrix (`network-flow-matrix`)
