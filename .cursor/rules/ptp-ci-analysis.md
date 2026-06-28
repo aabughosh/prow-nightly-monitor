@@ -56,8 +56,8 @@ If the script returns "NOT_PRESENT", that commit is NOT on the release branch an
 - Tests require physical PTP-capable NICs and GNSS receivers
 - **Multi-image build** (see `ptp-tools/` directory): The operator is composed of multiple container images built together:
   - `ptp-operator` (ptpop) — main operator managing PTP configurations
-  - `linuxptp-daemon` (lptpd) — daemon running ptp4l/phc2sys/ts2phc on nodes
-  - `cloud-event-proxy` (cep) — handles PTP events and cloud event publishing
+  - `linuxptp-daemon` (lptpd) — daemon running ptp4l/phc2sys/ts2phc on nodes (https://github.com/openshift/linuxptp-daemon)
+  - `cloud-event-proxy` (cep) — handles PTP events and cloud event publishing (https://github.com/redhat-cne/cloud-event-proxy)
   - `kube-rbac-proxy` (krp) — RBAC proxy for secure metrics access
 - The telco CI script builds the operator image in-cluster; if the builder image is unreachable, the operator never deploys
 - **CI step registry:** Test execution is defined in `openshift/release` at `ci-operator/step-registry/telco5g/ptp/` — the `telco5g-ptp-tests` step clones the test repo, builds locally, and runs Ginkgo suites
