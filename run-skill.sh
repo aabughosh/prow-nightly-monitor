@@ -262,6 +262,11 @@ if [ -n "$GITLAB_REPO" ]; then
     if git clone --depth=1 "$GITLAB_REPO" "$GITLAB_DIR" >> "$LOG_FILE" 2>&1; then
         rsync -a --delete --exclude='.git' "$REPO_DIR/public/" "$GITLAB_DIR/public/"
         cp "$REPO_DIR/.gitlab-ci.yml" "$GITLAB_DIR/.gitlab-ci.yml" 2>/dev/null || true
+        # Sync skills, scripts, and corrections for team collaboration
+        mkdir -p "$GITLAB_DIR/.cursor/rules" "$GITLAB_DIR/scripts"
+        cp -r "$REPO_DIR/.cursor/rules/" "$GITLAB_DIR/.cursor/rules/" 2>/dev/null || true
+        cp -r "$REPO_DIR/scripts/" "$GITLAB_DIR/scripts/" 2>/dev/null || true
+        cp "$REPO_DIR/corrections.yaml" "$GITLAB_DIR/corrections.yaml" 2>/dev/null || true
         cd "$GITLAB_DIR"
         git add -A >> "$LOG_FILE" 2>&1
         if ! git diff --cached --quiet 2>/dev/null; then
