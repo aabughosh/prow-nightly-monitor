@@ -1,0 +1,30 @@
+# AI Analysis Corrections Database
+#
+# Record AI mistakes here so the agent learns to avoid repeating them.
+# The .cursor/rules/ptp-ci-analysis.md rule instructs the agent to check
+# this file before finalizing analysis.
+#
+# Format:
+#   - date: YYYY-MM-DD
+#     job: <job name or pattern>
+#     version: <OCP version>
+#     mistake: <what the AI said incorrectly>
+#     correct: <what the correct conclusion is>
+#     rule: <general rule to prevent this class of error>
+
+- date: 2026-06-28
+  job: periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp
+  version: "4.20"
+  mistake: >
+    Cited PR https://github.com/openshift/linuxptp-daemon/pull/613 (merged on
+    main branch only) as the root cause of the 4.20 job failure.
+  correct: >
+    PR #613 was merged on main and has NOT been backported to release-4.20.
+    Since the 4.20 job runs release-4.20 production code, this PR cannot
+    possibly be the root cause. The actual failure is likely an infrastructure
+    or operator deployment issue on the telco bare-metal lab.
+  rule: >
+    Always verify that cited PRs/commits exist on the target release branch
+    before blaming them. Use: python scripts/check_backport.py <repo> <sha> release-X.Y.
+    A commit on main that is absent from release-X.Y CANNOT cause a failure
+    on that version's nightly job.

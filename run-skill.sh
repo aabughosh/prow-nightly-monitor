@@ -128,8 +128,14 @@ print(f'  Merged: {len(data["jobs"])} total jobs ({failures} failures from past 
 PYEOF
 
         log "  Cloning $TARGET_REPO for agent context..."
-        rm -rf /tmp/ci-investigate 2>/dev/null
+        rm -rf /tmp/ci-investigate /tmp/ci-investigate-release 2>/dev/null
         git clone --depth=50 "$TARGET_REPO" /tmp/ci-investigate >> "$LOG_FILE" 2>&1 || true
+
+        # Also clone the release branch so the agent can verify backports
+        _release_branch="release-${MIN_VERSION}"
+        log "  Cloning release branch $_release_branch for backport verification..."
+        git clone --depth=50 --branch "$_release_branch" "$TARGET_REPO" /tmp/ci-investigate-release >> "$LOG_FILE" 2>&1 || \
+            log "  WARNING: Could not clone $_release_branch (branch may not exist yet)"
 
         cd /tmp
         if "$CURSOR_CLI" agent status >> "$LOG_FILE" 2>&1; then

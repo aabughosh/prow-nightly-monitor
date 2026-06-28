@@ -466,6 +466,19 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
     if _ver_match:
         version = _ver_match.group(1)
 
+    # Branch/version context — critical for accurate root cause attribution
+    code_branch = f"release-{version}" if version else "unknown"
+    branch_context = ""
+    if version:
+        branch_context = (
+            f"\n\nCRITICAL — BRANCH AWARENESS:"
+            f"\nThis job runs test scripts from the `main` branch against `{code_branch}` production images."
+            f"\nA PR/commit merged ONLY on `main` CANNOT be the root cause unless cherry-picked to `{code_branch}`."
+            f"\nBefore citing any PR/commit as root cause, verify it exists on `{code_branch}`:"
+            f"\n  python scripts/check_backport.py /tmp/ci-investigate <commit_sha> {code_branch}"
+            f"\nAlso check corrections.yaml for known false-positive patterns.\n"
+        )
+
     # If multiple versions affected, tell the AI to compare them
     versions_list = job.get("_affected_versions", [])
     if versions_list and len(versions_list) > 1:
@@ -480,7 +493,7 @@ def build_prompt(job: dict, evidence_files: list[str]) -> str:
 
     prompt = f"""Analyze this CI failure. Evidence files are in ./ci-evidence/ — read them directly.
 {version_instruction}
-
+{branch_context}
 **Project:** {project_desc}{hint}
 **Source repo:** https://github.com/{UPSTREAM_REPO}
 {related_repos_info}
@@ -624,9 +637,20 @@ def build_suite_prompt(
     if _ver_match:
         version = _ver_match.group(1)
 
+    code_branch = f"release-{version}" if version else "unknown"
+    branch_context = ""
+    if version:
+        branch_context = (
+            f"\nCRITICAL — BRANCH AWARENESS:"
+            f"\nThis job runs test scripts from `main` against `{code_branch}` production images."
+            f"\nA PR merged ONLY on `main` CANNOT be the root cause unless cherry-picked to `{code_branch}`."
+            f"\nVerify before citing: python scripts/check_backport.py /tmp/ci-investigate <sha> {code_branch}\n"
+        )
+
     return f"""Analyze the **{suite_name}** test suite failures from this CI job.
 Evidence files are in ./ci-evidence/ — read them directly.
 Focus on OCP version {version or 'unknown'}.
+{branch_context}
 
 **Project:** {project_desc}
 **Source repo:** https://github.com/{UPSTREAM_REPO}
