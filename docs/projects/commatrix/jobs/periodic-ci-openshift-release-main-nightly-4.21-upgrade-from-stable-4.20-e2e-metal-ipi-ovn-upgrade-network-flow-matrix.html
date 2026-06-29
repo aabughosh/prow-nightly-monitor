@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</code></h1>
-  <div class="meta">Generated: 2026-06-28T21:10:39.750284+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-06-29T21:16:55.508883+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">pending</div>
+    <div class="info-value" style="color:#f85149">failure</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,26 +62,96 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">running...</div>
+    <div class="info-value">145m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
   </div>
-  
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
+  </div>
   <div class="info-card">
     <div class="info-label">Started</div>
     <div class="info-value" style="font-size:12px">2026-06-28T19:00</div>
   </div>
 </div>
 
-
+<div style="margin:16px 0"><h3 style="color:#8b949e;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Failed Tests</h3><div style="margin:6px 0;padding:8px 12px;background:#161b22;border-radius:6px;border-left:3px solid #f85149"><div style="font-family:monospace;font-size:12px;color:#f0883e">install should succeed: cluster bootstrap</div><div style="font-size:11px;color:#8b949e;margin-top:2px">openshift cluster install failed with cluster bootstrap</div></div>
+<div style="margin:6px 0;padding:8px 12px;background:#161b22;border-radius:6px;border-left:3px solid #f85149"><div style="font-family:monospace;font-size:12px;color:#f0883e">install should succeed: overall</div><div style="font-size:11px;color:#8b949e;margin-top:2px">openshift cluster install failed overall</div></div></div>
 
 <h2 style="color:#58a6ff;font-size:16px;margin:20px 0 12px;border-bottom:1px solid #21262d;padding-bottom:8px">
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Cluster bootstrap timed out on bare-metal IPI install; API server never became available.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Bare-metal IPI cluster bootstrap failure</strong> (affects: both failed tests)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">level=debug msg=No masters found!</p>
+<p style="margin:4px 0">clusteroperator/kube-controller-manager is not available (<missing>) because <missing></p>
+<p style="margin:4px 0">... (all cluster operators show <missing>)</p>
+<p style="margin:4px 0">Get "https://api.ostest.test.metalkube.org:6443/api?timeout=32s": Service Unavailable</p>
+<p style="margin:4px 0">"e2e-metal-ipi-ovn-upgrade-network-flow-matrix-baremetalds-devscripts-setup" failed after 1h12m41s ... exit status 2</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">baremetalds-devscripts-setup</code> step timed out after 1h12m41s because bare-metal masters never came up during IPI bootstrap on Equinix Metal hardware (ofcir-112.cipool-ibmcloud.ofcir). The debug message <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">No masters found!</code> from the dev-scripts log bundle confirms the control plane never formed. All cluster operators reported <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px"><missing></code>, meaning the API server never reached a healthy state. Every downstream failure (gather-must-gather, gather-extra, gather-audit-logs — all hitting "Service Unavailable" on port 6443) is a cascade of this single bootstrap failure. The commatrix project tests never ran.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — pure infra provisioning failure, no code regression involved.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — bare-metal IPI bootstrap timeouts on Equinix Metal are a known transient infrastructure failure pattern.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it recurs consistently on the same hardware slot (ofcir-112), investigate the Equinix Metal node for hardware or network issues or rotate the CIR pool slot.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">install should succeed: cluster bootstrap</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">install should succeed: overall</code></div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group — all failures are cascades of the one bootstrap timeout. No distinct root causes.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 (upgrading from 4.20 nightly-2026-06-27-205811 → 4.21 nightly-2026-06-25-091937): cluster never provisioned; upgrade never started.</p>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.20.0-0.nightly-2026-06-27-205811</code> (initial), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-091937</code> (latest) — both imported successfully; failure was in bare-metal provisioning, not image pull.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Cluster bootstrap timed out on bare-metal IPI install; API server never became available.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Bare-metal IPI cluster bootstrap failure</strong> (affects: both failed tests)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">level=debug msg=No masters found!</p>
+<p style="margin:4px 0">clusteroperator/kube-controller-manager is not available (<missing>) because <missing></p>
+<p style="margin:4px 0">... (all cluster operators show <missing>)</p>
+<p style="margin:4px 0">Get "https://api.ostest.test.metalkube.org:6443/api?timeout=32s": Service Unavailable</p>
+<p style="margin:4px 0">"e2e-metal-ipi-ovn-upgrade-network-flow-matrix-baremetalds-devscripts-setup" failed after 1h12m41s ... exit status 2</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">baremetalds-devscripts-setup</code> step timed out after 1h12m41s because bare-metal masters never came up during IPI bootstrap on Equinix Metal hardware (ofcir-112.cipool-ibmcloud.ofcir). The debug message <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">No masters found!</code> from the dev-scripts log bundle confirms the control plane never formed. All cluster operators reported <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px"><missing></code>, meaning the API server never reached a healthy state. Every downstream failure (gather-must-gather, gather-extra, gather-audit-logs — all hitting "Service Unavailable" on port 6443) is a cascade of this single bootstrap failure. The commatrix project tests never ran.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — pure infra provisioning failure, no code regression involved.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — bare-metal IPI bootstrap timeouts on Equinix Metal are a known transient infrastructure failure pattern.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it recurs consistently on the same hardware slot (ofcir-112), investigate the Equinix Metal node for hardware or network issues or rotate the CIR pool slot.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">install should succeed: cluster bootstrap</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">install should succeed: overall</code></div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group — all failures are cascades of the one bootstrap timeout. No distinct root causes.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 (upgrading from 4.20 nightly-2026-06-27-205811 → 4.21 nightly-2026-06-25-091937): cluster never provisioned; upgrade never started.</p>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.20.0-0.nightly-2026-06-27-205811</code> (initial), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-091937</code> (latest) — both imported successfully; failure was in bare-metal provisioning, not image pull.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
 </div>
 
 <div class="footer">
