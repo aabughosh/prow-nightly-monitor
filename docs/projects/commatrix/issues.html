@@ -45,59 +45,490 @@
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">153</div>Active</div>
-    <div class="stat"><div class="stat-num" style="color:#c9d1d9">153</div>Fingerprints</div>
-    <div class="stat"><div class="stat-num" style="color:#a371f7">99</div>Issues</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">160</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">160</div>Fingerprints</div>
+    <div class="stat"><div class="stat-num" style="color:#a371f7">104</div>Issues</div>
   </div>
   <table>
     <thead><tr>
       <th>Root Cause</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
-    <tbody><tr id="d78ee91dc3aeacb4">
+    <tbody><tr id="dd96e2f0cbcc4361">
   <td class="col-rc">
-    <div class="rc-text">PR #400 / commit `7d56343` (`Remove Linux Dynamic ranges from generated communication matrix`) deleted `getLinuxDynamicPrivateRange`, which previously appended the Linux kernel ephemeral port range (typically 32768–60999, read from `/proc/sys/net/ipv4/ip_local_port_range`) to `commatrix.DynamicRanges`. CRI-O&#x27;s streaming server binds to an ephemeral port on the node&#x27;s external IP (38919 here, always in the Linux ephemeral range). Before PR #400, `filterOutPortsInDynamicRanges` would suppress it; now `DynamicRanges` only contains the Kubernetes NodePort range (~30000–32767), leaving 38919 unfiltered. The test fails at `validation_test.go:161`.</div>
+    <div class="rc-text">The test at `validation_test.go:157-161` calls `filterOutPortsOfKnownServices` (line 221) which only skips `rpc.statd`, `dnsmasq`, and `dig` — `crio` is absent. Then `filterOutPortsInDynamicRanges` (line 159) uses `commatrix.DynamicRanges`, but PR #400 (commit `7d56343`, &quot;Remove Linux Dynamic ranges from generated communication matrix&quot;) removed the 32768-60999 ephemeral range from the generated matrix, leaving only the NodePort range 30000-32767 (`KubeletNodePortDefaultDynamicRange`, `static-custom-entries.go:365`). crio&#x27;s ephemeral ports fall above 32767, so they pass through both filters and cause the assertion failure. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
 
-**TL;DR:** CRI-O&#x27;s ephemeral port (38919) now exposed after Linux dynamic-range filter removal in PR #400.
+**TL;DR:** crio ephemeral TCP ports (Linux range 32768-60999) are not filtered after PR #400 removed Linux dynamic ranges.
 
 **Root Cause Groups:**
 
-- **Group 1: CRI-O ephemeral port no longer suppressed by dynamic-range filter** (affects Tests: `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`)
+- **Group 1: crio ephemeral ports not filtered by `filterOutPortsOfKnownServices`** (affects Tests: `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`)
   - **Evidence:**
     ```
     [FAILED] the following ports are used but don&#x27;t have an endpointslice:
-     Ingress,TCP,38919,,crio,,,master,false
+     Ingress,TCP,33731,,crio,,,master,false
+    Ingress,TCP,34527,,crio,,,master,false
+    Ingress,TCP,35293,,crio,,,master,false
+    Ingress,TCP,33537,,crio,,,worker,false
+    Ingress,TCP,36213,,crio,,,worker,false
+    Ingress,TCP,46831,,crio,,,worker,false
+    — validation_test.go:161 @ 07/01/26 15:06:53
     ```
-    From `raw-ss-tcp`: `LISTEN 0 4096 10.0.71.48:38919 0.0.0.0:* users:((&quot;crio&quot;,pid=4187,fd=11))`
-
-    The failing test is at `validation_test.go:161` — after calling `filterOutPortsOfKnownServices` (which skips `rpc.statd`, `dnsmasq`, `dig` but **not** `crio`) and `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)`, port 38919 survives both filters and causes the `Fail(...)` call.
-
-  - **Root Cause:** PR #400 / commit `7d56343` (`Remove Linux Dynamic ranges from generated communication matrix`) deleted `getLinuxDynamicPrivateRange`, which previously appended the Linux kernel ephemeral port range (typically 32768–60999, read from `/proc/sys/net/ipv4/ip_local_port_range`) to `commatrix.DynamicRanges`. CRI-O&#x27;s streaming server binds to an ephemeral port on the node&#x27;s external IP (38919 here, always in the Linux ephemeral range). Before PR #400, `filterOutPortsInDynamicRanges` would suppress it; now `DynamicRanges` only contains the Kubernetes NodePort range (~30000–32767), leaving 38919 unfiltered. The test fails at `validation_test.go:161`.
-
-  - **Breaking PR/Commit:** `7d56343` merged via PR #400 (`https://github.com/openshift-kni/commatrix/pull/400`), present on both `main` and `release-5.0` branches.
-
-  - **Is it a flake?** No — crio always allocates an ephemeral port outside 30000–32767 on the node IP; this will fail consistently after PR #400 on every single-node run.
-
-  - **Suggested Fix:** Add `crio` to the `filterOutPortsOfKnownServices` function in `validation_test.go` (alongside `rpc.statd`), since CRI-O&#x27;s streaming server port is an internal ephemeral port not intended to be documented in the communication matrix. Alternatively, reintroduce a targeted ephemeral-range filter for services known to use random ports.
-
-  - **Affected tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports` (`validation_test.go:161`)
+    Port-map.txt confirms all 6 are in the Linux ephemeral range (32768-60999), bound to the `crio` process (e.g., `LISTEN 0 4096 192.168.111.21:33731 ... users:((&quot;crio&quot;,pid=4470,fd=12))`).
+  - **Root Cause:** The test at `validation_test.go:157-161` calls `filterOutPortsOfKnownServices` (line 221) which only skips `rpc.statd`, `dnsmasq`, and `dig` — `crio` is absent. Then `filterOutPortsInDynamicRanges` (line 159) uses `commatrix.DynamicRanges`, but PR #400 (commit `7d56343`, &quot;Remove Linux Dynamic ranges from generated communication matrix&quot;) removed the 32768-60999 ephemeral range from the generated matrix, leaving only the NodePort range 30000-32767 (`KubeletNodePortDefaultDynamicRange`, `static-custom-entries.go:365`). crio&#x27;s ephemeral ports fall above 32767, so they pass through both filters and cause the assertion failure.
+  - **Breaking PR/Commit:** PR #400 / commit `7d56343` — &quot;Remove Linux Dynamic ranges from generated communication matrix&quot; (merged on `main`; confirmed on `release-5.0` by the fact that the ephemeral-range filter is absent in the failing test run, which clones from `release-5.0`)
+  - **Is it a flake?** No — crio consistently opens ephemeral TCP ports on every node (one per master, one per worker per node for gRPC/container management); this will fail on every run until `crio` is added to the known-services skip list.
+  - **Suggested Fix:** Add `crio` to the skip list in `filterOutPortsOfKnownServices` in `test/e2e/validation_test.go:226-228`, analogous to the existing `rpc.statd` skip. Alternatively, re-add the Linux ephemeral range (32768-60999) to the test-side dynamic range filter without adding it back to the generated matrix output.
+  - **Affected tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`
 
 ---
 
-**Relation Between Groups:** Single root cause — one PR removed the Linux ephemeral-range guard, exposing crio&#x27;s random port.
+**Relation Between Groups:** Single root cause group. The 7 stale matrix entries (TCP/6388 metal3-httpd, TCP/8798 machine-config-daemon ×2, TCP/9192 machine-approver, TCP/9443 cloud-controller-manager, UDP/68 NetworkManager ×2) generate warnings only in the first test (`generated communication matrix should be equal to documented communication matrix`) which **passed** — they are a documentation debt but not the cause of the job failure.
 
-**Per-Version Notes:** OCP 5.0 (SNO, AWS, OVN): fails consistently after PR #400 merged Feb 5 2026.
+**Per-Version Notes:** OCP 5.0 nightly (5.0.0-0.nightly-2026-06-29-195240) — failing consistently due to the absent crio filter.
 
-**Affected Images:** `quay.io/openshift-release-dev/ocp-v5.0-art-dev` (test container), commatrix test binary built from `release-5.0` branch.
+**Affected Images:** No image pull failures; all images resolved successfully. The failure is purely in test logic against the live cluster state.
 
 **Overall Issue Class:** `matrix_mismatch`
 
 **Overall Severity:** MEDIUM</div></details>
   </td>
-  <td class="col-date">2026-06-30</td>
-  <td class="col-date">2026-06-30</td>
-  <td class="col-tests"><ul><li>Communication matrix mismatch — ports changed</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2071942085895786496" target="_blank">5.0-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-30)</span></li></ul></td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>Matrix mismatch: 7 port(s) in matrix but not in use; 34 port(s) open but missing endpointslice</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2072306765671698432" target="_blank">5.0-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li></ul></td>
+</tr>
+<tr id="c58e466c451de212">
+  <td class="col-rc">
+    <div class="rc-text">The AWS Elastic Load Balancing v2 `CreateLoadBalancer` API call returned HTTP 400 `TooManyLoadBalancers` when attempting to create the internal NLB `ci-op-dp5rccp1-f687b-ln2gb-int` in us-west-1. This is hit in `loadbalancer.go:144` of the Cluster API AWS provider. Because the internal API-server NLB could not be created, the CAPI `AWSCluster` never reached `Ready`, the OpenShift installer timed out after 15 minutes, and the cluster was never provisioned — making all downstream gather steps fail with DNS-not-found errors against a non-existent API endpoint. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** AWS ELB quota exhausted in us-west-1; cluster install never completed.
+
+**Root Cause Groups:**
+
+- **Group 1: AWS Load Balancer Quota Exceeded** (affects: install should succeed: infrastructure, install should succeed: overall, all gather steps)
+  - **Evidence:**
+    ```
+    level=warning msg=Condition LoadBalancerReady has status: &quot;False&quot;, reason: &quot;LoadBalancerFailed&quot;,
+    message: &quot;failed to create load balancer: ... operation error Elastic Load Balancing v2:
+    CreateLoadBalancer, https response error StatusCode: 400, RequestID: bf499115-fca1-4197-b7b1-d32bbf492121,
+    TooManyLoadBalancers: The maximum number of load balancers has been reached&quot;
+    ```
+    ```
+    level=error msg=failed to fetch Cluster: failed to generate asset &quot;Cluster&quot;: failed to create cluster:
+    infrastructure was not ready within 15m0s
+    ```
+    ```
+    Container test exited with code 4, reason Error
+    ```
+  - **Root Cause:** The AWS Elastic Load Balancing v2 `CreateLoadBalancer` API call returned HTTP 400 `TooManyLoadBalancers` when attempting to create the internal NLB `ci-op-dp5rccp1-f687b-ln2gb-int` in us-west-1. This is hit in `loadbalancer.go:144` of the Cluster API AWS provider. Because the internal API-server NLB could not be created, the CAPI `AWSCluster` never reached `Ready`, the OpenShift installer timed out after 15 minutes, and the cluster was never provisioned — making all downstream gather steps fail with DNS-not-found errors against a non-existent API endpoint.
+  - **Breaking PR/Commit:** Unknown — this is an AWS account-level quota exhaustion, not a code change.
+  - **Is it a flake?** Yes — AWS quota limits are shared across concurrent CI jobs in the us-west-1 region; this is a transient capacity issue that resolves when other jobs clean up their load balancers.
+  - **Suggested Fix:** Retry the job (other CI runs will have released their LBs). If recurring, file a quota increase request for ELBv2 in us-west-1 for the `openshift-org-aws-3` account, or configure the job to use an alternate region/account with headroom.
+  - **Affected tests:** `install should succeed: infrastructure`, `install should succeed: overall`, `aws-ovn-network-flow-matrix-gather-audit-logs`, `aws-ovn-network-flow-matrix-gather-core-dump`, `aws-ovn-network-flow-matrix-gather-must-gather`, `aws-ovn-network-flow-matrix-gather-network`
+
+---
+
+**Relation Between Groups:** Single root cause — all failures cascade from the one failed `CreateLoadBalancer` API call. The gather failures are not independent; they simply cannot contact an API server that was never stood up.
+
+**Per-Version Notes:** OCP 4.23 (nightly-2026-06-29-103314) — install failed before cluster bootstrapped; no 4.23-specific regression involved.
+
+**Affected Images:** None — failure occurred at AWS infrastructure provisioning before any OCP images were pulled onto cluster nodes.
+
+**Overall Issue Class:** infra_quota
+
+**Overall Severity:** LOW</div></details>
+  </td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>install should succeed: infrastructure</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix/2072307135093411840" target="_blank">4.23-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li></ul></td>
+</tr>
+<tr id="9f44e38aa313f53a">
+  <td class="col-rc">
+    <div class="rc-text">The AWS `us-west-1` region hit its ELBv2 quota limit when the installer attempted to create two load balancers (`ci-op-l9xdlwnn-09f4c-bq6vt-int` internal and `ci-op-l9xdlwnn-09f4c-bq6vt-ext` internet-facing) for the OCP control plane. The first `CreateLoadBalancer` call returned HTTP 400 `TooManyLoadBalancers`; subsequent retries were throttled. The Cluster API provider timed out after 15 minutes (`infrastructure was not ready within 15m0s`), causing installer exit code 4. The cluster never bootstrapped, so no commatrix tests ran at all. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** AWS ELB quota exhausted in us-west-1 prevented cluster installation; project tests never ran.
+
+**Root Cause Groups:**
+
+- **Group 1: AWS Load Balancer Quota Exhausted** (affects Tests: &quot;install should succeed: infrastructure&quot;, &quot;install should succeed: overall&quot;, all gather steps)
+  - **Evidence:**
+    ```
+    level=warning msg=Condition LoadBalancerReady has status: &quot;False&quot;, reason: &quot;LoadBalancerFailed&quot;,
+    message: &quot;[failed to create load balancer: ... operation error Elastic Load Balancing v2:
+    CreateLoadBalancer, https response error StatusCode: 400, RequestID: 95310ddb-...,
+    TooManyLoadBalancers: The maximum number of load balancers has been reached,
+    failed to create load balancer: ... exceeded maximum number of attempts, 3,
+    api error Throttling: Rate exceeded]&quot;
+
+    level=error msg=failed to fetch Cluster: failed to generate asset &quot;Cluster&quot;:
+    failed to create cluster: infrastructure was not ready within 15m0s
+
+    Installer exit with code 4
+    ```
+  - **Root Cause:** The AWS `us-west-1` region hit its ELBv2 quota limit when the installer attempted to create two load balancers (`ci-op-l9xdlwnn-09f4c-bq6vt-int` internal and `ci-op-l9xdlwnn-09f4c-bq6vt-ext` internet-facing) for the OCP control plane. The first `CreateLoadBalancer` call returned HTTP 400 `TooManyLoadBalancers`; subsequent retries were throttled. The Cluster API provider timed out after 15 minutes (`infrastructure was not ready within 15m0s`), causing installer exit code 4. The cluster never bootstrapped, so no commatrix tests ran at all.
+  - **Breaking PR/Commit:** Unknown — this is an AWS account-level quota issue, not a code change.
+  - **Is it a flake?** Yes — transient AWS quota exhaustion caused by concurrent CI jobs depleting shared ELBv2 limits in us-west-1.
+  - **Suggested Fix:** Retry the job (quota contention typically resolves as other CI clusters are deprovisioned). Longer term, request an ELB quota increase for the `openshift-org` AWS account in `us-west-1`, or configure the job to use a region with more headroom.
+  - **Affected tests:** &quot;install should succeed: infrastructure&quot;, &quot;install should succeed: overall&quot;, gather-audit-logs, gather-core-dump, gather-must-gather, gather-network (all cascade failures from no API server)
+
+---
+
+**Relation Between Groups:** Single root cause — all failures cascade from the ELBv2 quota hit. No API server was ever available, so every gather step also failed with `dial tcp: lookup api... no such host`.
+
+**Per-Version Notes:** OCP 4.22 (nightly-2026-06-30-192322) — cluster never installed; version-specific behavior not relevant.
+
+**Affected Images:** No images affected; failure occurred at AWS infrastructure provisioning, before any OCP or commatrix images were deployed.
+
+**Overall Issue Class:** infra_quota
+
+**Overall Severity:** LOW</div></details>
+  </td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>install should succeed: infrastructure</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix/2072314412965826560" target="_blank">4.22-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li></ul></td>
+</tr>
+<tr id="7cde99ad7d26ac84">
+  <td class="col-rc">
+    <div class="rc-text">The `telco5g-cluster-setup` Ansible playbook (`ocp-install.yml`) polls a file on the installer node to detect when OCP cluster installation finishes. After exhausting all retries (~147) over 2h43m, it exited with code 2 — the cluster was never installed. All subsequent steps (gather-must-gather, gather-extra, gather-audit-logs, telco5g-log-gather) failed with TLS handshake timeouts because the OCP API server at port 64413 was never reachable — the cluster simply did not exist. The commatrix test suite itself never executed. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** OCP 4.21 nightly cluster installation never completed; commatrix tests never ran.
+
+**Root Cause Groups:**
+
+- **Group 1: Cluster Installation Timeout — OCP install never completed** (affects all 5 &quot;RETRYING&quot; tests)
+  - **Evidence:**
+    ```
+    &quot;telco5g-network-flow-matrix-bm-telco5g-cluster-setup&quot; failed after 2h43m52s (failed containers: test): ContainerFailed ... Container test exited with code 2
+    RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (147 retries left)
+    Unable to connect to the server: net/http: TLS handshake timeout
+    ClusterVersion: Installing &quot;&quot; for &lt;unknown&gt;: &lt;unknown&gt;
+    clusteroperators are missing
+    ```
+  - **Root Cause:** The `telco5g-cluster-setup` Ansible playbook (`ocp-install.yml`) polls a file on the installer node to detect when OCP cluster installation finishes. After exhausting all retries (~147) over 2h43m, it exited with code 2 — the cluster was never installed. All subsequent steps (gather-must-gather, gather-extra, gather-audit-logs, telco5g-log-gather) failed with TLS handshake timeouts because the OCP API server at port 64413 was never reachable — the cluster simply did not exist. The commatrix test suite itself never executed.
+  - **Breaking PR/Commit:** Unknown — this is an infrastructure/install failure, not a code regression.
+  - **Is it a flake?** Yes — nightly cluster installations time out periodically due to transient hardware/network issues on bare-metal CI infrastructure.
+  - **Suggested Fix:** Retry the job. If the failure is recurring, check baremetal host `cnfdu6` health and whether the 4.21 nightly image `4.21.0-0.nightly-2026-06-29-182825` installs successfully on that cluster.
+  - **Affected tests:** All 5 &quot;RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (N retries left)&quot; tests.
+
+---
+
+**Relation Between Groups:** Single root cause — cluster install timeout cascades into all downstream failures (gather steps, log-gather, no test results).
+
+**Per-Version Notes:**
+- 4.21: Confirmed — cluster setup timed out, OCP API unreachable, commatrix tests never ran.
+- 4.22, 4.23, 5.0: Likely the same infra_timeout pattern (same bastion/Ansible setup), but evidence is only from 4.21; root cause is likely identical given shared CI infrastructure.
+
+**Affected Images:** `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-29-182825` (the initial OCP nightly used for install); `ci/telco-runner:latest` (runner image, loaded fine).
+
+**Overall Issue Class:** infra_timeout
+
+**Overall Severity:** MEDIUM</div></details>
+  </td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (145 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (144 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (143 retries left).</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-bm/2072304739218886656" target="_blank">4.21-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm/2072307561226309632" target="_blank">4.22-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2072304879291863040" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2072305231210745856" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li></ul></td>
+</tr>
+<tr id="6a245c884c87059d">
+  <td class="col-rc">
+    <div class="rc-text">The CI orchestration cluster (build09, namespace `ci-op-kjtf7lq5`) had no schedulable nodes with sufficient CPU and memory to place the `network-flow-matrix-tests` runner pod. Of 126–131 nodes checked, 57–61 had untolerated taints, ~10 didn&#x27;t match node affinity/selectors, and the remaining eligible nodes all reported `Insufficient cpu` (59 nodes) and intermittent `Insufficient memory` (1 node). The pod sat in Pending from 13:51:18Z to 14:51:18Z before ci-operator timed it out. No project test code ever ran. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** Test runner pod never scheduled due to insufficient CPU/memory on the CI build cluster.
+
+**Root Cause Groups:**
+
+- **Group 1: CI build cluster resource exhaustion — pod unschedulable** (affects Tests: `aws-ovn-network-flow-matrix-network-flow-matrix-tests`)
+  - **Evidence:**
+    ```
+    2026-07-01T14:51:18Z pod pending for more than 1h0m0s: pod has not been scheduled in 1h0m0.000096012s
+    0/126 nodes are available: 1 Insufficient memory, 10 node(s) didn&#x27;t match Pod&#x27;s node affinity/selector,
+    57 node(s) had untolerated taint(s), 59 Insufficient cpu. no new claims to deallocate, preemption:
+    0/126 nodes are available: 2 node(s) didn&#x27;t satisfy existing pods anti-affinity rules,
+    57 No preemption victims found for incoming pod, 67 Preemption is not helpful for scheduling.
+    Reporting job state &#x27;failed&#x27; with reason &#x27;...pod_pending&#x27;
+    ```
+  - **Root Cause:** The CI orchestration cluster (build09, namespace `ci-op-kjtf7lq5`) had no schedulable nodes with sufficient CPU and memory to place the `network-flow-matrix-tests` runner pod. Of 126–131 nodes checked, 57–61 had untolerated taints, ~10 didn&#x27;t match node affinity/selectors, and the remaining eligible nodes all reported `Insufficient cpu` (59 nodes) and intermittent `Insufficient memory` (1 node). The pod sat in Pending from 13:51:18Z to 14:51:18Z before ci-operator timed it out. No project test code ever ran.
+  - **Breaking PR/Commit:** Unknown — this is a CI infrastructure resource exhaustion event, not a code regression.
+  - **Is it a flake?** Yes — transient CI cluster overload; unrelated to commatrix source code or OCP 4.21 release images.
+  - **Suggested Fix:** Retry the job; if it recurs consistently, investigate `build09` CI cluster capacity or the `openshift-org-aws-quota-slice` lease pool configuration to reduce scheduling contention.
+  - **Affected tests:** `aws-ovn-network-flow-matrix-network-flow-matrix-tests` (the only test step; it never ran)
+
+---
+
+**Relation Between Groups:** Single group — one root cause. All prior job steps (cluster provisioning, OVN config, node readiness) succeeded. The failure occurred exclusively at the CI test runner scheduling layer.
+
+**Per-Version Notes:** OCP 4.21 (nightly-2026-06-30-080130) — cluster provisioned and pre-phase completed successfully; failure is CI infra, not 4.21-specific.
+
+**Affected Images:** None — no image pull errors. Release `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-30-080130` (190 images) imported successfully.
+
+**Overall Issue Class:** `infra_quota`
+
+**Overall Severity:** LOW</div></details>
+  </td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>Insufficient cluster resources</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix/2072304865320636416" target="_blank">4.21-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li></ul></td>
+</tr>
+<tr id="9ba5ead2f0fb6a59">
+  <td class="col-rc">
+    <div class="rc-text">CRI-O binds a randomly-assigned OS ephemeral port (44697, within Linux range 32768–60999) to the node IP. The test at `validation_test.go:161` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` (line 159), but `commatrix.DynamicRanges` now only contains the Kubernetes NodePort service range — it no longer includes the Linux ephemeral range. Commit `7d56343` (PR #400) explicitly removed Linux dynamic ranges from the generated matrix, so port 44697 is no longer excluded and triggers `Fail()`. The 4 stale matrix entries (TCP 8798, 9192, 9443, UDP 68) are logged as warnings only and do not cause test failure. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** CRI-O ephemeral port 44697 lacks an EndpointSlice and escapes dynamic-range filtering after PR #400 removed Linux ephemeral ranges.
+
+**Root Cause Groups:**
+
+- **Group 1: Ephemeral crio port passes EndpointSlice validation filter** (affects Tests: `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`, `TestE2e`)
+  - **Evidence:**
+    ```
+    Fail: &quot;the following ports are used but don&#x27;t have an endpointslice: Ingress,TCP,44697,,crio,,,master,false&quot;
+    # raw-ss-tcp:
+    LISTEN 0      4096   192.168.17.15:44697 0.0.0.0:* users:((&quot;crio&quot;,pid=6365,fd=12))
+    # port-map.txt:
+    PORT 44697: Issues: NO_ENDPOINTSLICE; Ephemeral range: YES
+    ```
+  - **Root Cause:** CRI-O binds a randomly-assigned OS ephemeral port (44697, within Linux range 32768–60999) to the node IP. The test at `validation_test.go:161` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` (line 159), but `commatrix.DynamicRanges` now only contains the Kubernetes NodePort service range — it no longer includes the Linux ephemeral range. Commit `7d56343` (PR #400) explicitly removed Linux dynamic ranges from the generated matrix, so port 44697 is no longer excluded and triggers `Fail()`. The 4 stale matrix entries (TCP 8798, 9192, 9443, UDP 68) are logged as warnings only and do not cause test failure.
+  - **Breaking PR/Commit:** `7d56343` — &quot;Remove Linux Dynamic ranges from generated communication matrix&quot; (PR #400, `openshift-kni/commatrix`)
+  - **Is it a flake?** Yes — the ephemeral port number changes on every crio restart/reboot, so the test may pass when crio happens to pick a port not in the matrix or a lower-numbered port.
+  - **Suggested Fix:** Either re-add the Linux ephemeral range (32768–60999) specifically to the `filterOutPortsInDynamicRanges` call at `validation_test.go:159`, or add `crio` to `filterOutPortsOfKnownServices()` similar to how `rpc.statd` is already skipped.
+  - **Affected tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`, `TestE2e`
+
+---
+
+**Relation Between Groups:** Single root cause — one group. The 4 stale matrix entries (TCP 8798/9192/9443, UDP 68) are pre-existing documentation drift and are not the failure trigger.
+
+**Per-Version Notes:** OCP 4.23 nightly (4.23.0-0.nightly-2026-06-24-155843): single failure in the EPS validation test due to post-PR #400 filter regression.
+
+**Affected Images:** `registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-24-155843` (test runner, no operator image involved)
+
+**Overall Issue Class:** `matrix_mismatch`
+
+**Overall Severity:** MEDIUM</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>Validation [It] should validate the communication matrix ports match the node&#x27;s open ports</li><li>[61.436 seconds]</li><li>the following ports are used but don&#x27;t have an endpointslice:</li><li>TestE2e</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2072306546657726464" target="_blank">4.23-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2071942075837845504" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2071942078341844992" target="_blank">4.23-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2071942090098479104" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2071579713444253696" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2071579730175332352" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2071579732746440704" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2071217272432627712" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-28)</span></li><li class='more'>+8 more runs</li></ul></td>
+</tr>
+<tr id="96a13234ae77f068">
+  <td class="col-rc">
+    <div class="rc-text">Commit `7d56343` (PR #400, &quot;Remove Linux Dynamic ranges from generated communication matrix&quot;, Feb 5 2026) stripped `DynamicRanges` from the generated commatrix. The test at `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` — but `commatrix.DynamicRanges` is now empty, so the filter is a no-op. Crio binds to random ephemeral ports (32768–60999) on each node IP, which previously fell inside the dynamic range and were silently filtered. `filterOutPortsOfKnownServices` at line 157 also does not handle `crio` (only `rpc.statd` and `dnsmasq`). Both filters now fail to exclude these ports, exposing the regression. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">Now I have enough to write the complete analysis.
+
+---
+
+**TL;DR:** Crio ephemeral ports on 5 nodes fail the EndpointSlice check because dynamic-range filtering was removed.
+
+**Root Cause Groups:**
+
+- **Group 1: crio ephemeral ports have no EndpointSlice and are no longer filtered** (affects Test: `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`)
+  - **Evidence:**
+    ```
+    [FAILED] the following ports are used but don&#x27;t have an endpointslice:
+     Ingress,TCP,44829,,crio,,,master,false
+     Ingress,TCP,45195,,crio,,,master,false
+     Ingress,TCP,45913,,crio,,,master,false
+     Ingress,TCP,37363,,crio,,,worker,false
+     Ingress,TCP,39509,,crio,,,worker,false
+     Ingress,TCP,40519,,crio,,,worker,false
+    ```
+    From `raw-ss-tcp`: `LISTEN 0 4096 192.168.111.20:44829 0.0.0.0:* users:((&quot;crio&quot;,pid=4426,fd=12))` — confirmed as crio process on node IP, not a Kubernetes Service, so no EndpointSlice exists.
+  - **Root Cause:** Commit `7d56343` (PR #400, &quot;Remove Linux Dynamic ranges from generated communication matrix&quot;, Feb 5 2026) stripped `DynamicRanges` from the generated commatrix. The test at `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` — but `commatrix.DynamicRanges` is now empty, so the filter is a no-op. Crio binds to random ephemeral ports (32768–60999) on each node IP, which previously fell inside the dynamic range and were silently filtered. `filterOutPortsOfKnownServices` at line 157 also does not handle `crio` (only `rpc.statd` and `dnsmasq`). Both filters now fail to exclude these ports, exposing the regression.
+  - **Breaking PR/Commit:** `7d56343` / PR #400 — `https://github.com/openshift-kni/commatrix/pull/400`
+  - **Is it a flake?** No — crio always binds ephemeral ports on startup; the specific port numbers vary per run but the failure reproduces on every job.
+  - **Suggested Fix:** Add `&quot;crio&quot;` to the `filterOutPortsOfKnownServices` allowlist in `test/e2e/validation_test.go:221–239`, or restore ephemeral-range filtering specifically for the EndpointSlice check (separate from the matrix generation path). Alternatively, investigate whether crio&#x27;s gRPC stream-server ports should carry a static `ComDetails` entry so they match an EndpointSlice.
+  - **Affected tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports` (`validation_test.go:141`)
+
+---
+
+**Relation Between Groups:** Single root cause group. The 7 stale matrix entries (`6388`, `8798` ×2, `9192`, `9443`, `UDP/68` ×2) only produce log warnings (`logrus.Warningf` at line 154) and do not contribute to the test failure; they represent documentation drift independent of the crio regression.
+
+**Per-Version Notes:** OCP 5.0 (nightly 2026-06-22-235733) — failure is deterministic on this version due to missing dynamic-range filtering for crio ephemeral ports.
+
+**Affected Images:** `ci/telco-runner:latest` (test runner), `ocp-kni/test:dev-scripts` (cluster setup); no image pull errors — all images pulled successfully.
+
+**Overall Issue Class:** `test_regression`
+
+**Overall Severity:** HIGH</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>Matrix mismatch: 7 port(s) in matrix but not in use; 6 port(s) open but missing endpointslice</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2072304879639990272" target="_blank">4.23-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2071942073350623232" target="_blank">4.23-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2071942087577702400" target="_blank">5.0-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2071579727654555648" target="_blank">5.0-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2071217269072990208" target="_blank">4.23-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2071217281655902208" target="_blank">5.0-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2070854864279179264" target="_blank">4.23-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2070854877705146368" target="_blank">5.0-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-27)</span></li><li class='more'>+3 more runs</li></ul></td>
+</tr>
+<tr id="bb48447738c52714">
+  <td class="col-rc">
+    <div class="rc-text">CRI-O (the container runtime, PID 2709) opens a randomly-assigned ephemeral port (36239, in the Linux range 32768–60999) that has no Kubernetes EndpointSlice. `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)`, but `commatrix.DynamicRanges` is populated by `GetDynamicRanges()` (`pkg/dynamic-ranges/dynamic-ranges.go`) which returns only the Kubernetes NodePort range (30000–32767). Port 36239 &gt; 32767, so it is not filtered. Prior to PR #400 (`7d56343`), the Linux ephemeral range was included in `DynamicRanges` and this port would have been filtered; that PR removed it to prevent the firewall matrix from leaving all ephemeral ports open, but also broke the EPS validation filter. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** CRI-O&#x27;s ephemeral port (36239) is open but has no EndpointSlice and is not filtered after PR #400 removed Linux dynamic ranges.
+
+**Root Cause Groups:**
+
+- **Group 1: CRI-O ephemeral port not filtered by EPS validation test** (affects Tests: `[It] should validate the communication matrix ports match the node&#x27;s open ports`)
+  - **Evidence:**
+    ```
+    [FAIL] Validation [It] should validate the communication matrix ports match the node&#x27;s open ports
+    /tmp/secret/commatrix/test/e2e/validation_test.go:161
+    ```
+    `Port 36239: LISTEN 0 4096 10.0.1.66:36239 0.0.0.0:* users:((&quot;crio&quot;,pid=2709,fd=12))`
+    `matrix-diff-ss: - Ingress,TCP,36239,,crio,,,master,false`
+  - **Root Cause:** CRI-O (the container runtime, PID 2709) opens a randomly-assigned ephemeral port (36239, in the Linux range 32768–60999) that has no Kubernetes EndpointSlice. `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)`, but `commatrix.DynamicRanges` is populated by `GetDynamicRanges()` (`pkg/dynamic-ranges/dynamic-ranges.go`) which returns only the Kubernetes NodePort range (30000–32767). Port 36239 &gt; 32767, so it is not filtered. Prior to PR #400 (`7d56343`), the Linux ephemeral range was included in `DynamicRanges` and this port would have been filtered; that PR removed it to prevent the firewall matrix from leaving all ephemeral ports open, but also broke the EPS validation filter.
+  - **Breaking PR/Commit:** `1fec55d` Merge pull request #400 from shirmoran/remove-linux-dynamic-range (`7d56343` &quot;Remove Linux Dynamic ranges from generated communication matrix&quot;)
+  - **Is it a flake?** No — CRI-O consistently opens an ephemeral port above 32767 on every cluster, so this failure will recur on every run until fixed.
+  - **Suggested Fix:** Add `&quot;crio&quot;` to the `filterOutPortsOfKnownServices` allowlist in `test/e2e/validation_test.go` (alongside the existing `rpc.statd` filter), since CRI-O is a host-level process that opens random ephemeral ports with no EndpointSlice by design. Alternatively, add a separate Linux ephemeral range filter (32768–60999) to the EPS validation check without putting it back into the generated firewall matrix.
+  - **Affected tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`
+
+---
+
+**Relation Between Groups:** Single root cause. The 7 stale matrix entries (TCP 80, 443, 8798, 9099, 9192, 9443, 10258 — documented or EPS-generated but not actually open on the SNO node) generate only `logrus.Warning` calls (lines 108–110 and 153–155 of `validation_test.go`) and do not fail any test. They indicate the `docs/stable/raw/aws-sno.csv` documented matrix is drifting from actual OCP 4.23 SNO port usage but are not the direct failure cause.
+
+**Per-Version Notes:**
+- OCP 4.23 (evidence): CRI-O ephemeral port 36239 fails the EPS validation; 7 stale matrix entries logged as warnings.
+- OCP 5.0 (no evidence file): Same root cause expected — identical `filterOutPortsInDynamicRanges` logic and `GetDynamicRanges` returning only NodePort range; CRI-O ephemeral port behavior unchanged.
+
+**Affected Images:** `ci/telco-runner:latest` (test runner); OCP release `registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-24-155843`
+
+**Overall Issue Class:** `matrix_mismatch`
+
+**Overall Severity:** HIGH</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>Matrix mismatch: 7 port(s) in matrix but not in use; 1 port(s) open but missing endpointslice</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2072306499492777984" target="_blank">4.23-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2072307740037877760" target="_blank">5.0-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2071942070792097792" target="_blank">4.23-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2071217279164485632" target="_blank">5.0-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2070492456947814400" target="_blank">5.0-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2070130409374486528" target="_blank">4.23-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-25)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2070131134536093696" target="_blank">5.0-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-25)</span></li></ul></td>
+</tr>
+<tr id="782906e00e07bf9a">
+  <td class="col-rc">
+    <div class="rc-text">The Ansible `ocp-install.yml` playbook on the `telco5g-cluster-setup` step polled for an install-finished marker file on bare-metal host `cnfdu21`. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (`https://XXXXXXXXXXXX:64428`) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with `net/http: TLS handshake timeout`. No commatrix tests ever executed. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** OCP 4.21 bare-metal cluster install timed out; commatrix tests never ran.
+
+**Root Cause Groups:**
+
+- **Group 1: OCP Cluster Installation Timeout** (affects all 5 reported tests)
+  - **Evidence:**
+    ```
+    &quot;telco5g-network-flow-matrix-bm-telco5g-cluster-setup&quot; failed after 2h43m43s (failed containers: test): ContainerFailed … Container test exited with code 2
+    ClusterVersion: Installing &quot;&quot; for &lt;unknown&gt;: &lt;unknown&gt;
+    Unable to connect to the server: net/http: TLS handshake timeout
+    ```
+  - **Root Cause:** The Ansible `ocp-install.yml` playbook on the `telco5g-cluster-setup` step polled for an install-finished marker file on bare-metal host `cnfdu21`. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (`https://XXXXXXXXXXXX:64428`) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with `net/http: TLS handshake timeout`. No commatrix tests ever executed.
+  - **Breaking PR/Commit:** Unknown — this is an infrastructure event, not a code regression.
+  - **Is it a flake?** Yes — bare-metal cluster install timeouts are intermittent CI infrastructure flakes unrelated to the commatrix codebase.
+  - **Suggested Fix:** Re-trigger the job. If the timeout recurs consistently on the `cnfdu21` bare-metal node, investigate the provisioner/kcli installer or the node&#x27;s hardware/network state; the CI pool may have a degraded host.
+  - **Affected tests:** All five &quot;RETRYING: Try to grab file to see install finished (N retries left)&quot; entries — these are sequential retry counts of the same polling loop, not distinct test failures.
+
+---
+
+**Relation Between Groups:** Single group; all failures cascade from the one cluster install timeout.
+
+**Per-Version Notes:**
+- 4.21 (this run): cluster install timed out on bare-metal node `cnfdu21`; commatrix tests never ran
+- 4.23: same root cause expected — OCP install timeout on bare-metal CI pool; commatrix code is not implicated on either version
+
+**Affected Images:** `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321` (190 images imported successfully; not the failure source)
+
+**Overall Issue Class:** infra_timeout
+
+**Overall Severity:** LOW (infrastructure flake; project tests did not regress)</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (150 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (149 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (148 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (147 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (146 retries left).</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm/2072307561226309632" target="_blank">4.22-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2072305231210745856" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-bm/2072304739218886656" target="_blank">4.21-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2072304879291863040" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2071217284277342208" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-bm/2070130317888327680" target="_blank">4.21-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-25)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2070130241568772096" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-25)</span></li></ul></td>
+</tr>
+<tr id="b614ed52118621da">
+  <td class="col-rc">
+    <div class="rc-text">The commatrix nftables e2e test (`nftables_test.go:85`) intentionally applies a MachineConfig that reboots the node (`ip-10-0-69-209.ec2.internal`) at ~13:56 UTC to validate nftables rules after reboot. The commatrix test step completed successfully at 14:01:38 UTC. The subsequent `single-node-e2e-test` CI step runs OpenShift&#x27;s generic e2e suite with built-in MonitorTests that observe the cluster throughout the entire job — these monitors recorded the node-not-ready event from the commatrix-triggered reboot and flagged it as a MonitorTest failure. The first domino is the reboot event recorded by the CI monitor, not a commatrix bug. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** PROJECT TESTS PASSED — CI framework MonitorTest failed due to intentional node reboot during nftables test.
+
+**Root Cause Groups:**
+
+- **Group 1: MonitorTest failure triggered by intentional node reboot** (affects: single-node-e2e-test CI step)
+  - **Evidence:**
+    ```
+    Suite run returned error: failed due to a MonitorTest failure
+    error: error running a test suite: failed due to a MonitorTest failure
+    Step aws-ovn-network-flow-matrix-single-node-single-node-e2e-test failed after 1h53m54s.
+    2026/06/25 13:56:11 Waiting for node ip-10-0-69-209.ec2.internal to be in NotReady state
+    2026/06/25 13:56:27 Node ip-10-0-69-209.ec2.internal is NotReady
+    ```
+    And from `network-flow-matrix-tests__finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`
+  - **Root Cause:** The commatrix nftables e2e test (`nftables_test.go:85`) intentionally applies a MachineConfig that reboots the node (`ip-10-0-69-209.ec2.internal`) at ~13:56 UTC to validate nftables rules after reboot. The commatrix test step completed successfully at 14:01:38 UTC. The subsequent `single-node-e2e-test` CI step runs OpenShift&#x27;s generic e2e suite with built-in MonitorTests that observe the cluster throughout the entire job — these monitors recorded the node-not-ready event from the commatrix-triggered reboot and flagged it as a MonitorTest failure. The first domino is the reboot event recorded by the CI monitor, not a commatrix bug.
+  - **Breaking PR/Commit:** Unknown — this is a known interaction between the commatrix nftables reboot and the openshift-tests MonitorTest framework.
+  - **Is it a flake?** Yes — the commatrix tests always perform this intentional reboot; whether it triggers a MonitorTest failure depends on monitor timing and thresholds.
+  - **Suggested Fix:** The `single-node-e2e-test` step&#x27;s MonitorTest should be configured to tolerate or exclude node-not-ready events that occur during the commatrix nftables test window. Alternatively, the job config should suppress MonitorTest node-reboot alerts for this specific job.
+  - **Affected tests:** `single-node-e2e-test` (CI framework MonitorTest); commatrix&#x27;s own 3 e2e specs all PASSED.
+
+---
+
+**Relation Between Groups:** Single group. The only failure is from the CI framework&#x27;s MonitorTest, caused by a node reboot that is a deliberate part of the commatrix nftables validation test.
+
+**Per-Version Notes:** OCP 4.21 (nightly `4.21.0-0.nightly-2026-06-25-024321`): commatrix tests pass; MonitorTest collision with intentional reboot is the sole failure.
+
+**Affected Images:** `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321` (release image, 190 components imported); `ci/telco-runner:latest` (test runner)
+
+**Overall Issue Class:** infra_other
+
+**Overall Severity:** LOW</div></details>
+  </td>
+  <td class="col-date">2026-06-25</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>Cluster in error state (must-gather triggered)</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix-single-node/2072308079168327680" target="_blank">4.22-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2072032689090727936" target="_blank">5.0-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix/2071942038357544960" target="_blank">4.21-aws-ovn-network-flow-matrix</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2071942043122274304" target="_blank">4.21-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2071579671459270656" target="_blank">4.21-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2071307848515588096" target="_blank">4.22-upgrade-from-stable-4.21-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2071307853548752896" target="_blank">4.23-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2070854835757912064" target="_blank">4.21-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-27)</span></li><li class='more'>+5 more runs</li></ul></td>
+</tr>
+<tr id="99b09d3533887365">
+  <td class="col-rc">
+    <div class="rc-text">The `baremetalds-devscripts-setup` step timed out after 1h12m41s because bare-metal masters never came up during IPI bootstrap on Equinix Metal hardware (ofcir-112.cipool-ibmcloud.ofcir). The debug message `No masters found!` from the dev-scripts log bundle confirms the control plane never formed. All cluster operators reported `&lt;missing&gt;`, meaning the API server never reached a healthy state. Every downstream failure (gather-must-gather, gather-extra, gather-audit-logs — all hitting &quot;Service Unavailable&quot; on port 6443) is a cascade of this single bootstrap failure. The commatrix project tests never ran. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** Cluster bootstrap timed out on bare-metal IPI install; API server never became available.
+
+**Root Cause Groups:**
+
+- **Group 1: Bare-metal IPI cluster bootstrap failure** (affects: both failed tests)
+  - **Evidence:**
+    ```
+    level=debug msg=No masters found!
+    clusteroperator/kube-controller-manager is not available (&lt;missing&gt;) because &lt;missing&gt;
+    ... (all cluster operators show &lt;missing&gt;)
+    Get &quot;https://api.ostest.test.metalkube.org:6443/api?timeout=32s&quot;: Service Unavailable
+    &quot;e2e-metal-ipi-ovn-upgrade-network-flow-matrix-baremetalds-devscripts-setup&quot; failed after 1h12m41s ... exit status 2
+    ```
+  - **Root Cause:** The `baremetalds-devscripts-setup` step timed out after 1h12m41s because bare-metal masters never came up during IPI bootstrap on Equinix Metal hardware (ofcir-112.cipool-ibmcloud.ofcir). The debug message `No masters found!` from the dev-scripts log bundle confirms the control plane never formed. All cluster operators reported `&lt;missing&gt;`, meaning the API server never reached a healthy state. Every downstream failure (gather-must-gather, gather-extra, gather-audit-logs — all hitting &quot;Service Unavailable&quot; on port 6443) is a cascade of this single bootstrap failure. The commatrix project tests never ran.
+  - **Breaking PR/Commit:** Unknown — pure infra provisioning failure, no code regression involved.
+  - **Is it a flake?** Yes — bare-metal IPI bootstrap timeouts on Equinix Metal are a known transient infrastructure failure pattern.
+  - **Suggested Fix:** Retry the job. If it recurs consistently on the same hardware slot (ofcir-112), investigate the Equinix Metal node for hardware or network issues or rotate the CIR pool slot.
+  - **Affected tests:** `install should succeed: cluster bootstrap`, `install should succeed: overall`
+
+---
+
+**Relation Between Groups:** Single group — all failures are cascades of the one bootstrap timeout. No distinct root causes.
+
+**Per-Version Notes:** OCP 4.21 (upgrading from 4.20 nightly-2026-06-27-205811 → 4.21 nightly-2026-06-25-091937): cluster never provisioned; upgrade never started.
+
+**Affected Images:** `registry.ci.openshift.org/ocp/release:4.20.0-0.nightly-2026-06-27-205811` (initial), `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-091937` (latest) — both imported successfully; failure was in bare-metal provisioning, not image pull.
+
+**Overall Issue Class:** infra_timeout
+
+**Overall Severity:** LOW</div></details>
+  </td>
+  <td class="col-date">2026-06-29</td>
+  <td class="col-date">2026-07-01</td>
+  <td class="col-tests"><ul><li>install should succeed: cluster bootstrap</li><li>install should succeed: overall</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix/2072314412965826560" target="_blank">4.22-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix/2072307135093411840" target="_blank">4.23-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2071307843482423296" target="_blank">4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a> <span class="date">(2026-06-29)</span></li></ul></td>
 </tr>
 <tr id="b3b9db92b8ab2b0c">
   <td class="col-rc">
@@ -144,50 +575,55 @@
 **Overall Severity:** MEDIUM</div></details>
   </td>
   <td class="col-date">2026-06-25</td>
-  <td class="col-date">2026-06-30</td>
+  <td class="col-date">2026-07-01</td>
   <td class="col-tests"><ul><li>RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (60 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (59 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (58 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (57 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (56 retries left).</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2071942096062779392" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm/2071579680682545152" target="_blank">4.21-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-single-node-bm/2071579703449227264" target="_blank">4.22-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-single-node-bm/2071217261535825920" target="_blank">4.22-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2071217286697455616" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm/2070854843299270656" target="_blank">4.21-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2070854868469288960" target="_blank">4.23-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2070854883564589056" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-27)</span></li><li class='more'>+4 more runs</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm/2072305553052274688" target="_blank">4.21-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2072305357161500672" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2071942096062779392" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm/2071579680682545152" target="_blank">4.21-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-single-node-bm/2071579703449227264" target="_blank">4.22-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-single-node-bm/2071217261535825920" target="_blank">4.22-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2071217286697455616" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm/2070854843299270656" target="_blank">4.21-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-27)</span></li><li class='more'>+6 more runs</li></ul></td>
 </tr>
-<tr id="9ba5ead2f0fb6a59">
+<tr id="d78ee91dc3aeacb4">
   <td class="col-rc">
-    <div class="rc-text">CRI-O binds a randomly-assigned OS ephemeral port (44697, within Linux range 32768–60999) to the node IP. The test at `validation_test.go:161` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` (line 159), but `commatrix.DynamicRanges` now only contains the Kubernetes NodePort service range — it no longer includes the Linux ephemeral range. Commit `7d56343` (PR #400) explicitly removed Linux dynamic ranges from the generated matrix, so port 44697 is no longer excluded and triggers `Fail()`. The 4 stale matrix entries (TCP 8798, 9192, 9443, UDP 68) are logged as warnings only and do not cause test failure. -</div>
+    <div class="rc-text">PR #400 / commit `7d56343` (`Remove Linux Dynamic ranges from generated communication matrix`) deleted `getLinuxDynamicPrivateRange`, which previously appended the Linux kernel ephemeral port range (typically 32768–60999, read from `/proc/sys/net/ipv4/ip_local_port_range`) to `commatrix.DynamicRanges`. CRI-O&#x27;s streaming server binds to an ephemeral port on the node&#x27;s external IP (38919 here, always in the Linux ephemeral range). Before PR #400, `filterOutPortsInDynamicRanges` would suppress it; now `DynamicRanges` only contains the Kubernetes NodePort range (~30000–32767), leaving 38919 unfiltered. The test fails at `validation_test.go:161`.</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
 
-**TL;DR:** CRI-O ephemeral port 44697 lacks an EndpointSlice and escapes dynamic-range filtering after PR #400 removed Linux ephemeral ranges.
+**TL;DR:** CRI-O&#x27;s ephemeral port (38919) now exposed after Linux dynamic-range filter removal in PR #400.
 
 **Root Cause Groups:**
 
-- **Group 1: Ephemeral crio port passes EndpointSlice validation filter** (affects Tests: `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`, `TestE2e`)
+- **Group 1: CRI-O ephemeral port no longer suppressed by dynamic-range filter** (affects Tests: `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`)
   - **Evidence:**
     ```
-    Fail: &quot;the following ports are used but don&#x27;t have an endpointslice: Ingress,TCP,44697,,crio,,,master,false&quot;
-    # raw-ss-tcp:
-    LISTEN 0      4096   192.168.17.15:44697 0.0.0.0:* users:((&quot;crio&quot;,pid=6365,fd=12))
-    # port-map.txt:
-    PORT 44697: Issues: NO_ENDPOINTSLICE; Ephemeral range: YES
+    [FAILED] the following ports are used but don&#x27;t have an endpointslice:
+     Ingress,TCP,38919,,crio,,,master,false
     ```
-  - **Root Cause:** CRI-O binds a randomly-assigned OS ephemeral port (44697, within Linux range 32768–60999) to the node IP. The test at `validation_test.go:161` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` (line 159), but `commatrix.DynamicRanges` now only contains the Kubernetes NodePort service range — it no longer includes the Linux ephemeral range. Commit `7d56343` (PR #400) explicitly removed Linux dynamic ranges from the generated matrix, so port 44697 is no longer excluded and triggers `Fail()`. The 4 stale matrix entries (TCP 8798, 9192, 9443, UDP 68) are logged as warnings only and do not cause test failure.
-  - **Breaking PR/Commit:** `7d56343` — &quot;Remove Linux Dynamic ranges from generated communication matrix&quot; (PR #400, `openshift-kni/commatrix`)
-  - **Is it a flake?** Yes — the ephemeral port number changes on every crio restart/reboot, so the test may pass when crio happens to pick a port not in the matrix or a lower-numbered port.
-  - **Suggested Fix:** Either re-add the Linux ephemeral range (32768–60999) specifically to the `filterOutPortsInDynamicRanges` call at `validation_test.go:159`, or add `crio` to `filterOutPortsOfKnownServices()` similar to how `rpc.statd` is already skipped.
-  - **Affected tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`, `TestE2e`
+    From `raw-ss-tcp`: `LISTEN 0 4096 10.0.71.48:38919 0.0.0.0:* users:((&quot;crio&quot;,pid=4187,fd=11))`
+
+    The failing test is at `validation_test.go:161` — after calling `filterOutPortsOfKnownServices` (which skips `rpc.statd`, `dnsmasq`, `dig` but **not** `crio`) and `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)`, port 38919 survives both filters and causes the `Fail(...)` call.
+
+  - **Root Cause:** PR #400 / commit `7d56343` (`Remove Linux Dynamic ranges from generated communication matrix`) deleted `getLinuxDynamicPrivateRange`, which previously appended the Linux kernel ephemeral port range (typically 32768–60999, read from `/proc/sys/net/ipv4/ip_local_port_range`) to `commatrix.DynamicRanges`. CRI-O&#x27;s streaming server binds to an ephemeral port on the node&#x27;s external IP (38919 here, always in the Linux ephemeral range). Before PR #400, `filterOutPortsInDynamicRanges` would suppress it; now `DynamicRanges` only contains the Kubernetes NodePort range (~30000–32767), leaving 38919 unfiltered. The test fails at `validation_test.go:161`.
+
+  - **Breaking PR/Commit:** `7d56343` merged via PR #400 (`https://github.com/openshift-kni/commatrix/pull/400`), present on both `main` and `release-5.0` branches.
+
+  - **Is it a flake?** No — crio always allocates an ephemeral port outside 30000–32767 on the node IP; this will fail consistently after PR #400 on every single-node run.
+
+  - **Suggested Fix:** Add `crio` to the `filterOutPortsOfKnownServices` function in `validation_test.go` (alongside `rpc.statd`), since CRI-O&#x27;s streaming server port is an internal ephemeral port not intended to be documented in the communication matrix. Alternatively, reintroduce a targeted ephemeral-range filter for services known to use random ports.
+
+  - **Affected tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports` (`validation_test.go:161`)
 
 ---
 
-**Relation Between Groups:** Single root cause — one group. The 4 stale matrix entries (TCP 8798/9192/9443, UDP 68) are pre-existing documentation drift and are not the failure trigger.
+**Relation Between Groups:** Single root cause — one PR removed the Linux ephemeral-range guard, exposing crio&#x27;s random port.
 
-**Per-Version Notes:** OCP 4.23 nightly (4.23.0-0.nightly-2026-06-24-155843): single failure in the EPS validation test due to post-PR #400 filter regression.
+**Per-Version Notes:** OCP 5.0 (SNO, AWS, OVN): fails consistently after PR #400 merged Feb 5 2026.
 
-**Affected Images:** `registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-24-155843` (test runner, no operator image involved)
+**Affected Images:** `quay.io/openshift-release-dev/ocp-v5.0-art-dev` (test container), commatrix test binary built from `release-5.0` branch.
 
 **Overall Issue Class:** `matrix_mismatch`
 
 **Overall Severity:** MEDIUM</div></details>
   </td>
-  <td class="col-date">2026-06-25</td>
   <td class="col-date">2026-06-30</td>
-  <td class="col-tests"><ul><li>Validation [It] should validate the communication matrix ports match the node&#x27;s open ports</li><li>[61.436 seconds]</li><li>the following ports are used but don&#x27;t have an endpointslice:</li><li>TestE2e</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2071942075837845504" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2071942078341844992" target="_blank">4.23-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2071942090098479104" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2071579713444253696" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2071579730175332352" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2071579732746440704" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2071217272432627712" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2071217274949210112" target="_blank">4.23-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-28)</span></li><li class='more'>+7 more runs</li></ul></td>
+  <td class="col-date">2026-06-30</td>
+  <td class="col-tests"><ul><li>Communication matrix mismatch — ports changed</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2071942085895786496" target="_blank">5.0-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-30)</span></li></ul></td>
 </tr>
 <tr id="28664217a2170569">
   <td class="col-rc">
@@ -233,136 +669,6 @@
   <td class="col-date">2026-06-30</td>
   <td class="col-tests"><ul><li>the following ports are used but don&#x27;t have an endpointslice:</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2071942075837845504" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2071942090098479104" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2071579713444253696" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2071579730175332352" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2071217272432627712" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2070854866791567360" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2070854881048006656" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2070492448634703872" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-26)</span></li></ul></td>
-</tr>
-<tr id="96a13234ae77f068">
-  <td class="col-rc">
-    <div class="rc-text">Commit `7d56343` (PR #400, &quot;Remove Linux Dynamic ranges from generated communication matrix&quot;, Feb 5 2026) stripped `DynamicRanges` from the generated commatrix. The test at `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` — but `commatrix.DynamicRanges` is now empty, so the filter is a no-op. Crio binds to random ephemeral ports (32768–60999) on each node IP, which previously fell inside the dynamic range and were silently filtered. `filterOutPortsOfKnownServices` at line 157 also does not handle `crio` (only `rpc.statd` and `dnsmasq`). Both filters now fail to exclude these ports, exposing the regression. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">Now I have enough to write the complete analysis.
-
----
-
-**TL;DR:** Crio ephemeral ports on 5 nodes fail the EndpointSlice check because dynamic-range filtering was removed.
-
-**Root Cause Groups:**
-
-- **Group 1: crio ephemeral ports have no EndpointSlice and are no longer filtered** (affects Test: `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`)
-  - **Evidence:**
-    ```
-    [FAILED] the following ports are used but don&#x27;t have an endpointslice:
-     Ingress,TCP,44829,,crio,,,master,false
-     Ingress,TCP,45195,,crio,,,master,false
-     Ingress,TCP,45913,,crio,,,master,false
-     Ingress,TCP,37363,,crio,,,worker,false
-     Ingress,TCP,39509,,crio,,,worker,false
-     Ingress,TCP,40519,,crio,,,worker,false
-    ```
-    From `raw-ss-tcp`: `LISTEN 0 4096 192.168.111.20:44829 0.0.0.0:* users:((&quot;crio&quot;,pid=4426,fd=12))` — confirmed as crio process on node IP, not a Kubernetes Service, so no EndpointSlice exists.
-  - **Root Cause:** Commit `7d56343` (PR #400, &quot;Remove Linux Dynamic ranges from generated communication matrix&quot;, Feb 5 2026) stripped `DynamicRanges` from the generated commatrix. The test at `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)` — but `commatrix.DynamicRanges` is now empty, so the filter is a no-op. Crio binds to random ephemeral ports (32768–60999) on each node IP, which previously fell inside the dynamic range and were silently filtered. `filterOutPortsOfKnownServices` at line 157 also does not handle `crio` (only `rpc.statd` and `dnsmasq`). Both filters now fail to exclude these ports, exposing the regression.
-  - **Breaking PR/Commit:** `7d56343` / PR #400 — `https://github.com/openshift-kni/commatrix/pull/400`
-  - **Is it a flake?** No — crio always binds ephemeral ports on startup; the specific port numbers vary per run but the failure reproduces on every job.
-  - **Suggested Fix:** Add `&quot;crio&quot;` to the `filterOutPortsOfKnownServices` allowlist in `test/e2e/validation_test.go:221–239`, or restore ephemeral-range filtering specifically for the EndpointSlice check (separate from the matrix generation path). Alternatively, investigate whether crio&#x27;s gRPC stream-server ports should carry a static `ComDetails` entry so they match an EndpointSlice.
-  - **Affected tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports` (`validation_test.go:141`)
-
----
-
-**Relation Between Groups:** Single root cause group. The 7 stale matrix entries (`6388`, `8798` ×2, `9192`, `9443`, `UDP/68` ×2) only produce log warnings (`logrus.Warningf` at line 154) and do not contribute to the test failure; they represent documentation drift independent of the crio regression.
-
-**Per-Version Notes:** OCP 5.0 (nightly 2026-06-22-235733) — failure is deterministic on this version due to missing dynamic-range filtering for crio ephemeral ports.
-
-**Affected Images:** `ci/telco-runner:latest` (test runner), `ocp-kni/test:dev-scripts` (cluster setup); no image pull errors — all images pulled successfully.
-
-**Overall Issue Class:** `test_regression`
-
-**Overall Severity:** HIGH</div></details>
-  </td>
-  <td class="col-date">2026-06-25</td>
-  <td class="col-date">2026-06-30</td>
-  <td class="col-tests"><ul><li>Matrix mismatch: 7 port(s) in matrix but not in use; 6 port(s) open but missing endpointslice</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2071942073350623232" target="_blank">4.23-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2071942087577702400" target="_blank">5.0-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2071579727654555648" target="_blank">5.0-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2071217269072990208" target="_blank">4.23-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2071217281655902208" target="_blank">5.0-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2070854864279179264" target="_blank">4.23-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2070854877705146368" target="_blank">5.0-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2070492447191863296" target="_blank">4.23-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-26)</span></li><li class='more'>+2 more runs</li></ul></td>
-</tr>
-<tr id="bb48447738c52714">
-  <td class="col-rc">
-    <div class="rc-text">CRI-O (the container runtime, PID 2709) opens a randomly-assigned ephemeral port (36239, in the Linux range 32768–60999) that has no Kubernetes EndpointSlice. `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)`, but `commatrix.DynamicRanges` is populated by `GetDynamicRanges()` (`pkg/dynamic-ranges/dynamic-ranges.go`) which returns only the Kubernetes NodePort range (30000–32767). Port 36239 &gt; 32767, so it is not filtered. Prior to PR #400 (`7d56343`), the Linux ephemeral range was included in `DynamicRanges` and this port would have been filtered; that PR removed it to prevent the firewall matrix from leaving all ephemeral ports open, but also broke the EPS validation filter. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** CRI-O&#x27;s ephemeral port (36239) is open but has no EndpointSlice and is not filtered after PR #400 removed Linux dynamic ranges.
-
-**Root Cause Groups:**
-
-- **Group 1: CRI-O ephemeral port not filtered by EPS validation test** (affects Tests: `[It] should validate the communication matrix ports match the node&#x27;s open ports`)
-  - **Evidence:**
-    ```
-    [FAIL] Validation [It] should validate the communication matrix ports match the node&#x27;s open ports
-    /tmp/secret/commatrix/test/e2e/validation_test.go:161
-    ```
-    `Port 36239: LISTEN 0 4096 10.0.1.66:36239 0.0.0.0:* users:((&quot;crio&quot;,pid=2709,fd=12))`
-    `matrix-diff-ss: - Ingress,TCP,36239,,crio,,,master,false`
-  - **Root Cause:** CRI-O (the container runtime, PID 2709) opens a randomly-assigned ephemeral port (36239, in the Linux range 32768–60999) that has no Kubernetes EndpointSlice. `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)`, but `commatrix.DynamicRanges` is populated by `GetDynamicRanges()` (`pkg/dynamic-ranges/dynamic-ranges.go`) which returns only the Kubernetes NodePort range (30000–32767). Port 36239 &gt; 32767, so it is not filtered. Prior to PR #400 (`7d56343`), the Linux ephemeral range was included in `DynamicRanges` and this port would have been filtered; that PR removed it to prevent the firewall matrix from leaving all ephemeral ports open, but also broke the EPS validation filter.
-  - **Breaking PR/Commit:** `1fec55d` Merge pull request #400 from shirmoran/remove-linux-dynamic-range (`7d56343` &quot;Remove Linux Dynamic ranges from generated communication matrix&quot;)
-  - **Is it a flake?** No — CRI-O consistently opens an ephemeral port above 32767 on every cluster, so this failure will recur on every run until fixed.
-  - **Suggested Fix:** Add `&quot;crio&quot;` to the `filterOutPortsOfKnownServices` allowlist in `test/e2e/validation_test.go` (alongside the existing `rpc.statd` filter), since CRI-O is a host-level process that opens random ephemeral ports with no EndpointSlice by design. Alternatively, add a separate Linux ephemeral range filter (32768–60999) to the EPS validation check without putting it back into the generated firewall matrix.
-  - **Affected tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`
-
----
-
-**Relation Between Groups:** Single root cause. The 7 stale matrix entries (TCP 80, 443, 8798, 9099, 9192, 9443, 10258 — documented or EPS-generated but not actually open on the SNO node) generate only `logrus.Warning` calls (lines 108–110 and 153–155 of `validation_test.go`) and do not fail any test. They indicate the `docs/stable/raw/aws-sno.csv` documented matrix is drifting from actual OCP 4.23 SNO port usage but are not the direct failure cause.
-
-**Per-Version Notes:**
-- OCP 4.23 (evidence): CRI-O ephemeral port 36239 fails the EPS validation; 7 stale matrix entries logged as warnings.
-- OCP 5.0 (no evidence file): Same root cause expected — identical `filterOutPortsInDynamicRanges` logic and `GetDynamicRanges` returning only NodePort range; CRI-O ephemeral port behavior unchanged.
-
-**Affected Images:** `ci/telco-runner:latest` (test runner); OCP release `registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-24-155843`
-
-**Overall Issue Class:** `matrix_mismatch`
-
-**Overall Severity:** HIGH</div></details>
-  </td>
-  <td class="col-date">2026-06-25</td>
-  <td class="col-date">2026-06-30</td>
-  <td class="col-tests"><ul><li>Matrix mismatch: 7 port(s) in matrix but not in use; 1 port(s) open but missing endpointslice</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2071942070792097792" target="_blank">4.23-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2071217279164485632" target="_blank">5.0-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2070492456947814400" target="_blank">5.0-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2070130409374486528" target="_blank">4.23-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-25)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2070131134536093696" target="_blank">5.0-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-25)</span></li></ul></td>
-</tr>
-<tr id="b614ed52118621da">
-  <td class="col-rc">
-    <div class="rc-text">The commatrix nftables e2e test (`nftables_test.go:85`) intentionally applies a MachineConfig that reboots the node (`ip-10-0-69-209.ec2.internal`) at ~13:56 UTC to validate nftables rules after reboot. The commatrix test step completed successfully at 14:01:38 UTC. The subsequent `single-node-e2e-test` CI step runs OpenShift&#x27;s generic e2e suite with built-in MonitorTests that observe the cluster throughout the entire job — these monitors recorded the node-not-ready event from the commatrix-triggered reboot and flagged it as a MonitorTest failure. The first domino is the reboot event recorded by the CI monitor, not a commatrix bug. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** PROJECT TESTS PASSED — CI framework MonitorTest failed due to intentional node reboot during nftables test.
-
-**Root Cause Groups:**
-
-- **Group 1: MonitorTest failure triggered by intentional node reboot** (affects: single-node-e2e-test CI step)
-  - **Evidence:**
-    ```
-    Suite run returned error: failed due to a MonitorTest failure
-    error: error running a test suite: failed due to a MonitorTest failure
-    Step aws-ovn-network-flow-matrix-single-node-single-node-e2e-test failed after 1h53m54s.
-    2026/06/25 13:56:11 Waiting for node ip-10-0-69-209.ec2.internal to be in NotReady state
-    2026/06/25 13:56:27 Node ip-10-0-69-209.ec2.internal is NotReady
-    ```
-    And from `network-flow-matrix-tests__finished.json`: `&quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`
-  - **Root Cause:** The commatrix nftables e2e test (`nftables_test.go:85`) intentionally applies a MachineConfig that reboots the node (`ip-10-0-69-209.ec2.internal`) at ~13:56 UTC to validate nftables rules after reboot. The commatrix test step completed successfully at 14:01:38 UTC. The subsequent `single-node-e2e-test` CI step runs OpenShift&#x27;s generic e2e suite with built-in MonitorTests that observe the cluster throughout the entire job — these monitors recorded the node-not-ready event from the commatrix-triggered reboot and flagged it as a MonitorTest failure. The first domino is the reboot event recorded by the CI monitor, not a commatrix bug.
-  - **Breaking PR/Commit:** Unknown — this is a known interaction between the commatrix nftables reboot and the openshift-tests MonitorTest framework.
-  - **Is it a flake?** Yes — the commatrix tests always perform this intentional reboot; whether it triggers a MonitorTest failure depends on monitor timing and thresholds.
-  - **Suggested Fix:** The `single-node-e2e-test` step&#x27;s MonitorTest should be configured to tolerate or exclude node-not-ready events that occur during the commatrix nftables test window. Alternatively, the job config should suppress MonitorTest node-reboot alerts for this specific job.
-  - **Affected tests:** `single-node-e2e-test` (CI framework MonitorTest); commatrix&#x27;s own 3 e2e specs all PASSED.
-
----
-
-**Relation Between Groups:** Single group. The only failure is from the CI framework&#x27;s MonitorTest, caused by a node reboot that is a deliberate part of the commatrix nftables validation test.
-
-**Per-Version Notes:** OCP 4.21 (nightly `4.21.0-0.nightly-2026-06-25-024321`): commatrix tests pass; MonitorTest collision with intentional reboot is the sole failure.
-
-**Affected Images:** `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321` (release image, 190 components imported); `ci/telco-runner:latest` (test runner)
-
-**Overall Issue Class:** infra_other
-
-**Overall Severity:** LOW</div></details>
-  </td>
-  <td class="col-date">2026-06-25</td>
-  <td class="col-date">2026-06-30</td>
-  <td class="col-tests"><ul><li>Cluster in error state (must-gather triggered)</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix/2071942038357544960" target="_blank">4.21-aws-ovn-network-flow-matrix</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2071942043122274304" target="_blank">4.21-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-30)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2071579671459270656" target="_blank">4.21-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2071307848515588096" target="_blank">4.22-upgrade-from-stable-4.21-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2071307853548752896" target="_blank">4.23-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2070854835757912064" target="_blank">4.21-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix/2070492411984875520" target="_blank">4.21-aws-ovn-network-flow-matrix</a> <span class="date">(2026-06-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2070492414123970560" target="_blank">4.21-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-26)</span></li><li class='more'>+3 more runs</li></ul></td>
 </tr>
 <tr id="49b34e0cd8072f28">
   <td class="col-rc">
@@ -443,47 +749,6 @@
   <td class="col-date">2026-06-29</td>
   <td class="col-tests"><ul><li>Import the release payload &quot;latest&quot; from an external source</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm/2071579701196886016" target="_blank">4.22-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li></ul></td>
-</tr>
-<tr id="99b09d3533887365">
-  <td class="col-rc">
-    <div class="rc-text">The `baremetalds-devscripts-setup` step timed out after 1h12m41s because bare-metal masters never came up during IPI bootstrap on Equinix Metal hardware (ofcir-112.cipool-ibmcloud.ofcir). The debug message `No masters found!` from the dev-scripts log bundle confirms the control plane never formed. All cluster operators reported `&lt;missing&gt;`, meaning the API server never reached a healthy state. Every downstream failure (gather-must-gather, gather-extra, gather-audit-logs — all hitting &quot;Service Unavailable&quot; on port 6443) is a cascade of this single bootstrap failure. The commatrix project tests never ran. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** Cluster bootstrap timed out on bare-metal IPI install; API server never became available.
-
-**Root Cause Groups:**
-
-- **Group 1: Bare-metal IPI cluster bootstrap failure** (affects: both failed tests)
-  - **Evidence:**
-    ```
-    level=debug msg=No masters found!
-    clusteroperator/kube-controller-manager is not available (&lt;missing&gt;) because &lt;missing&gt;
-    ... (all cluster operators show &lt;missing&gt;)
-    Get &quot;https://api.ostest.test.metalkube.org:6443/api?timeout=32s&quot;: Service Unavailable
-    &quot;e2e-metal-ipi-ovn-upgrade-network-flow-matrix-baremetalds-devscripts-setup&quot; failed after 1h12m41s ... exit status 2
-    ```
-  - **Root Cause:** The `baremetalds-devscripts-setup` step timed out after 1h12m41s because bare-metal masters never came up during IPI bootstrap on Equinix Metal hardware (ofcir-112.cipool-ibmcloud.ofcir). The debug message `No masters found!` from the dev-scripts log bundle confirms the control plane never formed. All cluster operators reported `&lt;missing&gt;`, meaning the API server never reached a healthy state. Every downstream failure (gather-must-gather, gather-extra, gather-audit-logs — all hitting &quot;Service Unavailable&quot; on port 6443) is a cascade of this single bootstrap failure. The commatrix project tests never ran.
-  - **Breaking PR/Commit:** Unknown — pure infra provisioning failure, no code regression involved.
-  - **Is it a flake?** Yes — bare-metal IPI bootstrap timeouts on Equinix Metal are a known transient infrastructure failure pattern.
-  - **Suggested Fix:** Retry the job. If it recurs consistently on the same hardware slot (ofcir-112), investigate the Equinix Metal node for hardware or network issues or rotate the CIR pool slot.
-  - **Affected tests:** `install should succeed: cluster bootstrap`, `install should succeed: overall`
-
----
-
-**Relation Between Groups:** Single group — all failures are cascades of the one bootstrap timeout. No distinct root causes.
-
-**Per-Version Notes:** OCP 4.21 (upgrading from 4.20 nightly-2026-06-27-205811 → 4.21 nightly-2026-06-25-091937): cluster never provisioned; upgrade never started.
-
-**Affected Images:** `registry.ci.openshift.org/ocp/release:4.20.0-0.nightly-2026-06-27-205811` (initial), `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-091937` (latest) — both imported successfully; failure was in bare-metal provisioning, not image pull.
-
-**Overall Issue Class:** infra_timeout
-
-**Overall Severity:** LOW</div></details>
-  </td>
-  <td class="col-date">2026-06-29</td>
-  <td class="col-date">2026-06-29</td>
-  <td class="col-tests"><ul><li>install should succeed: cluster bootstrap</li><li>install should succeed: overall</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2071307843482423296" target="_blank">4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a> <span class="date">(2026-06-29)</span></li></ul></td>
 </tr>
 <tr id="9741b728eec1364e">
   <td class="col-rc">
@@ -633,47 +898,6 @@
   <td class="col-date">2026-06-28</td>
   <td class="col-tests"><ul><li>Import the release payload &quot;latest&quot; from an external source</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix/2071217229650726912" target="_blank">4.21-aws-ovn-network-flow-matrix</a> <span class="date">(2026-06-28)</span></li></ul></td>
-</tr>
-<tr id="782906e00e07bf9a">
-  <td class="col-rc">
-    <div class="rc-text">The Ansible `ocp-install.yml` playbook on the `telco5g-cluster-setup` step polled for an install-finished marker file on bare-metal host `cnfdu21`. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (`https://XXXXXXXXXXXX:64428`) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with `net/http: TLS handshake timeout`. No commatrix tests ever executed. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** OCP 4.21 bare-metal cluster install timed out; commatrix tests never ran.
-
-**Root Cause Groups:**
-
-- **Group 1: OCP Cluster Installation Timeout** (affects all 5 reported tests)
-  - **Evidence:**
-    ```
-    &quot;telco5g-network-flow-matrix-bm-telco5g-cluster-setup&quot; failed after 2h43m43s (failed containers: test): ContainerFailed … Container test exited with code 2
-    ClusterVersion: Installing &quot;&quot; for &lt;unknown&gt;: &lt;unknown&gt;
-    Unable to connect to the server: net/http: TLS handshake timeout
-    ```
-  - **Root Cause:** The Ansible `ocp-install.yml` playbook on the `telco5g-cluster-setup` step polled for an install-finished marker file on bare-metal host `cnfdu21`. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (`https://XXXXXXXXXXXX:64428`) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with `net/http: TLS handshake timeout`. No commatrix tests ever executed.
-  - **Breaking PR/Commit:** Unknown — this is an infrastructure event, not a code regression.
-  - **Is it a flake?** Yes — bare-metal cluster install timeouts are intermittent CI infrastructure flakes unrelated to the commatrix codebase.
-  - **Suggested Fix:** Re-trigger the job. If the timeout recurs consistently on the `cnfdu21` bare-metal node, investigate the provisioner/kcli installer or the node&#x27;s hardware/network state; the CI pool may have a degraded host.
-  - **Affected tests:** All five &quot;RETRYING: Try to grab file to see install finished (N retries left)&quot; entries — these are sequential retry counts of the same polling loop, not distinct test failures.
-
----
-
-**Relation Between Groups:** Single group; all failures cascade from the one cluster install timeout.
-
-**Per-Version Notes:**
-- 4.21 (this run): cluster install timed out on bare-metal node `cnfdu21`; commatrix tests never ran
-- 4.23: same root cause expected — OCP install timeout on bare-metal CI pool; commatrix code is not implicated on either version
-
-**Affected Images:** `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321` (190 images imported successfully; not the failure source)
-
-**Overall Issue Class:** infra_timeout
-
-**Overall Severity:** LOW (infrastructure flake; project tests did not regress)</div></details>
-  </td>
-  <td class="col-date">2026-06-25</td>
-  <td class="col-date">2026-06-28</td>
-  <td class="col-tests"><ul><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (150 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (149 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (148 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (147 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (146 retries left).</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2071217284277342208" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-bm/2070130317888327680" target="_blank">4.21-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-25)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2070130241568772096" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-25)</span></li></ul></td>
 </tr>
 <tr id="409042a8f537188a">
   <td class="col-rc">
