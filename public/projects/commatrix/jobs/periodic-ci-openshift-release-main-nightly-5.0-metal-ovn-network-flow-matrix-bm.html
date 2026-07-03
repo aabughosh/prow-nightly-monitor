@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-metal-ovn-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-07-02T21:09:31.673933+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-03T21:17:29.121401+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2072666797944868864" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2073029173382746112" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -62,19 +62,19 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">61m</div>
+    <div class="info-value">124m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#f85149">TEST</span></div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">MATRIX</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#d29922">MEDIUM</span></div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-07-02T13:00</div>
+    <div class="info-value" style="font-size:12px">2026-07-03T13:00</div>
   </div>
 </div>
 
@@ -86,32 +86,38 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CI infra failure — release payload import pod never scheduled due to node affinity/taint constraints.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> crio ephemeral TCP ports (Linux range 32768-60999) are not filtered after PR #400 removed Linux dynamic ranges.</p>
 <br>
 <p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Pod scheduling failure during release import</strong> (affects Tests: "Import the release payload 'latest' from an external source")</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: crio ephemeral ports not filtered by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code></strong> (affects Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code>)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">2026-06-29T14:01:30Z pod pending for more than 1h0m0s: pod has not been scheduled in 1h0m0.000538583s</p>
-<p style="margin:4px 0">0/60 nodes are available: 1 node(s) didn't match pod anti-affinity rules, 13 node(s) didn't match Pod's node affinity/selector, 47 node(s) had untolerated taint(s)</p>
-<p style="margin:4px 0">Reporting job state 'failed' with reason 'executing_graph:step_failed:importing_release:running_pod:pod_pending'</p>
+<p style="margin:4px 0">[FAILED] the following ports are used but don't have an endpointslice:</p>
+<p style="margin:4px 0">Ingress,TCP,33731,,crio,,,master,false</p>
+<p style="margin:4px 0">Ingress,TCP,34527,,crio,,,master,false</p>
+<p style="margin:4px 0">Ingress,TCP,35293,,crio,,,master,false</p>
+<p style="margin:4px 0">Ingress,TCP,33537,,crio,,,worker,false</p>
+<p style="margin:4px 0">Ingress,TCP,36213,,crio,,,worker,false</p>
+<p style="margin:4px 0">Ingress,TCP,46831,,crio,,,worker,false</p>
+<p style="margin:4px 0">— validation_test.go:161 @ 07/01/26 15:06:53</p>
 <p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-images-latest</code> (to import <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-29-023504</code>) was created in the CI build cluster (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build10</code>) but failed to schedule for the entire 1-hour timeout. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">multiarch-tuning-operator</code> removed its scheduling gate within 4 seconds (not the blocker), but the scheduler consistently found 0 eligible nodes: ~13 nodes failed pod node affinity/selector, ~47 had untolerated taints, and 1 violated anti-affinity. This is a CI cluster resource/capacity issue — no suitable node was available at the time. The commatrix project tests <strong>never ran</strong>.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a CI infrastructure scheduling failure, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — transient CI cluster node capacity issue; retrying the job when cluster resources are available would likely succeed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it persists, file an infra ticket against the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build10</code> CI cluster for node affinity misconfiguration or insufficient node capacity for release import pods.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Import the release payload "latest" from an external source</code></div>
+<p style="margin:4px 0">Port-map.txt confirms all 6 are in the Linux ephemeral range (32768-60999), bound to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> process (e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LISTEN 0 4096 192.168.111.21:33731 ... users:(("crio",pid=4470,fd=12))</code>).</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:157-161</code> calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> (line 221) which only skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code> — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is absent. Then <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> (line 159) uses <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code>, but PR #400 (commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code>, "Remove Linux Dynamic ranges from generated communication matrix") removed the 32768-60999 ephemeral range from the generated matrix, leaving only the NodePort range 30000-32767 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">KubeletNodePortDefaultDynamicRange</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">static-custom-entries.go:365</code>). crio's ephemeral ports fall above 32767, so they pass through both filters and cause the assertion failure.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> PR #400 / commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> — "Remove Linux Dynamic ranges from generated communication matrix" (merged on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>; confirmed on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> by the fact that the ephemeral-range filter is absent in the failing test run, which clones from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — crio consistently opens ephemeral TCP ports on every node (one per master, one per worker per node for gRPC/container management); this will fail on every run until <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is added to the known-services skip list.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to the skip list in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go:226-228</code>, analogous to the existing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> skip. Alternatively, re-add the Linux ephemeral range (32768-60999) to the test-side dynamic range filter without adding it back to the generated matrix output.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group; there is only one root cause. All downstream steps (the actual commatrix matrix validation tests) never executed.</p>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause group. The 7 stale matrix entries (TCP/6388 metal3-httpd, TCP/8798 machine-config-daemon ×2, TCP/9192 machine-approver, TCP/9443 cloud-controller-manager, UDP/68 NetworkManager ×2) generate warnings only in the first test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">generated communication matrix should be equal to documented communication matrix</code>) which <strong>passed</strong> — they are a documentation debt but not the cause of the job failure.</p>
 <br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.23 — job aborted at release import step; no commatrix test results exist for this run.</p>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 5.0 nightly (5.0.0-0.nightly-2026-06-29-195240) — failing consistently due to the absent crio filter.</p>
 <br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-29-023504</code></p>
+<p style="margin:4px 0"><strong>Affected Images:</strong> No image pull failures; all images resolved successfully. The failure is purely in test logic against the live cluster state.</p>
 <br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix_mismatch</code></p>
 <br>
 <p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 </div>
