@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.23-upgrade-from-stable-4.22-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</code></h1>
-  <div class="meta">Generated: 2026-07-03T21:17:29.121401+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-04T21:23:01.343103+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">failure</div>
+    <div class="info-value" style="color:#f85149">pending</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,16 +62,13 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">196m</div>
+    <div class="info-value">running...</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
+    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
   </div>
-  <div class="info-card">
-    <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
-  </div>
+  
   <div class="info-card">
     <div class="info-label">Started</div>
     <div class="info-value" style="font-size:12px">2026-07-02T19:01</div>
@@ -84,39 +81,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> PROJECT TESTS PASSED — CI framework MonitorTest failed due to intentional node reboot during nftables test.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: MonitorTest failure triggered by intentional node reboot</strong> (affects: single-node-e2e-test CI step)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Suite run returned error: failed due to a MonitorTest failure</p>
-<p style="margin:4px 0">error: error running a test suite: failed due to a MonitorTest failure</p>
-<p style="margin:4px 0">Step aws-ovn-network-flow-matrix-single-node-single-node-e2e-test failed after 1h53m54s.</p>
-<p style="margin:4px 0">2026/06/25 13:56:11 Waiting for node ip-10-0-69-209.ec2.internal to be in NotReady state</p>
-<p style="margin:4px 0">2026/06/25 13:56:27 Node ip-10-0-69-209.ec2.internal is NotReady</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">And from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests__finished.json</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true,"result":"SUCCESS"</code></p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The commatrix nftables e2e test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">nftables_test.go:85</code>) intentionally applies a MachineConfig that reboots the node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ip-10-0-69-209.ec2.internal</code>) at ~13:56 UTC to validate nftables rules after reboot. The commatrix test step completed successfully at 14:01:38 UTC. The subsequent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> CI step runs OpenShift's generic e2e suite with built-in MonitorTests that observe the cluster throughout the entire job — these monitors recorded the node-not-ready event from the commatrix-triggered reboot and flagged it as a MonitorTest failure. The first domino is the reboot event recorded by the CI monitor, not a commatrix bug.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a known interaction between the commatrix nftables reboot and the openshift-tests MonitorTest framework.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — the commatrix tests always perform this intentional reboot; whether it triggers a MonitorTest failure depends on monitor timing and thresholds.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> step's MonitorTest should be configured to tolerate or exclude node-not-ready events that occur during the commatrix nftables test window. Alternatively, the job config should suppress MonitorTest node-reboot alerts for this specific job.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> (CI framework MonitorTest); commatrix's own 3 e2e specs all PASSED.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group. The only failure is from the CI framework's MonitorTest, caused by a node reboot that is a deliberate part of the commatrix nftables validation test.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 (nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.21.0-0.nightly-2026-06-25-024321</code>): commatrix tests pass; MonitorTest collision with intentional reboot is the sole failure.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (release image, 190 components imported); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (test runner)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">
