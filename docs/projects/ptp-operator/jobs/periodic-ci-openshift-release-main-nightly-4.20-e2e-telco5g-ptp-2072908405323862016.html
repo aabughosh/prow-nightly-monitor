@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.20-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-07-05T22:24:07.578568+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-07-06T22:50:39.212628+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -85,6 +85,88 @@
 </h2>
 <div class="analysis-box">
   <p style="margin:4px 0"><strong>TL;DR:</strong> Cluster log-stream collapse + API auth expiry wiped 22 of 24 tests; a linuxptp-daemon state-machine regression caused the remaining 2 TGM holdover failures.</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>12/24 failures — linuxptp-daemon log stream unreachable (ClockSync <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetProfileLogID</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetClockIDForeign</code> timeout):</strong> All ClockSync tests in bc (3), dualfollower (3), dualnicbc (3), dualnicbcha (2), and oc-serial test 1 (1) hit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">could not find regex in log stream … error reading from stream: context deadline exceeded</code> or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">timedout waiting for matches</code>. The test helper opens a live <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kubectl logs --follow</code> stream and waits for a ptp4l profile or sync line that never arrives within 3–10 minutes. Two compounding factors: (a) ptp4l may not be reaching SLAVE state cluster-wide (no grandmaster reachable or log format changed by PR #613), and (b) when the API server began degrading, streaming connections were silently severed rather than cleanly refused.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>10/24 failures — Kubernetes API server Unauthorized mid-run (oc-serial tests 2–11):</strong> After the first oc-serial test completed at ~07:29 UTC, the kubeconfig credentials expired or the API server rejected them (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">couldn't get current server API group list: the server has asked for the client to provide credentials</code>). Every subsequent test aborted immediately at the DaemonSet readiness check (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon DaemonSet must exist before readiness wait → Unauthorized</code>). One variant also showed <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 10.8.34.117:6443: connection refused</code>, indicating the API server briefly went fully unreachable.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>2/24 failures — TGM holdover state-machine regression (tgm suite):</strong> Both T-GM holdover tests fail deterministically: disabling GNSS causes <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ts2phcState</code> to be forced to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP_FREERUN</code> (not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP_HOLDOVER</code>) when <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NoSourceTSCount == 2</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon/pkg/event/event.go:402–403</code>, making ClockClass 7 unreachable. Test 1 exhausted its 3-minute poll; test 2 observed <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">map[metric:248]</code> (freerun) throughout the 10-second sampling window. This is a deterministic regression, not a flake.</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Cross-Suite Patterns:</strong></p>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Pattern</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suites affected</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetProfileLogID</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetClockIDForeign</code> log stream timeout</td><td style="border:1px solid #30363d;padding:6px 8px">bc, dualfollower, dualnicbc, dualnicbcha, oc (test 1)</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">API server Unauthorized cascade</td><td style="border:1px solid #30363d;padding:6px 8px">oc (tests 2–11)</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">GNSS → ClockClass 7 holdover state-machine bug</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td></tr>
+</table>
+<br>
+<p style="margin:4px 0">The log-stream failures are 100% cross-suite (5 of 6 suites, identical error text, different pod names) — confirming a cluster-wide cause rather than a suite-specific issue. The oc Unauthorized failures are oc-specific but are a secondary consequence of the same cluster degradation event. The tgm failures are suite-specific and code-driven.</p>
+<br>
+<p style="margin:4px 0">No suite is entirely clean. dualnicbcha is the only suite where the log-stream failure count is below its total suite size (2 of 2 failed; no "passing" baseline in that suite either).</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Actionable Recommendations:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Re-run the job immediately and monitor the PTP grandmaster.</strong> The log-stream and API-auth failures bear all hallmarks of a transient lab infrastructure event (grandmaster unreachable, credential rotation, API server instability on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5gran.eng.rdu2.redhat.com</code> around 2026-06-24 07:00–08:30 UTC). A clean re-run will confirm whether the 22 non-TGM failures are infra flakes.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Audit linuxptp-daemon PR #613 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0459bc0</code>, "upstream-sync-2026-06-22") for ptp4l log-format changes.</strong> If the upstream sync altered the format of the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Ptp4lConf:</code> or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">selected best master clock</code> log lines, the test regexes in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptphelper.go</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pods.go</code> will never match regardless of cluster health. Compare the ptp4l log output from a pre-PR-613 build against a post-PR-613 pod to confirm or rule out a log-format regression.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">3. <strong>Fix the TGM holdover state machine in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">event.go:402–403</code>.</strong> Remove or guard the unconditional <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ts2phcState = PTP_FREERUN</code> override when <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NoSourceTSCount == 2</code>; instead, allow the state to transition to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP_HOLDOVER</code> so the existing ClockClass 7 branch at lines 459–461 and 430–433 becomes reachable. This is a deterministic code regression and will not self-heal with a re-run.</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code> (dominant — 22/24 failures) with an embedded <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_regression</code> (2/24 tgm failures from PR #613 state-machine change)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> CRITICAL — the entire 24-test job failed; the cluster experienced mid-run auth collapse, and a code regression in the TGM holdover path is deterministic and will recur on every re-run.</p>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Per-Suite Details</h2>
+<br>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">bc</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: bc (3 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> All 3 ClockSync tests failed because Kubernetes log streaming to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> pods returned <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> / timeout errors during the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetProfileLogID</code> step, preventing the test from locating the ptp4l config log line needed to derive the foreign master clock ID.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Kubernetes pod log stream failure in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetProfileLogID</code></strong> (affects: all 3 tests — "Slave can sync to master", "Downstream slave can sync to BC master", "Can provide a profile with higher priority")</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-hrsj8 container=linuxptp-daemon-container, err=timedout waiting for matches</p>
+<br>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-fpgx7 container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">From the detailed agent logs (prior identical run same day, pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-5mcqg</code>):</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">[ptphelper.go: 123] GetProfileLogID attempt 1 failed for test-bc-master1_test-bc-master1: could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-5mcqg container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded, retrying...</p>
+<p style="margin:4px 0">[ptphelper.go: 123] GetProfileLogID attempt 2 failed for test-bc-master1_test-bc-master1: ... err=error reading from stream: context deadline exceeded, retrying...</p>
+<p style="margin:4px 0">[ptptesthelper.go: 68] GetClockIDForeign retry due to err: could not get any profile line, err=could not find regex in log stream ... err=error reading from stream: context deadline exceeded</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">Additionally, the API server was returning <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> by 08:29 UTC (end of job), with the bc ClockSync tests running at 07:02–08:29 UTC — indicating progressive auth/credential degradation throughout the long 3.5-hour job:</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">error: You must be logged in to the server (Unauthorized)</p>
+<p style="margin:4px 0">E0624 08:29:47.118913 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: the server has asked for the client to provide credentials"</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test helper <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetProfileLogID</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/pkg/ptphelper/ptphelper.go</code> opens a live Kubernetes log stream (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Follow: true</code>, no <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TailLines</code>) via <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pods.GetPodLogsRegex</code> searching for the regex <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">(?m).<em>?Ptp4lConf: #profile: <name>(.|\n)</em>?message_tag \[([^\]]*)\]</code> within a 3-minute timeout. The stream — opened with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context.TODO()</code> so no test-side deadline — is being terminated by the infrastructure with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> before the regex can be matched. This error pattern repeats identically across all ClockSync tests in bc, dualfollower, dualnicbc, and dualnicbcha suites, confirming a cluster-wide log streaming connectivity issue rather than a daemon log format regression. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> does emit this log line (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">printNodeProfile</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/daemon/daemon.go:1369</code> writes the rendered <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Ptp4lConf</code> with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">#profile:</code> prefix and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">message_tag</code>), but the HTTP connection carrying the pod log stream is dropped before the data reaches the test. The progressive <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> failures at job end suggest the kubeconfig token was near expiry, which may also have disrupted API server proxy connections to node kubelets mid-run.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong></div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Cluster log-stream collapse + API auth expiry wiped 22 of 24 tests; a linuxptp-daemon state-machine regression caused the remaining 2 TGM holdover failures.</p>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
@@ -1146,89 +1228,99 @@
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The conformance tests open a Kubernetes log stream to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-container</code> and look for ptp4l lines containing the foreign-clock-ID (the grandmaster clock identity that ptp4l emits once it reaches SLAVE state, e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FOREIGN_MASTER_RECORD_SET</code> or similar). When ptp4l is NOT synchronized — because the upstream PTP grandmaster is unavailable or the sync chain broke — those log lines are never produced and the test times out. The fact that every ClockSync test on every suite failed simultaneously against multiple different pods on multiple nodes points to a cluster-wide PTP environment failure (grandmaster or uplink down), not an isolated daemon crash. Configuration/API tests in the same suite (operator deployment, lease, namespace) all passed, confirming the daemon pods were running; only the PTP-sync-dependent tests failed.</div>
 <br>
 <p style="margin:4px 0">The only candidate code change in the window is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift/linuxptp-daemon</code> commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">b022e1d</code> (OCPBUGS-95610, "Send ptp4l event when running without proxy", merged 2026-07-02, one day before the run). Inspection of the pre-OCPBUGS-95610 release-4.20 source (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3c31e2f</code>) shows that this commit adds <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">tBCTransitionCheck</code> only in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">!stdoutToSocket</code> branch (lines 1059-1082 of daemon.go) — the path taken when the cloud-event-proxy (CEP) sidecar is absent. The CI job deploys CEP (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">SIDECAR_IMG=...cloud-event-proxy:4.20</code>), so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">stdoutToSocket=true</code> and the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">!stdoutToSocket</code> block is bypassed entirely. OCPBUGS-95610 is therefore not in the hot path for this job and is ruled out as the cause of these failures.</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change found on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.20</code> that would affect the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">stdoutToSocket=true</code> (with-CEP) ptp4l sync path. Infrastructure instability on 2026-</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change found on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.20</code> that would affect the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">stdoutToSocket=true</code> (with-CEP) ptp4l sync path. Infrastructure instability on 2026-07-03 is the most probable cause.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — a simultaneous failure across 9+ ClockSync tests on 4 independent suites on multiple nodes, combined with a separate Prometheus failure on the same run, is inconsistent with a random test flake. It is an infra outage.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-run the job. If the failures reproduce, inspect the PTP grandmaster (GNSS/DPLL health) and any upstream network switches. If the failures are gone, file as a transient infra event and monitor frequency.</div>
 <br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Cluster log-stream collapse + API auth expiry wiped 22 of 24 tests; a linuxptp-daemon state-machine regression caused the remaining 2 TGM holdover failures.</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>12/24 failures — linuxptp-daemon log stream unreachable (ClockSync <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetProfileLogID</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetClockIDForeign</code> timeout):</strong> All ClockSync tests in bc (3), dualfollower (3), dualnicbc (3), dualnicbcha (2), and oc-serial test 1 (1) hit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">could not find regex in log stream … error reading from stream: context deadline exceeded</code> or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">timedout waiting for matches</code>. The test helper opens a live <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kubectl logs --follow</code> stream and waits for a ptp4l profile or sync line that never arrives within 3–10 minutes. Two compounding factors: (a) ptp4l may not be reaching SLAVE state cluster-wide (no grandmaster reachable or log format changed by PR #613), and (b) when the API server began degrading, streaming connections were silently severed rather than cleanly refused.</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>10/24 failures — Kubernetes API server Unauthorized mid-run (oc-serial tests 2–11):</strong> After the first oc-serial test completed at ~07:29 UTC, the kubeconfig credentials expired or the API server rejected them (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">couldn't get current server API group list: the server has asked for the client to provide credentials</code>). Every subsequent test aborted immediately at the DaemonSet readiness check (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon DaemonSet must exist before readiness wait → Unauthorized</code>). One variant also showed <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 10.8.34.117:6443: connection refused</code>, indicating the API server briefly went fully unreachable.</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>2/24 failures — TGM holdover state-machine regression (tgm suite):</strong> Both T-GM holdover tests fail deterministically: disabling GNSS causes <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ts2phcState</code> to be forced to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP_FREERUN</code> (not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP_HOLDOVER</code>) when <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NoSourceTSCount == 2</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon/pkg/event/event.go:402–403</code>, making ClockClass 7 unreachable. Test 1 exhausted its 3-minute poll; test 2 observed <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">map[metric:248]</code> (freerun) throughout the 10-second sampling window. This is a deterministic regression, not a flake.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Cross-Suite Patterns:</strong></p>
-<br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Pattern</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suites affected</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetProfileLogID</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetClockIDForeign</code> log stream timeout</td><td style="border:1px solid #30363d;padding:6px 8px">bc, dualfollower, dualnicbc, dualnicbcha, oc (test 1)</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">API server Unauthorized cascade</td><td style="border:1px solid #30363d;padding:6px 8px">oc (tests 2–11)</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">GNSS → ClockClass 7 holdover state-machine bug</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td></tr>
-</table>
-<br>
-<p style="margin:4px 0">The log-stream failures are 100% cross-suite (5 of 6 suites, identical error text, different pod names) — confirming a cluster-wide cause rather than a suite-specific issue. The oc Unauthorized failures are oc-specific but are a secondary consequence of the same cluster degradation event. The tgm failures are suite-specific and code-driven.</p>
-<br>
-<p style="margin:4px 0">No suite is entirely clean. dualnicbcha is the only suite where the log-stream failure count is below its total suite size (2 of 2 failed; no "passing" baseline in that suite either).</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Actionable Recommendations:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Re-run the job immediately and monitor the PTP grandmaster.</strong> The log-stream and API-auth failures bear all hallmarks of a transient lab infrastructure event (grandmaster unreachable, credential rotation, API server instability on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5gran.eng.rdu2.redhat.com</code> around 2026-06-24 07:00–08:30 UTC). A clean re-run will confirm whether the 22 non-TGM failures are infra flakes.</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Audit linuxptp-daemon PR #613 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0459bc0</code>, "upstream-sync-2026-06-22") for ptp4l log-format changes.</strong> If the upstream sync altered the format of the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Ptp4lConf:</code> or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">selected best master clock</code> log lines, the test regexes in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptphelper.go</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pods.go</code> will never match regardless of cluster health. Compare the ptp4l log output from a pre-PR-613 build against a post-PR-613 pod to confirm or rule out a log-format regression.</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">3. <strong>Fix the TGM holdover state machine in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">event.go:402–403</code>.</strong> Remove or guard the unconditional <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ts2phcState = PTP_FREERUN</code> override when <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NoSourceTSCount == 2</code>; instead, allow the state to transition to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP_HOLDOVER</code> so the existing ClockClass 7 branch at lines 459–461 and 430–433 becomes reachable. This is a deterministic code regression and will not self-heal with a re-run.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code> (dominant — 22/24 failures) with an embedded <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_regression</code> (2/24 tgm failures from PR #613 state-machine change)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> CRITICAL — the entire 24-test job failed; the cluster experienced mid-run auth collapse, and a code regression in the TGM holdover path is deterministic and will recur on every re-run.</p>
-<br>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Per-Suite Details</h2>
-<br>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">bc</h3>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: bc (3 failures)</h4>
-<br>
-<p style="margin:4px 0"><strong>Suite TL;DR:</strong> All 3 ClockSync tests failed because Kubernetes log streaming to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> pods returned <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> / timeout errors during the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetProfileLogID</code> step, preventing the test from locating the ptp4l config log line needed to derive the foreign master clock ID.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Kubernetes pod log stream failure in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetProfileLogID</code></strong> (affects: all 3 tests — "Slave can sync to master", "Downstream slave can sync to BC master", "Can provide a profile with higher priority")</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 2: Prometheus unreachable</strong> (affects: "Soak testing PTP CPU Utilization")</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-hrsj8 container=linuxptp-daemon-container, err=timedout waiting for matches</p>
+<p style="margin:4px 0">CPU usage query failed after 3 attempts: failed to get total cpu usage for ptp</p>
+<p style="margin:4px 0">pods on node cnfdf32.telco5gran.eng.rdu2.redhat.com: prometheus query failure:</p>
+<p style="margin:4px 0">failed to get a (valid) response from prometheus</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The CPU Utilization test queries the in-cluster Prometheus endpoint to obtain CPU metrics for PTP pods. After 3 retry attempts the query still returned no valid response, indicating the Prometheus stack (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">prometheus-k8s</code> service) was unavailable or overloaded on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code> during the soak window. This is independent of PTP behavior. Post-test artifact collection also failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> errors (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error: You must be logged in to the server (Unauthorized)</code> at 07:53:36), consistent with a cluster experiencing broader control-plane instability during this run.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra/cluster issue, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes, for this specific test in isolation — Prometheus being transiently unreachable is a known intermittent infra condition. Combined with the Group 1 evidence it becomes part of the same cluster-wide instability event.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-run. If the Prometheus error reproduces, check the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">prometheus-k8s</code> pod health and PVC usage on the telco5gran cluster; consider adding a longer initial backoff or more retries in the CPU-usage helper if Prometheus slow-start is common.</div>
 <br>
-<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-fpgx7 container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded</p>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> infra_other</p>
+<br>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH — 3 of 4 primary ClockSync tests in the BC suite failed, blocking validation of core PTP slave-sync functionality for OCP 4.20, with the same pattern propagating across all parallel suites on the same run.</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">dualfollower</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualfollower (3 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> All 3 dualfollower ClockSync tests timed out (202s) because the test harness could not read the expected PTP sync log lines from the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-container</code> in pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-z7mfj</code>, a failure pattern that struck every suite in this job simultaneously — indicating a systemic lab or cluster-API instability rather than a dualfollower-specific regression.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Log stream failure / PTP sync not observed within timeout</strong> (affects: all 3 tests — "Slave can sync to master", "Dual follower can sync when one follower port goes down", "Can provide a profile with higher priority")</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">From the detailed agent logs (prior identical run same day, pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-5mcqg</code>):</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">[ptphelper.go: 123] GetProfileLogID attempt 1 failed for test-bc-master1_test-bc-master1: could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-5mcqg container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded, retrying...</p>
-<p style="margin:4px 0">[ptphelper.go: 123] GetProfileLogID attempt 2 failed for test-bc-master1_test-bc-master1: ... err=error reading from stream: context deadline exceeded, retrying...</p>
-<p style="margin:4px 0">[ptptesthelper.go: 68] GetClockIDForeign retry due to err: could not get any profile line, err=could not find regex in log stream ... err=error reading from stream: context deadline exceeded</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Additionally, the API server was returning <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> by 08:29 UTC (end of job), with the bc ClockSync tests running at 07:02–08:29 UTC — indicating progressive auth/credential degradation throughout the long 3.5-hour job:</p>
-<p style="margin:4px 0">```</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 1 (Slave can sync to master):</h2>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for</p>
+<p style="margin:4px 0">openshift-ptp/linuxptp-daemon-z7mfj container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=error reading from stream: context deadline exceeded</p>
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 2 (one follower port goes down) and Test 3 (higher priority profile):</h2>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for</p>
+<p style="margin:4px 0">openshift-ptp/linuxptp-daemon-z7mfj container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=timedout waiting for matches</p>
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">From junit-failures.txt (dualfollower group):</h2>
+<p style="margin:4px 0">Timeout to get foreign clock ID for ptpconfig test-slave1</p>
+<p style="margin:4px 0">Timed out after 202.150s / 202.410s / 201.558s</p>
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">End-of-job Unauthorized errors (ci-operator-build-log.txt):</h2>
 <p style="margin:4px 0">error: You must be logged in to the server (Unauthorized)</p>
-<p style="margin:4px 0">E0624 08:29:47.118913 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: the server has asked for the client to provide credentials"</p>
+<p style="margin:4px 0">error completing cluster type inspection: error running backup collection:</p>
+<p style="margin:4px 0">the server has asked for the client to provide credentials</p>
 <p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test helper <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetProfileLogID</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/pkg/ptphelper/ptphelper.go</code> opens a live Kubernetes log stream (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Follow: true</code>, no <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TailLines</code>) via <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pods.GetPodLogsRegex</code> searching for the regex <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">(?m).<em>?Ptp4lConf: #profile: <name>(.|\n)</em>?message_tag \[([^\]]*)\]</code> within a 3-minute timeout. The stream — opened with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context.TODO()</code> so no test-side deadline — is being terminated by the infrastructure with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> before the regex can be matched. This error pattern repeats identically across all ClockSync tests in bc, dualfollower, dualnicbc, and dualnicbcha suites, confirming a cluster-wide log streaming connectivity issue rather than a daemon log format regression. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> does emit this log line (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">printNodeProfile</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/daemon/daemon.go:1369</code> writes the rendered <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Ptp4lConf</code> with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">#profile:</code> prefix and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">message_tag</code>), but the HTTP connection carrying the pod log stream is dropped before the data reaches the test. The progressive <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> failures at job end suggest the kubeconfig token was near expiry, which may also have disrupted API server proxy connections to node kubelets mid-run.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong></div>
+<p style="margin:4px 0">The same <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">could not find regex in log stream</code> error struck every other suite in the same job run: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bc</code> (pods <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">jvf75</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9ssfb</code>), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dualnicbc</code> (pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">lkhnx</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">s8frf</code>), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dualnicbcha</code> (pods <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cklkh</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">h4bbm</code>) — confirming this is not a dualfollower-specific failure.</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test helper function (invoked at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp.go</code> during the ClockSync "Slave can sync" flow) streams logs from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-container</code> and waits for a regex matching the PTP profile's "foreign clock ID" / sync status line — typically a ptp4l log of the form <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp4l[...]: [<config>] master offset X s2 freq Y path delay Z</code>. The stream either drops with a Kubernetes API <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> (indicating API server instability or credential expiry mid-run), or remains open but ptp4l never emits the expected SLAVE-state log within 202 seconds (indicating PTP sync never occurred). The post-test log shows the cluster's API credentials had gone stale (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code>), and the node CRI-O version (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rhaos4.21.git83ee25b.el9</code>) is mismatched against the tested OCP 4.20 cluster — both pointing to a degraded or misconfigured lab environment on 2026-07-03.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no source-level regression identified in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.20</code> linuxptp-daemon (HEAD <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fd6ff1e</code>, "upstream-sync-2026-06-30") or cloud-event-proxy (HEAD <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0907127</code>, "fix-e1-guard-race"). The failure pattern is cross-suite and consistent with infra instability rather than a code change.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — cross-suite simultaneous failure, Kubernetes API auth errors post-run, CRI-O/OCP version mismatch on lab nodes, and no code change traceable to a changed log format or daemon behavior in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.20</code>.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-run the periodic job to confirm flake; if it reproduces, investigate the lab cluster's API server token lifetime and the CRI-O 4.21/OCP 4.20 node version mismatch (nodes show <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cri-o://1.34.10-2.rhaos4.21.git83ee25b.el9</code> on a 4.20 cluster), as credential expiry or container runtime incompatibility could prevent ptp4l from achieving lock or the log API from streaming reliably.</div>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">dualnicbc</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualnicbc (3 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> All 3 PTP ClockSync tests timed out waiting for the linuxptp-daemon to log a foreign clock ID because the Telecom Grandmaster (T-GM) node lost GNSS lock (reporting clock class 248 instead of 7), collapsing the entire PTP synchronization chain.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: GNSS loss on T-GM cascades to all PTP ClockSync tests</strong> (affects: all 3 tests — "Slave can sync to master", "Downstream slave can sync to BC master", "Can provide a profile with higher priority")</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for</p>
+<p style="margin:4px 0">openshift-ptp/linuxptp-daemon-lkhnx container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=timedout waiting for matches</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for</p>
+<p style="margin:4px 0">openshift-ptp/linuxptp-daemon-s8frf container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=timedout waiting for matches</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">TGM suite (same job run) confirms the upstream cause:</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">[tgm-serial] Testing T-GM Events on GNSS reboot and recovery [Serial]:</p>
+<p style="margin:4px 0">expected a metric [7.000000] but got map[metric:248]</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">[tgm-serial] Testing WPC T-GM holdover through connection loss [Serial]:</p>
+<p style="margin:4px 0">Timed out waiting for clock class 7</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The T-GM node in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5gran.eng.rdu2.redhat.com</code> lab is reporting clock class 248 (holdover expired / free-run, ITU-T G.8273.2) instead of the expected clock class 7 (GNSS-locked, PRTC-A). Without a GNSS-locked grandmaster, neither the Boundary Clock (ptpconfig <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test-bc-master1</code>) nor the downstream slave (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test-slave1</code>) can establish a PTP foreign master. The test framework (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetForeignClockID</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator/test/conformance/serial/ptp.go</code>) polls the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-container</code> log stream for a</div>
 </div>
 
 <div class="footer">

@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.18-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-07-05T22:24:07.578568+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-07-06T22:50:39.212628+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">failure</div>
+    <div class="info-value" style="color:#f85149">pending</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,16 +62,13 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">130m</div>
+    <div class="info-value">running...</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
+    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
   </div>
-  <div class="info-card">
-    <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
-  </div>
+  
   <div class="info-card">
     <div class="info-label">Started</div>
     <div class="info-value" style="font-size:12px">2026-07-02T19:00</div>
@@ -84,49 +81,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <p style="margin:4px 0">Now I have everything I need.</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CI builder image <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code> was missing, preventing ptp-operator image build and deployment.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: CI builder image unavailable (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">manifest unknown</code>)</strong> (affects: deployment setup / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet wait timeout)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">[1/2] STEP 1/6: FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17 AS builder</p>
-<p style="margin:4px 0">Trying to pull registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17...</p>
-<p style="margin:4px 0">Error: creating build container: initializing source docker://registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17: reading manifest rhel-9-golang-1.22-openshift-4.17 in registry.ci.openshift.org/ocp/builder: manifest unknown</p>
-<p style="margin:4px 0">make: *** [Makefile:122: docker-build] Error 125</p>
-<p style="margin:4px 0">+ podman push image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17 --tls-verify=false</p>
-<p style="margin:4px 0">Error: image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17: image not known</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Then operator is deployed with the unpushed image → DaemonSet never created:</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Error from server (NotFound): daemonsets.apps "linuxptp-daemon" not found</p>
-<p style="margin:4px 0">+ '[' 1781942433 -gt 1781942431 ']'</p>
-<p style="margin:4px 0">+ return 1</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator</code> Dockerfile (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code>) references a CI builder image that no longer exists at registry.ci.openshift.org (manifest unknown). The build pod's script uses <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set +xe</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set -x</code> (without restoring <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">-e</code>), so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">make docker-build</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman push</code> both fail silently and the pod exits 0. The outer deploy script then runs <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">make deploy</code> pointing at an image that was never pushed; the ptp-operator pod cannot start, so it never reconciles the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpOperatorConfig</code> and the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet is never created. The 400-second wait times out and the step exits 1.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — the builder image <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rhel-9-golang-1.22-openshift-4.17</code> was likely pruned or never promoted to registry.ci for this nightly; no source code change is responsible.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — the builder image tag is deterministically absent; every run on 4.17 (and likely 4.18 with its equivalent tag) will reproduce this until the image is re-published or the Dockerfile is updated.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-publish or pin to an available builder image in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator</code> Dockerfile (e.g. a quay.io mirror or a tag that is known to be retained). Additionally, restore <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set -e</code> after the credential-hiding <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set +e</code> block so that image build failures are not silently swallowed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">e2e-telco5g-ptp-telco5g-ptp-tests</code> (the sole test step; no individual test names extracted because deployment never completed)</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — the missing CI builder image cascades: build fails → image not pushed → operator pod cannot start → DaemonSet not created → timeout.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.17: confirmed — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code> returns <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">manifest unknown</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.18: same root cause expected — the equivalent tag <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rhel-9-golang-1.22-openshift-4.18</code> is likely also absent; no direct evidence in this run but the failure pattern is identical</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code> (missing); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17</code> (never built/pushed)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH — the entire ptp-operator deployment is blocked on every nightly run until the builder image is restored or the Dockerfile is fixed.</p>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">
