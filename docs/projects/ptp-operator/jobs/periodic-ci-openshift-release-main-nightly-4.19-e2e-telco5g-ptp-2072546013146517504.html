@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.19-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-07-06T22:50:39.212628+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-07-08T01:12:38.189755+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -1969,7 +1969,103 @@
 <p style="margin:4px 0">error: You must be logged in to the server (Unauthorized)</p>
 <p style="margin:4px 0">{"component":"entrypoint","error":"wrapped process failed: exit status 1",...}</p>
 <p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> After the control plane disruption in Group 1, every subsequent test fails at its first API call — checking whether the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet exists in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code>. The cluster API came back but is rejecting the KUBECONFIG credentials (short-lived service-account token or client certificate was invalidated, e.g., due to a control-plane restart triggering token rotation). All 9 tests hit their 300 s Ginkgo timeout doing this single failing call. The final test receives <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">A suite timeout occurred</code> because the 1-hour suite timer expired. The artifact-gathering pods (`must-gat</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> After the control plane disruption in Group 1, every subsequent test fails at its first API call — checking whether the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet exists in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code>. The cluster API came back but is rejecting the KUBECONFIG credentials (short-lived service-account token or client certificate was invalidated, e.g., due to a control-plane restart triggering token rotation). All 9 tests hit their 300 s Ginkgo timeout doing this single failing call. The final test receives <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">A suite timeout occurred</code> because the 1-hour suite timer expired. The artifact-gathering pods (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">must-gather</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-extra</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-audit-logs</code>) all fail with the same Unauthorized error, confirming cluster-wide credential invalidation.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra disruption, not a code change.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> No code change needed; re-run the job. The test harness could be improved by detecting HTTP 401 at the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WaitForDaemonSetReadiness</code> stage and failing fast with a clearer infra-error message instead of spinning for 300 s.</div>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">dualfollower</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualfollower (3 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> All 3 dualfollower tests failed because the Kubernetes API log-streaming connection to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-vzwc2</code> dropped mid-test with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code>, a symptom of cluster credential expiry that progressed to full <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> rejections by the time later suites (bc-serial) ran.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Kubernetes API log-stream connection failure due to credential expiry</strong> (affects: all 3 — "Slave can sync to master", "Dual follower can sync when one follower port goes down", "Can provide a profile with higher priority")</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-vzwc2 container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">(tests 1 & 2, ~202–206s timeout)</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-vzwc2 container=linuxptp-daemon-container, err=timedout waiting for matches</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">(test 3, ~204s timeout)</p>
+<br>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-operator-build-log.txt</code> post-test steps:</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">error: You must be logged in to the server (Unauthorized)</p>
+<p style="margin:4px 0">creating temp namespace: Unauthorized</p>
+<p style="margin:4px 0">error getting cluster version: Unauthorized</p>
+<p style="margin:4px 0">E0702 08:31:18.720224 memcache.go:265 "Unhandled Error" err="couldn't get current server API group list: the server has asked for the client to provide credentials"</p>
+<p style="margin:4px 0">```</p>
+<br>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">junit-failures.txt</code>, the bc-serial suite (which ran after dualfollower) shows full API rejection:</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">finding pod for test-bc-master1_test-bc-master1: Get "https://10.8.34.117:6443/api/v1/namespaces/openshift-ptp/pods?...": dial tcp 10.8.34.117:6443: i/o timeout</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">and repeated <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> failures for every single bc-serial test.</p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The telco5g test cluster's kubeconfig token expired partway through the ~3.5-hour test run. During the dualfollower suite, the credential degradation manifested as the Kubernetes log-streaming API (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetLogs</code> with follow) dropping connections with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> before the test's regex (looking for a foreign master clock ID line in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-container</code>) was found. This is not a PTP sync failure — the daemon pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-vzwc2</code> was never confirmed unhealthy; the test framework simply lost its authenticated connection to the API server's log stream endpoint. The same <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> pattern is present in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dualnicbc-serial</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dualnicbcha-serial</code> suites across different pods (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-fv8pz</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-2sffq</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-4nzrs</code>), confirming this is a cluster-wide infra event, not pod-specific. The relevant test helper is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptphelper.go</code> around lines 631/811 (per <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">investigation-summary.txt</code>), which streams container logs and scans for the profile regex with a ~200s context deadline.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a transient infrastructure credential expiry, not a code regression. No code change in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.19</code> is implicated.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — this is an infrastructure flake caused by kubeconfig token expiry on the telco5g bare-metal cluster mid-run; a retry of the job with fresh credentials should pass.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Investigate why the telco5g cluster kubeconfig token expires mid-job (the job ran from ~05:01Z to ~08:31Z, about 3.5 hours); either rotate tokens with a longer TTL or have the setup step refresh credentials before each test suite begins.</div>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> infra_timeout</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">dualnicbc</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualnicbc (3 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> All 3 ClockSync tests timed out waiting for linuxptp-daemon log lines confirming PTP clock sync, with the streaming connection itself dying with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> — a pattern mirrored across 3 other suites in the same run, pointing to cluster-wide API server instability rather than a product regression.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Kubernetes API log-stream context deadline / regex not found</strong> (affects: all 3 — "Slave can sync to master", "Downstream slave can sync to BC master", "Can provide a profile with higher priority")</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for</p>
+<p style="margin:4px 0">openshift-ptp/linuxptp-daemon-fv8pz container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=error reading from stream: context deadline exceeded</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for</p>
+<p style="margin:4px 0">openshift-ptp/linuxptp-daemon-2sffq container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=error reading from stream: context deadline exceeded</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for</p>
+<p style="margin:4px 0">openshift-ptp/linuxptp-daemon-fv8pz container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=timedout waiting for matches</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">Cross-suite confirmation: the bc-serial suite (which ran in the same job) shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 10.8.34.117:6443: i/o timeout</code> on the API server, and all post-test gather steps fail with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code>. The ci-operator build log confirms: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error: You must be logged in to the server (Unauthorized)</code> at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-07-02T08:31:04Z</code>, with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">creating temp namespace: Unauthorized</code> in must-gather.</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test helper (referenced as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptphelper.go:631</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptphelper.go:811</code> in the investigation-summary) streams pod logs via the Kubernetes API to match a regex confirming a foreign clock ID in ptp4l output. Two of the three tests fail because the HTTP streaming connection to the API server was dropped mid-read (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code>); the third fails because the stream connected but the expected log line never appeared (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">timedout waiting for matches</code>). Both failure modes are consistent with a degraded or overloaded API server — corroborated by bc-serial's hard network timeout (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">i/o timeout</code> to the same API server VIP) and the total Unauthorized state after test completion. The OCP 4.19 nightly used was <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.19.0-0.nightly-2026-07-01-085304</code>.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no product-side code change could be identified. The local clones of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cloud-event-proxy</code> only carry <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> branches (not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.19</code>); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">check_backport.py</code> was not present to verify backport status. The most recent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>-only merges (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fd6ff1e</code> in linuxptp-daemon, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0907127</code> / "Fix E1-aware E3 guard race in T-BC profiles" in cloud-event-proxy) are on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> only and cannot be the root cause for this <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.19</code> job unless cherry-picked.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — the simultaneous failure of log streaming across 8+ tests in 3 independent suites (dualnicbc, dualfollower, dualnicbcha), combined with the bc-serial network timeout and Unauthorized post-test state, is consistent with a transient cluster-level API server event, not a deterministic product regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-run the periodic job against the same or next nightly to confirm whether failures persist. If they recur, examine the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.19</code> linuxptp-daemon pod logs directly (once the cluster is stable) to determine whether ptp4l is producing the expected profile/foreign-clock-ID log lines after sync.</div>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> infra_timeout</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">dualnicbcha</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualnicbcha (2 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> Both <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ClockSync</code> te</p>
 </div>
 
 <div class="footer">

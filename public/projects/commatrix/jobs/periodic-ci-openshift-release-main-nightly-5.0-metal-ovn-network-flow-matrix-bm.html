@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-metal-ovn-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-07-06T21:31:56.133266+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-07T21:53:15.740329+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2074116459012820992" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2074478794399289344" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -62,62 +62,62 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">136m</div>
+    <div class="info-value">11m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#f0883e">MATRIX</span></div>
+    <div class="info-value"><span class="badge" style="background:#f85149">TEST</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">MEDIUM</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-07-06T13:00</div>
+    <div class="info-value" style="font-size:12px">2026-07-07T13:00</div>
   </div>
 </div>
 
-
+<div style="margin:16px 0"><h3 style="color:#8b949e;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Failed Tests</h3><div style="margin:6px 0;padding:8px 12px;background:#161b22;border-radius:6px;border-left:3px solid #f85149"><div style="font-family:monospace;font-size:12px;color:#f0883e">baremetalds-devscripts-setup</div><div style="font-size:11px;color:#8b949e;margin-top:2px">----------- 73.36s /opt/dev-scripts/metal3-dev-env/vm-setup/roles/packages_installation/tasks/main.yml:72  packages_installation : Refresh DNF cache ------------------------------ 26.11s /opt/dev-scri</div></div></div>
 
 <h2 style="color:#58a6ff;font-size:16px;margin:20px 0 12px;border-bottom:1px solid #21262d;padding-bottom:8px">
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> crio ephemeral TCP ports (Linux range 32768-60999) are not filtered after PR #400 removed Linux dynamic ranges.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: crio ephemeral ports not filtered by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code></strong> (affects Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code>)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">[FAILED] the following ports are used but don't have an endpointslice:</p>
-<p style="margin:4px 0">Ingress,TCP,33731,,crio,,,master,false</p>
-<p style="margin:4px 0">Ingress,TCP,34527,,crio,,,master,false</p>
-<p style="margin:4px 0">Ingress,TCP,35293,,crio,,,master,false</p>
-<p style="margin:4px 0">Ingress,TCP,33537,,crio,,,worker,false</p>
-<p style="margin:4px 0">Ingress,TCP,36213,,crio,,,worker,false</p>
-<p style="margin:4px 0">Ingress,TCP,46831,,crio,,,worker,false</p>
-<p style="margin:4px 0">— validation_test.go:161 @ 07/01/26 15:06:53</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Port-map.txt confirms all 6 are in the Linux ephemeral range (32768-60999), bound to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> process (e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LISTEN 0 4096 192.168.111.21:33731 ... users:(("crio",pid=4470,fd=12))</code>).</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:157-161</code> calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> (line 221) which only skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code> — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is absent. Then <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> (line 159) uses <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code>, but PR #400 (commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code>, "Remove Linux Dynamic ranges from generated communication matrix") removed the 32768-60999 ephemeral range from the generated matrix, leaving only the NodePort range 30000-32767 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">KubeletNodePortDefaultDynamicRange</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">static-custom-entries.go:365</code>). crio's ephemeral ports fall above 32767, so they pass through both filters and cause the assertion failure.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> PR #400 / commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> — "Remove Linux Dynamic ranges from generated communication matrix" (merged on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>; confirmed on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> by the fact that the ephemeral-range filter is absent in the failing test run, which clones from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — crio consistently opens ephemeral TCP ports on every node (one per master, one per worker per node for gRPC/container management); this will fail on every run until <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is added to the known-services skip list.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to the skip list in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go:226-228</code>, analogous to the existing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> skip. Alternatively, re-add the Linux ephemeral range (32768-60999) to the test-side dynamic range filter without adding it back to the generated matrix output.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
+  <p style="margin:4px 0">Based on all evidence collected,</p>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause group. The 7 stale matrix entries (TCP/6388 metal3-httpd, TCP/8798 machine-config-daemon ×2, TCP/9192 machine-approver, TCP/9443 cloud-controller-manager, UDP/68 NetworkManager ×2) generate warnings only in the first test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">generated communication matrix should be equal to documented communication matrix</code>) which <strong>passed</strong> — they are a documentation debt but not the cause of the job failure.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> CI infra failure — SSL error downloading Go tarball aborted cluster setup before any tests ran.</p>
 <br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 5.0 nightly (5.0.0-0.nightly-2026-06-29-195240) — failing consistently due to the absent crio filter.</p>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> No image pull failures; all images resolved successfully. The failure is purely in test logic against the live cluster state.</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: SSL/TLS network failure downloading Go toolchain</strong> (affects Tests: baremetalds-devscripts-setup, pre phase)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">"msg": "Connection failure: [ASN1: NOT_ENOUGH_DATA] not enough data (_ssl.c:4192)",</p>
+<p style="margin:4px 0">"url": "https://go.dev/dl/go1.24.10.linux-amd64.tar.gz"</p>
+<p style="margin:4px 0">...</p>
+<p style="margin:4px 0">make: *** [Makefile:68: requirements] Error 2</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">All downstream errors (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">No such file or directory</code> for kubeconfig, OCP dir not found) are cascades from this.</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">packages_installation</code> Ansible role in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">metal3-dev-env/vm-setup/roles/packages_installation/tasks/main.yml:72</code> attempted to download <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">go1.24.10.linux-amd64.tar.gz</code> from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">https://go.dev</code> through the CI proxy (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">external-squid</code>). The TLS connection failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ASN1: NOT_ENOUGH_DATA</code> — an SSL handshake/certificate parsing error, indicating a proxy TLS interception issue or transient network corruption. Because Go installation failed, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">make requirements</code> (Makefile:68) returned exit code 2, aborting cluster setup entirely. The OCP cluster was never deployed, so no kubeconfig was generated and the commatrix project tests never executed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a CI infrastructure/network failure, not a code change.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — SSL handshake failures (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ASN1: NOT_ENOUGH_DATA</code>) during external downloads through a proxy are transient network errors.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it recurs, investigate the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">external-squid</code> proxy TLS configuration or mirror the Go tarball to an internal registry to avoid depending on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">go.dev</code> availability.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">baremetalds-devscripts-setup</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pre phase</code></div>
 <br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix_mismatch</code></p>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — one SSL failure cascaded into all observed failures (missing kubeconfig, missing OCP dir, failed credential fetch). The commatrix tests themselves never ran.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.21: Confirmed — SSL download failure in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">baremetalds-devscripts-setup</code> pre-phase (this run)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.22, 4.23, 5.0: Same infra-level pre-phase runs the same devscripts setup; same root cause is expected if those runs show matching <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">baremetalds-devscripts-setup</code> failures — not a version-specific regression.</div>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-kni/test:dev-scripts</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-07-05-030533</code> (all pulled successfully; failure was at runtime network download, not image pull)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 </div>
