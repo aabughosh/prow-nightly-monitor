@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.23-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-07-07T21:53:15.740329+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-09T02:52:12.636414+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2074478771762630656" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2074841190179540992" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -62,19 +62,19 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">98m</div>
+    <div class="info-value">63m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">MATRIX</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-07-07T13:00</div>
+    <div class="info-value" style="font-size:12px">2026-07-08T13:00</div>
   </div>
 </div>
 
@@ -86,37 +86,65 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> PROJECT TESTS PASSED — CI framework MonitorTest failed due to intentional node reboot during nftables test.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Communication matrix CSV is stale for OCP 4.23 SNO — 6 documented ports inactive, 9 active ports undocumented.</p>
 <br>
 <p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: MonitorTest failure triggered by intentional node reboot</strong> (affects: single-node-e2e-test CI step)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Stale documented matrix entries — services absent or port-changed in OCP 4.23 SNO</strong> (affects Test: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] should validate the communication matrix ports match the node's open ports</code>)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Suite run returned error: failed due to a MonitorTest failure</p>
-<p style="margin:4px 0">error: error running a test suite: failed due to a MonitorTest failure</p>
-<p style="margin:4px 0">Step aws-ovn-network-flow-matrix-single-node-single-node-e2e-test failed after 1h53m54s.</p>
-<p style="margin:4px 0">2026/06/25 13:56:11 Waiting for node ip-10-0-69-209.ec2.internal to be in NotReady state</p>
-<p style="margin:4px 0">2026/06/25 13:56:27 Node ip-10-0-69-209.ec2.internal is NotReady</p>
+<p style="margin:4px 0">[FAIL] Validation [It] should validate the communication matrix ports match the node's open ports</p>
+<p style="margin:4px 0">/tmp/secret/commatrix/test/e2e/validation_test.go:161</p>
+<p style="margin:4px 0">Ran 4 of 4 Specs in 446.268 seconds</p>
+<p style="margin:4px 0">FAIL! -- 3 Passed | 1 Failed</p>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">And from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests__finished.json</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true,"result":"SUCCESS"</code></p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The commatrix nftables e2e test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">nftables_test.go:85</code>) intentionally applies a MachineConfig that reboots the node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ip-10-0-69-209.ec2.internal</code>) at ~13:56 UTC to validate nftables rules after reboot. The commatrix test step completed successfully at 14:01:38 UTC. The subsequent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> CI step runs OpenShift's generic e2e suite with built-in MonitorTests that observe the cluster throughout the entire job — these monitors recorded the node-not-ready event from the commatrix-triggered reboot and flagged it as a MonitorTest failure. The first domino is the reboot event recorded by the CI monitor, not a commatrix bug.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a known interaction between the commatrix nftables reboot and the openshift-tests MonitorTest framework.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — the commatrix tests always perform this intentional reboot; whether it triggers a MonitorTest failure depends on monitor timing and thresholds.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> step's MonitorTest should be configured to tolerate or exclude node-not-ready events that occur during the commatrix nftables test window. Alternatively, the job config should suppress MonitorTest node-reboot alerts for this specific job.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> (CI framework MonitorTest); commatrix's own 3 e2e specs all PASSED.</div>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">doc-diff-commatrix</code> (stale entries prefixed <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">-</code>):</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,80,openshift-ingress,router-default,router-default,router,master,false</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,443,openshift-ingress,router-default,router-default,router,master,false</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,8798,openshift-machine-config-operator,machine-config-daemon,...,master,false</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,9192,openshift-cluster-machine-approver,machine-approver,...,master,false</div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">port-map.txt</code> (STALE_IN_MATRIX): TCP/80, 443, 8798, 9192, 9443, 10258 — none listening on node.</p>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ss-port-analysis.txt</code>: MCD is listening on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">127.0.0.1:8797</code>, not 8798; router ports are simply absent in SNO.</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix.csv</code> shipped with the commatrix test bundle is a static snapshot that no longer reflects OCP 4.23 SNO reality. TCP/80 and 443 (router) are absent in SNO; TCP/8798 changed to 8797 (localhost-only); TCP/9192 (machine-approver) is not deployed on SNO; TCP/9443 and 10258 (cloud-controller-manager variants) no longer match EndpointSlice records. The test at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go:161</code> compares ss-generated matrix to the embedded CSV and fails when any mismatch exceeds zero tolerance.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no source repo access available; check recent commits in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">https://github.com/openshift-kni/commatrix</code> touching <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix.csv</code> or OCP 4.23 SNO matrix generation.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — the stale router/MCD/machine-approver entries are deterministically absent on every SNO 4.23 run; this will fail consistently until the matrix is updated.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Regenerate <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix.csv</code> for OCP 4.23 SNO using the ss-generated matrix from a clean run; remove TCP/80, 443, 8798, 9192 from the matrix, update TCP/9443 and 10258 entries to match current EndpointSlice data.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 2: Dynamic/ephemeral ports open on node with no EndpointSlice</strong> (same test, same run)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix-diff-ss</code> (9 ports open in ss but missing in documented matrix):</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,30544,openshift-ovn-kubernetes,ovnkube,ovnkube-node-j9t5l,ovnkube-controller,...</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,32051,openshift-ovn-kubernetes,ovnkube,ovnkube-node-j9t5l,ovnkube-controller,...</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,32534,openshift-ovn-kubernetes,ovnkube,ovnkube-node-j9t5l,ovnkube-controller,...</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,39017,,rpc.statd,,,master,false</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,39219,,crio,,,master,false    ← crio pid=2686, ephemeral range 32768-60999</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,39279,,rpc.statd,,,master,false</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,UDP,47211,,rpc.statd,,,master,false</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Ingress,UDP,49157,,rpc.statd,,,master,false</div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ss-port-analysis.txt</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LISTEN 0 4096 10.0.62.0:39219 0.0.0.0:* users:(("crio",pid=2686,fd=12))</code></p>
+<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">port-map.txt</code>: ovnkube NodePorts (30544, 32051, 32534) documented with hardcoded pod name <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ovnkube-node-j9t5l</code> from a previous snapshot — pod name and NodePort values change per-deploy.</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The documented matrix captured live NodePort numbers and dynamic rpc.statd/crio ephemeral port numbers from a prior run. These are inherently non-deterministic: ovnkube NodePorts (30544/32051/32534) are re-assigned each cluster install; rpc.statd and crio use OS-assigned ephemeral ports (range 32768–60999). The test treats any active port without a matching EndpointSlice as a failure, but these host-level processes (rpc.statd, crio) never have EndpointSlices.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a pre-existing structural issue with how dynamic ports are treated; any recent changes to SNO topology or ovnkube NodePort assignment logic in OCP 4.23-nightly-2026-06-26 could have altered which ports appear.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Partially — ovnkube NodePort numbers and rpc.statd/crio ephemeral ports change each run, so this set of 9 may vary slightly across runs, but some mismatch will always be present without proper filtering logic.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Filter ephemeral port range (32768–60999) and host-level processes without EndpointSlices (rpc.statd, crio) from the validation comparison, or add them as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Optional: true</code> in the matrix; regenerate ovnkube NodePort entries dynamically rather than hardcoding specific port numbers.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group. The only failure is from the CI framework's MonitorTest, caused by a node reboot that is a deliberate part of the commatrix nftables validation test.</p>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Both groups are symptoms of the same root cause — the static <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix.csv</code> is outdated for OCP 4.23 SNO. Group 1 is deterministic drift (stable services removed/changed), Group 2 is ephemeral/dynamic port drift (non-deterministic per-deploy values baked into the matrix). Together they exceed the test's zero-tolerance mismatch threshold and cause the single test failure.</p>
 <br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 (nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.21.0-0.nightly-2026-06-25-024321</code>): commatrix tests pass; MonitorTest collision with intentional reboot is the sole failure.</p>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.23 SNO (nightly 2026-06-26-200441): matrix has 6 stale entries + 9 undocumented active ports; no other versions tested in this run.</p>
 <br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (release image, 190 components imported); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (test runner)</p>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c1cb03332d3a5e641eac1ae9732b0924a94a50d3b95866d112bb7c5a12cf0d51</code> (debug pod used for ss collection); commatrix e2e test image from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-26-200441</code>.</p>
 <br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> matrix_mismatch</p>
 <br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
 </div>
 
 <div class="footer">

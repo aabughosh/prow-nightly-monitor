@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.22-telco5g-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-07-07T21:53:15.740329+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-09T02:52:12.636414+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm/2074478765043355648" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm/2074841182621405184" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#3fb950">success</div>
+    <div class="info-value" style="color:#f85149">failure</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,16 +62,19 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">141m</div>
+    <div class="info-value">173m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
   </div>
-  
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
+  </div>
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-07-07T13:00</div>
+    <div class="info-value" style="font-size:12px">2026-07-08T13:00</div>
   </div>
 </div>
 
@@ -81,7 +84,37 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#10003;</div><div style="font-size:18px;font-weight:600;color:#3fb950">Job Passed</div><div style="color:#8b949e;margin-top:8px">All tests passed — no AI analysis needed.</div></div>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> OCP cluster API server unreachable (TLS handshake timeout); all post-test gather steps cascaded.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: OCP cluster failed to become ready — API server unreachable</strong> (affects: all gather/post steps)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">ClusterVersion: Installing "" for <unknown>: <unknown></p>
+<p style="margin:4px 0">clusteroperators are missing</p>
+<p style="margin:4px 0">error completing cluster named resource inspection: error running backup collection: Get "https://XXXXXXXXXXXX:64414/api?timeout=32s": net/http: TLS handshake timeout</p>
+<p style="margin:4px 0">Unable to connect to the server: net/http: TLS handshake timeout   [telco5g-log-gather__build-log.txt]</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code> step ran for ~2h42m (13:03–15:45 UTC) but the OCP cluster never completed installation — the API server remained in "Installing" state with no cluster operators ready. Every subsequent gather step (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-must-gather</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-extra</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-audit-logs</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-log-gather</code>) failed when attempting to connect to the API endpoint at port 64414. The cluster-setup Ansible playbook successfully SSH'd to the bastion (ping/SSH verified in log), but the kcli-driven OCP 4.22 nightly cluster install itself stalled.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infra provisioning failure, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — transient OCP nightly cluster install stall; unrelated to commatrix source changes.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If recurring, check kcli/baremetal provisioner logs on the bastion for the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu7</code> cluster and validate OCP 4.22.0-0.nightly-2026-07-05-180412 installer stability.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> gather-must-gather, gather-extra, gather-audit-logs, telco5g-log-gather (all post-test artifact collection steps)</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — cluster API unreachable. All gather failures are cascades of the same upstream provisioning failure.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.22 — nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.22.0-0.nightly-2026-07-05-180412</code>; cluster install stalled, API never reached healthy state. No other versions tested in this job.</p>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-07-05-180412</code> (191 images imported successfully; stall is in provisioning, not image pull)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
 </div>
 
 <div class="footer">

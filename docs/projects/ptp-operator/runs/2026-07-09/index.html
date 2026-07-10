@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prow Nightly Monitor — e2e-telco5g-ptp</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e1e4e8; min-height: 100vh; }
+
+  .header { background: linear-gradient(135deg, #161b22 0%, #1a1e2e 50%, #2d1b4e 100%); padding: 20px 32px; border-bottom: 1px solid #30363d; }
+  .header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; }
+  .header h1 code { background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 6px; font-size: 16px; }
+  .header .meta { color: #8b949e; font-size: 12px; margin-top: 4px; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px 32px; }
+
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; text-align: center; }
+  .stat-num { font-size: 32px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+  .green { color: #3fb950; }
+  .red { color: #f85149; }
+  .blue { color: #58a6ff; }
+  .yellow { color: #d29922; }
+
+  .categories { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .cat-card { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; background: #161b22; border: 1px solid #30363d; cursor: pointer; transition: all 0.2s; min-width: 130px; }
+  .cat-card:hover { border-color: #58a6ff; transform: translateY(-1px); }
+  .cat-card .cat-count { font-size: 22px; font-weight: 700; }
+  .cat-card .cat-name { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; }
+  .cat-card.matrix { border-left: 4px solid #f0883e; }
+  .cat-card.matrix .cat-count { color: #f0883e; }
+  .cat-card.test { border-left: 4px solid #f85149; }
+  .cat-card.test .cat-count { color: #f85149; }
+  .cat-card.infra { border-left: 4px solid #d29922; }
+  .cat-card.infra .cat-count { color: #d29922; }
+  .cat-card.build { border-left: 4px solid #da3633; }
+  .cat-card.build .cat-count { color: #da3633; }
+  .cat-card.unknown { border-left: 4px solid #484f58; }
+  .cat-card.unknown .cat-count { color: #8b949e; }
+
+  .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 12px 16px; background: #161b22; border-radius: 10px; border: 1px solid #30363d; }
+  .filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+  .filter-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 5px 12px; border-radius: 16px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+  .filter-btn:hover { background: #30363d; border-color: #58a6ff; }
+  .filter-btn.active { background: #388bfd26; border-color: #58a6ff; color: #58a6ff; }
+  .filter-sep { width: 1px; height: 20px; background: #30363d; margin: 0 6px; }
+
+  table { width: 100%; border-collapse: separate; border-spacing: 0; background: #161b22; border-radius: 10px; overflow: hidden; border: 1px solid #30363d; }
+  th { background: #1c2128; color: #8b949e; padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; border-bottom: 1px solid #30363d; }
+  td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: top; }
+  tr:hover { background: #1c2128; }
+  tr:target { background: #1f3a5f; outline: 2px solid #58a6ff; outline-offset: -2px; }
+  tr.row-success td { opacity: 0.7; }
+  tr.row-success:hover td { opacity: 1; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  details { margin-top: 6px; }
+  summary { cursor: pointer; color: #58a6ff; font-size: 12px; padding: 4px 0; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '\25B6  '; font-size: 9px; color: #8b949e; }
+  details[open] > summary::before { content: '\25BC  '; }
+  details[open] summary { margin-bottom: 6px; }
+  details > div { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px; font-size: 12px; color: #c9d1d9; margin-top: 4px; max-height: 500px; overflow-y: auto; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: white; }
+  .badge-infra { background: #d29922; }
+  .badge-test { background: #f85149; }
+  .badge-build { background: #da3633; }
+  .badge-matrix { background: #f0883e; }
+  .badge-error { background: #8b949e; }
+  .badge-unknown { background: #484f58; }
+  .badge-fix { background: #3fb950; }
+  .sev-critical { background: #f85149; color: white; }
+  .sev-high { background: #f0883e; color: white; }
+  .sev-medium { background: #d29922; color: white; }
+  .sev-low { background: #8b949e; color: white; }
+  .version-badge { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 5px; }
+
+  .fix-box { background: #0d1117; border: 1px solid #238636; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+  .fix-box-title { font-size: 10px; font-weight: 600; color: #3fb950; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .fix-box-content { font-size: 11px; color: #c9d1d9; font-family: 'SF Mono', 'Fira Code', monospace; line-height: 1.4; white-space: pre-wrap; }
+
+  .test-name { color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .test-file { color: #58a6ff; font-size: 11px; }
+  .test-msg { color: #8b949e; font-size: 11px; margin-top: 2px; }
+
+  code { background: #21262d; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; }
+
+  .footer { margin-top: 32px; padding: 16px; text-align: center; color: #484f58; font-size: 11px; border-top: 1px solid #21262d; }
+  .footer a { color: #58a6ff; }
+
+  @media (max-width: 768px) {
+    .stats { grid-template-columns: repeat(3, 1fr); }
+    .categories { flex-direction: column; }
+    .container { padding: 12px; }
+    .header { padding: 12px; }
+    table { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Prow Nightly Monitor — <code>e2e-telco5g-ptp</code></h1>
+  <div class="meta">Last updated: 2026-07-09 04:17 UTC | AI: disabled | <a href="../../history.html" style="color:#8b949e">Run History</a></div>
+</div>
+
+<div class="container">
+
+<div class="stats">
+  <div class="stat"><div class="stat-num">4</div><div class="stat-label">Total Jobs</div></div>
+  <div class="stat"><div class="stat-num green">0</div><div class="stat-label">Passed</div></div>
+  <div class="stat"><div class="stat-num red">3</div><div class="stat-label">Failed</div></div>
+  <div class="stat"><div class="stat-num blue">1</div><div class="stat-label">Pending</div></div>
+  <div class="stat"><div class="stat-num red">0%</div><div class="stat-label">Pass Rate</div></div>
+</div>
+
+<div class="categories"><div class="cat-card test" onclick="filterCategory('test_failure')"><div class="cat-count">2</div><div class="cat-name">Test Failure</div></div><div class="cat-card infra" onclick="filterCategory('infra')"><div class="cat-count">1</div><div class="cat-name">Infra</div></div><div class="cat-card" onclick="filterCategory('')" style="border-left:4px solid #58a6ff"><div class="cat-count" style="color:#58a6ff">3</div><div class="cat-name">All</div></div></div>
+
+
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:20px;margin-bottom:24px">
+      <h2 style="font-size:16px;color:#f0f6fc;margin-bottom:16px">Trend (last 14 days)</h2>
+      <div style="display:flex;align-items:flex-end;gap:4px;margin-bottom:24px;padding:12px;background:#0d1117;border-radius:8px">
+        <a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">15/28</div><div style="width:28px;background:#f85149;height:46px;border-radius:3px 3px 0 0" title="13 failed"></div><div style="width:28px;background:#3fb950;height:53px;border-radius:0 0 3px 3px" title="15 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">05-20</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">7/28</div><div style="width:28px;background:#f85149;height:10px;border-radius:3px 3px 0 0" title="3 failed"></div><div style="width:28px;background:#3fb950;height:25px;border-radius:0 0 3px 3px" title="7 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">05-25</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">18/28</div><div style="width:28px;background:#f85149;height:35px;border-radius:3px 3px 0 0" title="10 failed"></div><div style="width:28px;background:#3fb950;height:64px;border-radius:0 0 3px 3px" title="18 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">05-26</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">15/28</div><div style="width:28px;background:#f85149;height:46px;border-radius:3px 3px 0 0" title="13 failed"></div><div style="width:28px;background:#3fb950;height:53px;border-radius:0 0 3px 3px" title="15 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">05-27</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">17/29</div><div style="width:28px;background:#f85149;height:37px;border-radius:3px 3px 0 0" title="11 failed"></div><div style="width:28px;background:#3fb950;height:58px;border-radius:0 0 3px 3px" title="17 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">05-28</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">15/28</div><div style="width:28px;background:#f85149;height:46px;border-radius:3px 3px 0 0" title="13 failed"></div><div style="width:28px;background:#3fb950;height:53px;border-radius:0 0 3px 3px" title="15 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">05-29</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">15/28</div><div style="width:28px;background:#f85149;height:46px;border-radius:3px 3px 0 0" title="13 failed"></div><div style="width:28px;background:#3fb950;height:53px;border-radius:0 0 3px 3px" title="15 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">06-01</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">8/28</div><div style="width:28px;background:#f85149;height:10px;border-radius:3px 3px 0 0" title="3 failed"></div><div style="width:28px;background:#3fb950;height:28px;border-radius:0 0 3px 3px" title="8 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">06-02</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">17/28</div><div style="width:28px;background:#f85149;height:39px;border-radius:3px 3px 0 0" title="11 failed"></div><div style="width:28px;background:#3fb950;height:60px;border-radius:0 0 3px 3px" title="17 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">06-03</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">15/28</div><div style="width:28px;background:#f85149;height:46px;border-radius:3px 3px 0 0" title="13 failed"></div><div style="width:28px;background:#3fb950;height:53px;border-radius:0 0 3px 3px" title="15 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">06-04</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">19/28</div><div style="width:28px;background:#f85149;height:32px;border-radius:3px 3px 0 0" title="9 failed"></div><div style="width:28px;background:#3fb950;height:67px;border-radius:0 0 3px 3px" title="19 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">06-05</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">6/12</div><div style="width:28px;background:#f85149;height:33px;border-radius:3px 3px 0 0" title="4 failed"></div><div style="width:28px;background:#3fb950;height:50px;border-radius:0 0 3px 3px" title="6 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">06-08</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">15/28</div><div style="width:28px;background:#f85149;height:46px;border-radius:3px 3px 0 0" title="13 failed"></div><div style="width:28px;background:#3fb950;height:53px;border-radius:0 0 3px 3px" title="15 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">06-09</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/4</div><div style="width:28px;background:#f85149;height:75px;border-radius:3px 3px 0 0" title="3 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">07-09</div></a>
+      </div>
+      <h3 style="font-size:14px;color:#8b949e;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Daily Status by Version</h3>
+      <div style="display:flex;gap:16px;margin-bottom:12px;font-size:11px;color:#8b949e">
+        <span><span style="display:inline-block;width:10px;height:10px;background:#3fb950;border-radius:50%;margin-right:4px"></span>All passed</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#f85149;border-radius:50%;margin-right:4px"></span>Has failures</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin-right:4px"></span>No data</span>
+        <span style="color:#484f58">← Each dot = one day (newest on right)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">5.0</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-20: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-25: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-26: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-27: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-28: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-29: 4 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-01: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-02: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-03: 4 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-04: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-05: 4 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-08: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-09: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-07-09: 2 failed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.23</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-20: 6 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-25: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-26: 4 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-27: 4 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-28: 4 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-29: 4 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-01: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-02: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-03: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-04: 4 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-05: 5 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-06-08: 2 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-09: 6 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-07-09: no data"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.22</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-20: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-05-25: 2 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-26: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-27: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-28: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-29: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-01: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-06-02: 3 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-06-03: 7 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-04: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-06-05: 7 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-06-08: 1 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-06-09: 7 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-07-09: 1 failed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.21</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-20: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-05-25: 2 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-05-26: 7 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-27: 3 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-28: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-05-29: 3 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-01: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-06-02: 2 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-03: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-04: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-06-05: 7 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-06-08: 1 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-09: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-07-09: no data"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.20</span><div><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-20: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-25: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-26: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-27: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-28: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-29: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-01: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-02: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-03: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-04: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-05: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#3fb950;border-radius:50%;margin:0 2px" title="2026-06-08: 1 passed"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-09: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-07-09: no data"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.19</span><div><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-20: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-25: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-26: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-27: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-28: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-29: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-01: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-02: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-03: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-04: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-05: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-08: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-09: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-07-09: no data"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.18</span><div><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-20: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-25: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-26: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-27: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-28: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-29: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-01: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-02: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-03: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-04: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-05: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-08: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-09: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-07-09: no data"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.17</span><div><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-20: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-25: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-26: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-27: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-28: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-05-29: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-01: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-02: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-03: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-04: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-05: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-06-08: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-06-09: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-07-09: no data"></span></div></div>
+    </div>
+
+<div class="filters">
+  <span class="filter-label">Version</span>
+  <button class="filter-btn active" onclick="filterVersion('', this)">All</button>
+  <button class="filter-btn" onclick="filterVersion('4.20', this)">4.20</button> <button class="filter-btn" onclick="filterVersion('4.22', this)">4.22</button> <button class="filter-btn" onclick="filterVersion('5.0', this)">5.0</button>
+  <div class="filter-sep"></div>
+  <span class="filter-label">Status</span>
+  <button class="filter-btn active" onclick="filterState('', this)">All</button>
+  <button class="filter-btn" onclick="filterState('failure', this)">Failed</button>
+  <button class="filter-btn" onclick="filterState('success', this)">Passed</button>
+  <button class="filter-btn" onclick="filterState('pending', this)">Running</button>
+</div>
+
+<table id="jobsTable">
+<thead>
+<tr>
+  <th>Status</th>
+  <th>Ver</th>
+  <th>Job</th>
+  <th>Dur</th>
+  <th>Summary</th>
+  <th>Analysis</th>
+  <th>Started</th>
+</tr>
+</thead>
+<tbody>
+<tr id="periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp" class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.20</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2075007460522856448" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp">4.20-e2e-telco5g-ptp</a></td><td>running...</td><td style="max-width:300px"></td><td></td><td>2026-07-09T00:00</td></tr>
+<tr class="group-header"><td colspan="7" style="padding:12px 8px 4px;font-weight:700;font-size:13px;color:#484f58;border-bottom:1px solid #484f5830">❓ Unknown</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp" class="row-failure" data-state="failure" data-category="test_failure"><td>❌ failure</td><td><span class="version-badge">4.22</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2074395616930172928" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp">4.22-e2e-telco5g-ptp</a></td><td>385m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#f0883e;color:white">test_failure</span> <div style="margin-top:4px;font-size:11px;color:#c9d1d9;line-height:1.4">PTP e2e integration tests, PTP e2e tests : Parallel</div><div style="font-size:10px;color:#8b949e;margin-top:2px">9 failed tests</div></td><td><span class="badge badge-test">TEST</span> <span class="badge sev-medium">MEDIUM</span><div class="fix-box"><div class="fix-box-title">Suggested Fix</div><div class="fix-box-content">Source: parallel_suite_test.go:43, parallel_suite_test.go:117, ptp.go:58, ptp.go:262, run.go:169
+Check if this is a flake (retry the job) or a real regression from a recent commit.</div></div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Investigation</summary><div><strong style="color:#f0883e">Root Cause:</strong> See AI analysis below for details.<br><br><pre style="font-size:11px;color:#f0883e;white-space:pre-wrap">msg: "failed to get total cpu usage for ptp pods on node cnfdf31.telco5gran.eng.rdu2.redhat.com: prometheus query failure: failed to get a (valid) response from prometheus",
+msg: "prometheus query failure: failed to get a (valid) response from prometheus",
+s: "failed to get a (valid) response from prometheus",
+error: failed to execute wrapped command: exit status 127
+</pre></div></details></div></td><td>2026-07-07T07:30</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp" class="row-failure" data-state="failure" data-category="test_failure"><td>❌ failure</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2074645116424818688" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp">5.0-e2e-telco5g-ptp</a></td><td>338m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#f0883e;color:white">test_failure</span> <div style="margin-top:4px;font-size:11px;color:#c9d1d9;line-height:1.4">PTP e2e integration tests, PTP e2e tests : Parallel</div><div style="font-size:10px;color:#8b949e;margin-top:2px">38 failed tests</div></td><td><span class="badge badge-test">TEST</span> <span class="badge sev-medium">MEDIUM</span><div class="fix-box"><div class="fix-box-title">Suggested Fix</div><div class="fix-box-content">Source: ptptesthelper.go:106, ptp.go:615, ptp.go:619, ptp.go:767, ptp.go:769
+Check if this is a flake (retry the job) or a real regression from a recent commit.</div></div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Investigation</summary><div><strong style="color:#f0883e">Root Cause:</strong> Test failed: Timed out after 600.000s.: no Follower port in expected LOCKED state for ptpconfig test-bc-master1...<br><br><pre style="font-size:11px;color:#f0883e;white-space:pre-wrap">INFO   [Jul  8 05:29:26.804][ptptesthelper.go: 103] CheckClockRoleAndOffset Failed because of err: no Follower port in expected LOCKED state for ptpconfig test-bc-master1 (node=cnfdf32.telco5gran.eng.
+[FAILED] in [It] - /tmp/cnf-Tafkl/ptp-operator-conformance-test/test/pkg/ptptesthelper/ptptesthelper.go:106 @ 07/08/26 05:29:30.811
+[FAILED] Timed out after 600.000s.
+s: "no Follower port in expected LOCKED state for ptpconfig test-bc-master1 (node=cnfdf32.telco5gran.eng.rdu2.redhat.com, label=\"ptp/clock-under-test\", slaveIfs=[ens2f3np3]). Per-interface results:\
+</pre></div></details></div></td><td>2026-07-08T00:00</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2074735457534480384" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream">5.0-e2e-telco5g-ptp-upstream</a></td><td>241m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#484f58;color:white">infra</span> <div style="margin-top:4px;font-size:11px;color:#c9d1d9;line-height:1.4">PTP e2e integration tests, PTP e2e tests : Parallel</div><div style="font-size:10px;color:#8b949e;margin-top:2px">38 failed tests</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div class="fix-box"><div class="fix-box-title">Suggested Fix</div><div class="fix-box-content">Infrastructure issue — likely transient. Retry the job.
+If this recurs across multiple runs, check:<details><summary style="font-size:11px;color:#8b949e;cursor:pointer">more...</summary>  - Cloud quotas and limits
+  - Cluster provisioning config
+  - Network connectivity</details></div></div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Investigation</summary><div><strong style="color:#f0883e">Root Cause:</strong> Cluster in error state (must-gather triggered)<br><br><pre style="font-size:11px;color:#f0883e;white-space:pre-wrap">error: failed to execute wrapped command: exit status 127
+INFO[2026-07-08T09:49:07Z] Step e2e-telco5g-ptp-upstream-telco5g-ptp-tests failed after 3h45m21s.
+INFO[2026-07-08T09:49:07Z] Step phase test failed after 3h45m21s.
+ERRO[2026-07-08T10:02:04Z] Some steps failed:
+</pre></div></details></div></td><td>2026-07-08T06:00</td></tr>
+</tbody>
+</table>
+
+<div class="footer">
+  <a href="https://github.com/aabughosh/prow-nightly-monitor">prow-nightly-monitor</a> |
+  Data from <a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*">Prow</a> |
+  <a href="../../issues.html">Known Issues</a> |
+  <a href="../../history.html">Run History</a> |
+  <a href="claude-report.html">Claude Report</a>
+</div>
+
+</div>
+
+<script>
+function filterVersion(v, btn) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    const version = row.cells[1].textContent.trim();
+    row.style.display = (!v || version === v) ? '' : 'none';
+  });
+  if (btn) {
+    btn.closest('.filters').querySelectorAll('.filter-btn').forEach(b => {
+      if (b.onclick && b.onclick.toString().includes('filterVersion'))
+        b.classList.remove('active');
+    });
+    btn.classList.add('active');
+  }
+}
+function filterState(s, btn) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    const state = row.dataset.state || '';
+    row.style.display = (!s || state === s) ? '' : 'none';
+  });
+  if (btn) {
+    btn.closest('.filters').querySelectorAll('.filter-btn').forEach(b => {
+      if (b.onclick && b.onclick.toString().includes('filterState'))
+        b.classList.remove('active');
+    });
+    btn.classList.add('active');
+  }
+}
+function filterCategory(cat) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    if (!cat) { row.style.display = ''; return; }
+    const rowCat = row.dataset.category || '';
+    const state = row.dataset.state || '';
+    if (state !== 'failure' && state !== 'error') { row.style.display = 'none'; return; }
+    row.style.display = (rowCat === cat) ? '' : 'none';
+  });
+}
+</script>
+</body>
+</html>
