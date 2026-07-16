@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-aws-ovn-network-flow-matrix</code></h1>
-  <div class="meta">Generated: 2026-07-11T05:28:21.152195+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-14T02:13:18.584081+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix/2075565927126011904" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix/2076653206431076352" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#3fb950">success</div>
+    <div class="info-value" style="color:#f85149">failure</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,16 +62,19 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">286m</div>
+    <div class="info-value">139m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
   </div>
-  
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
+  </div>
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-07-10T13:00</div>
+    <div class="info-value" style="font-size:12px">2026-07-13T13:01</div>
   </div>
 </div>
 
@@ -81,7 +84,39 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#10003;</div><div style="font-size:18px;font-weight:600;color:#3fb950">Job Passed</div><div style="color:#8b949e;margin-top:8px">All tests passed — no AI analysis needed.</div></div>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Test runner pod never scheduled due to insufficient CPU/memory on the CI build cluster.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: CI build cluster resource exhaustion — pod unschedulable</strong> (affects Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">aws-ovn-network-flow-matrix-network-flow-matrix-tests</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">2026-07-01T14:51:18Z pod pending for more than 1h0m0s: pod has not been scheduled in 1h0m0.000096012s</p>
+<p style="margin:4px 0">0/126 nodes are available: 1 Insufficient memory, 10 node(s) didn't match Pod's node affinity/selector,</p>
+<p style="margin:4px 0">57 node(s) had untolerated taint(s), 59 Insufficient cpu. no new claims to deallocate, preemption:</p>
+<p style="margin:4px 0">0/126 nodes are available: 2 node(s) didn't satisfy existing pods anti-affinity rules,</p>
+<p style="margin:4px 0">57 No preemption victims found for incoming pod, 67 Preemption is not helpful for scheduling.</p>
+<p style="margin:4px 0">Reporting job state 'failed' with reason '...pod_pending'</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The CI orchestration cluster (build09, namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-op-kjtf7lq5</code>) had no schedulable nodes with sufficient CPU and memory to place the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests</code> runner pod. Of 126–131 nodes checked, 57–61 had untolerated taints, ~10 didn't match node affinity/selectors, and the remaining eligible nodes all reported <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Insufficient cpu</code> (59 nodes) and intermittent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Insufficient memory</code> (1 node). The pod sat in Pending from 13:51:18Z to 14:51:18Z before ci-operator timed it out. No project test code ever ran.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a CI infrastructure resource exhaustion event, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — transient CI cluster overload; unrelated to commatrix source code or OCP 4.21 release images.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job; if it recurs consistently, investigate <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build09</code> CI cluster capacity or the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-org-aws-quota-slice</code> lease pool configuration to reduce scheduling contention.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">aws-ovn-network-flow-matrix-network-flow-matrix-tests</code> (the only test step; it never ran)</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group — one root cause. All prior job steps (cluster provisioning, OVN config, node readiness) succeeded. The failure occurred exclusively at the CI test runner scheduling layer.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 (nightly-2026-06-30-080130) — cluster provisioned and pre-phase completed successfully; failure is CI infra, not 4.21-specific.</p>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> None — no image pull errors. Release <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-30-080130</code> (190 images) imported successfully.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_quota</code></p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
 </div>
 
 <div class="footer">

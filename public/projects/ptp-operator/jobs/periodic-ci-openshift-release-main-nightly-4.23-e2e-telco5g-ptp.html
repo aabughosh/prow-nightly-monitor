@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.23-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-07-13T18:48:39.954305+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-07-16T11:23:42.144523+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -84,87 +84,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> WPC T-GM node cnfdf32 DPLL never entered HOLDOVER (clock class 7) after GNSS coldboot.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: DPLL fails to reach/maintain clock class 7 (HOLDOVER) after GNSS loss</strong> (affects Tests: both)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 1 — DPLL stuck at FREERUN for full 200s after GNSS disabled:</h2>
-<p style="margin:4px 0">Matched line: [ptp4l 248]  → GNSS disabled → Clock class not yet 7, retrying... (×32+)</p>
-<p style="margin:4px 0">→ GNSS enabled → [FAILED] Timed out waiting for clock class 7 (ptp.go:3802, 3m20s elapsed)</p>
-<br>
-<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 2 — class 7 transient, immediately overtaken by 248:</h2>
-<p style="margin:4px 0">PtpClockClassChange Event recieved  map[metric:6], map[metric:7], map[metric:248]</p>
-<p style="margin:4px 0">GnssStateChange Event recieved  map[metric:0 notification:FAILURE-NOFIX]</p>
-<p style="margin:4px 0">→ STEP: Verifying ClockClass value to 7 → [FAILED] expected a metric [7.000000] but got map[metric:248] (ptp.go:3898)</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> After GNSS signal loss on node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code>, the WPC hardware DPLL transitions directly from LOCKED to FREERUN (class 248) without sustaining HOLDOVER (class 7). In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/event/event.go</code>, clock class 7 requires <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dpllState == PTP_HOLDOVER</code>; since the DPLL reports FREERUN immediately, that path is never taken. In test 2, HOLDOVER was briefly entered (class 7 visible in the event stream) but exhausted faster than the metric-polling step could verify it — confirming the DPLL holdover window on this hardware is abnormally short.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — the upstream sync PR #613 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0459bc0</code>, CNF-24996/OCPBUGS-90708, merged 2026-06-23) was an upstream sync to the main branch and does not directly affect the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> branch under test; no code regression identified.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — test 2 shows holdover <em>does</em> occur but transiently; this is a hardware-timing sensitivity, consistent with intermittent failures when DPLL holdover duration is at the margins.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Investigate DPLL holdover configuration on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code> (check <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LocalHoldoverTimeout</code> configured for the WPC hardware); if hardware is degraded or misconfigured for holdover, reprovisioning or reconfiguring the node should resolve it. Retry the job to confirm transience.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</code></div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group — both failures share the same root cause: DPLL on cnfdf32 not sustaining HOLDOVER state long enough after GNSS loss. Test 1 never sees class 7 at all; test 2 sees it transiently. Both are direct manifestations of the same abnormally short holdover window on this hardware.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.22 (nightly-2026-06-23-164229) — both failures in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial]</code> suite only; all other suites (bc, dualfollower, dualnicbc) show 0 failures and passed cleanly.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/linuxptp-daemon:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/cloud-event-proxy:4.22</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_flake</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> WPC T-GM node cnfdf32 DPLL never entered HOLDOVER (clock class 7) after GNSS coldboot.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: DPLL fails to reach/maintain clock class 7 (HOLDOVER) after GNSS loss</strong> (affects Tests: both)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 1 — DPLL stuck at FREERUN for full 200s after GNSS disabled:</h2>
-<p style="margin:4px 0">Matched line: [ptp4l 248]  → GNSS disabled → Clock class not yet 7, retrying... (×32+)</p>
-<p style="margin:4px 0">→ GNSS enabled → [FAILED] Timed out waiting for clock class 7 (ptp.go:3802, 3m20s elapsed)</p>
-<br>
-<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 2 — class 7 transient, immediately overtaken by 248:</h2>
-<p style="margin:4px 0">PtpClockClassChange Event recieved  map[metric:6], map[metric:7], map[metric:248]</p>
-<p style="margin:4px 0">GnssStateChange Event recieved  map[metric:0 notification:FAILURE-NOFIX]</p>
-<p style="margin:4px 0">→ STEP: Verifying ClockClass value to 7 → [FAILED] expected a metric [7.000000] but got map[metric:248] (ptp.go:3898)</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> After GNSS signal loss on node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code>, the WPC hardware DPLL transitions directly from LOCKED to FREERUN (class 248) without sustaining HOLDOVER (class 7). In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/event/event.go</code>, clock class 7 requires <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dpllState == PTP_HOLDOVER</code>; since the DPLL reports FREERUN immediately, that path is never taken. In test 2, HOLDOVER was briefly entered (class 7 visible in the event stream) but exhausted faster than the metric-polling step could verify it — confirming the DPLL holdover window on this hardware is abnormally short.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — the upstream sync PR #613 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0459bc0</code>, CNF-24996/OCPBUGS-90708, merged 2026-06-23) was an upstream sync to the main branch and does not directly affect the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> branch under test; no code regression identified.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — test 2 shows holdover <em>does</em> occur but transiently; this is a hardware-timing sensitivity, consistent with intermittent failures when DPLL holdover duration is at the margins.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Investigate DPLL holdover configuration on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code> (check <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LocalHoldoverTimeout</code> configured for the WPC hardware); if hardware is degraded or misconfigured for holdover, reprovisioning or reconfiguring the node should resolve it. Retry the job to confirm transience.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</code></div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group — both failures share the same root cause: DPLL on cnfdf32 not sustaining HOLDOVER state long enough after GNSS loss. Test 1 never sees class 7 at all; test 2 sees it transiently. Both are direct manifestations of the same abnormally short holdover window on this hardware.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.22 (nightly-2026-06-23-164229) — both failures in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial]</code> suite only; all other suites (bc, dualfollower, dualnicbc) show 0 failures and passed cleanly.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/linuxptp-daemon:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/cloud-event-proxy:4.22</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_flake</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Two test-code regressions and one GNSS hardware flake caused all 5 failures across bc, dualnicbcha, and tgm suites.</p>
+  <p style="margin:4px 0"><strong>TL;DR:</strong> Two test-code regressions and one GNSS hardware flake caused all 5 failures across bc, dualnicbcha, and tgm suites.</p>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
@@ -226,6 +146,86 @@
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> The immediate trigger is a race condition in test setup, not a single commit. Closest relevant commit: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3b93c9f</code> (k8snetworkplumbingwg/ptp-operator) — added <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Eventually</code> retries for clock ID lookups but did not add a corresponding nil guard or retry for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DiscoveredSlave1PtpConfig</code>. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">check_backport.py</code> script referenced in the prompt was not present in the repo (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">scripts/check_backport.py</code> not found); manual inspection of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift/ptp-operator:release-4.22</code> branch shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3b93c9f</code> is NOT present there, but it applies to the test scripts (k8snetworkplumbingwg), not the images.</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes. The identical test in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dualnicbc</code> suite passed in the same job run (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]": {"time": 13.593677095, "result": "pass"}</code>), confirming the test logic is valid when <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DiscoveredSlave1PtpConfig</code> is correctly populated. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">investigation-summary.txt</code> also classifies this as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Severity: LOW</code> / infra transient.</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Expect(fullConfig.DiscoveredSlave1PtpConfig).ToNot(BeNil(), "slave1 PtpConfig must be discovered before BC sync check")</code> guard immediately before the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">BasicClockSyncCheck</code> call at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/conformance/serial/ptp.go:905</code>, or wrap the discovery + check in an <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Eventually</code> block (similar to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetClockIDMaster</code> retry added in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3b93c9f</code>) to tolerate slow operator reconciliation in the bc set</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> WPC T-GM node cnfdf32 DPLL never entered HOLDOVER (clock class 7) after GNSS coldboot.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: DPLL fails to reach/maintain clock class 7 (HOLDOVER) after GNSS loss</strong> (affects Tests: both)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 1 — DPLL stuck at FREERUN for full 200s after GNSS disabled:</h2>
+<p style="margin:4px 0">Matched line: [ptp4l 248]  → GNSS disabled → Clock class not yet 7, retrying... (×32+)</p>
+<p style="margin:4px 0">→ GNSS enabled → [FAILED] Timed out waiting for clock class 7 (ptp.go:3802, 3m20s elapsed)</p>
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 2 — class 7 transient, immediately overtaken by 248:</h2>
+<p style="margin:4px 0">PtpClockClassChange Event recieved  map[metric:6], map[metric:7], map[metric:248]</p>
+<p style="margin:4px 0">GnssStateChange Event recieved  map[metric:0 notification:FAILURE-NOFIX]</p>
+<p style="margin:4px 0">→ STEP: Verifying ClockClass value to 7 → [FAILED] expected a metric [7.000000] but got map[metric:248] (ptp.go:3898)</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> After GNSS signal loss on node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code>, the WPC hardware DPLL transitions directly from LOCKED to FREERUN (class 248) without sustaining HOLDOVER (class 7). In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/event/event.go</code>, clock class 7 requires <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dpllState == PTP_HOLDOVER</code>; since the DPLL reports FREERUN immediately, that path is never taken. In test 2, HOLDOVER was briefly entered (class 7 visible in the event stream) but exhausted faster than the metric-polling step could verify it — confirming the DPLL holdover window on this hardware is abnormally short.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — the upstream sync PR #613 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0459bc0</code>, CNF-24996/OCPBUGS-90708, merged 2026-06-23) was an upstream sync to the main branch and does not directly affect the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> branch under test; no code regression identified.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — test 2 shows holdover <em>does</em> occur but transiently; this is a hardware-timing sensitivity, consistent with intermittent failures when DPLL holdover duration is at the margins.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Investigate DPLL holdover configuration on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code> (check <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LocalHoldoverTimeout</code> configured for the WPC hardware); if hardware is degraded or misconfigured for holdover, reprovisioning or reconfiguring the node should resolve it. Retry the job to confirm transience.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</code></div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group — both failures share the same root cause: DPLL on cnfdf32 not sustaining HOLDOVER state long enough after GNSS loss. Test 1 never sees class 7 at all; test 2 sees it transiently. Both are direct manifestations of the same abnormally short holdover window on this hardware.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.22 (nightly-2026-06-23-164229) — both failures in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial]</code> suite only; all other suites (bc, dualfollower, dualnicbc) show 0 failures and passed cleanly.</p>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/linuxptp-daemon:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/cloud-event-proxy:4.22</code></p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_flake</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> WPC T-GM node cnfdf32 DPLL never entered HOLDOVER (clock class 7) after GNSS coldboot.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: DPLL fails to reach/maintain clock class 7 (HOLDOVER) after GNSS loss</strong> (affects Tests: both)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 1 — DPLL stuck at FREERUN for full 200s after GNSS disabled:</h2>
+<p style="margin:4px 0">Matched line: [ptp4l 248]  → GNSS disabled → Clock class not yet 7, retrying... (×32+)</p>
+<p style="margin:4px 0">→ GNSS enabled → [FAILED] Timed out waiting for clock class 7 (ptp.go:3802, 3m20s elapsed)</p>
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 2 — class 7 transient, immediately overtaken by 248:</h2>
+<p style="margin:4px 0">PtpClockClassChange Event recieved  map[metric:6], map[metric:7], map[metric:248]</p>
+<p style="margin:4px 0">GnssStateChange Event recieved  map[metric:0 notification:FAILURE-NOFIX]</p>
+<p style="margin:4px 0">→ STEP: Verifying ClockClass value to 7 → [FAILED] expected a metric [7.000000] but got map[metric:248] (ptp.go:3898)</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> After GNSS signal loss on node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code>, the WPC hardware DPLL transitions directly from LOCKED to FREERUN (class 248) without sustaining HOLDOVER (class 7). In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/event/event.go</code>, clock class 7 requires <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dpllState == PTP_HOLDOVER</code>; since the DPLL reports FREERUN immediately, that path is never taken. In test 2, HOLDOVER was briefly entered (class 7 visible in the event stream) but exhausted faster than the metric-polling step could verify it — confirming the DPLL holdover window on this hardware is abnormally short.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — the upstream sync PR #613 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0459bc0</code>, CNF-24996/OCPBUGS-90708, merged 2026-06-23) was an upstream sync to the main branch and does not directly affect the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> branch under test; no code regression identified.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — test 2 shows holdover <em>does</em> occur but transiently; this is a hardware-timing sensitivity, consistent with intermittent failures when DPLL holdover duration is at the margins.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Investigate DPLL holdover configuration on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code> (check <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LocalHoldoverTimeout</code> configured for the WPC hardware); if hardware is degraded or misconfigured for holdover, reprovisioning or reconfiguring the node should resolve it. Retry the job to confirm transience.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</code></div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group — both failures share the same root cause: DPLL on cnfdf32 not sustaining HOLDOVER state long enough after GNSS loss. Test 1 never sees class 7 at all; test 2 sees it transiently. Both are direct manifestations of the same abnormally short holdover window on this hardware.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.22 (nightly-2026-06-23-164229) — both failures in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial]</code> suite only; all other suites (bc, dualfollower, dualnicbc) show 0 failures and passed cleanly.</p>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/linuxptp-daemon:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/cloud-event-proxy:4.22</code></p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_flake</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
 </div>
 
 <div class="footer">
