@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-07-16T23:30:21.585053+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-19T03:04:29.379197+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2077740175068237824" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2078464931082014720" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -62,79 +62,29 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">71m</div>
+    <div class="info-value">83m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#f0883e">MATRIX</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
+    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-07-16T13:00</div>
+    <div class="info-value" style="font-size:12px">2026-07-18T13:00</div>
   </div>
 </div>
 
-
+<div style="margin:16px 0"><h3 style="color:#8b949e;font-size:13px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Failed Tests</h3><div style="margin:6px 0;padding:8px 12px;background:#161b22;border-radius:6px;border-left:3px solid #f85149"><div style="font-family:monospace;font-size:12px;color:#f0883e">ipi-install-install</div><div style="font-size:11px;color:#8b949e;margin-top:2px">cts/clusterapi_output-1784383684/AWSCluster-openshift-cluster-api-guests-ci-op-0sixn90s-8c898-2lnns.yaml&#x27; &#x27;/tmp/installer/.clusterapi_output/AWSClusterControllerIdentity--default.yaml&#x27; -&gt; &#x27;/logs/artif</div></div></div>
 
 <h2 style="color:#58a6ff;font-size:16px;margin:20px 0 12px;border-bottom:1px solid #21262d;padding-bottom:8px">
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <p style="margin:4px 0">Now I have a complete picture.</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> OCP 4.23 SNO crio ephemeral port (TCP 36039) escapes filtering after PR #400 removed Linux dynamic port range.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: CRI-O ephemeral port open without EndpointSlice (causes test failure)</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">[FAIL] Validation [It] should validate the communication matrix ports match the node's open ports</p>
-<p style="margin:4px 0">/tmp/secret/commatrix/test/e2e/validation_test.go:161</p>
-<p style="margin:4px 0">LISTEN 0   4096   10.0.16.43:36039 0.0.0.0:* users:(("crio",pid=2681,fd=11))</p>
-<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,36039,,crio,,,master,false  (in matrix-diff-ss; no EndpointSlice)</div>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> CRI-O binds an ephemeral TCP port (36039, in Linux range 32768-60999) on the node IP. This port has no Kubernetes EndpointSlice. In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:157-161</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> only skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> (line 159) consults <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code>, which after commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> ("Remove Linux Dynamic ranges from generated communication matrix", PR #400) no longer includes the 32768-60999 ephemeral range — only the NodePort range 30000-32767. TCP 36039 therefore survives both filters and triggers <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail()</code> at line 161. The ovnkube nodeport ports (30146/30767/32633) and rpc.statd ports are correctly filtered, leaving only TCP 36039 as the trigger.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> / PR #400 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">1fec55d Merge pull request #400 from shirmoran/remove-linux-dynamic-range</code>) — removed the Linux ephemeral range from the generated commatrix and thus from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DynamicRanges</code>.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — this is a regression; the specific ephemeral port number varies per boot but the root cause (missing ephemeral range from DynamicRanges) is deterministic and will reproduce on every run.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Either re-add crio (and similar host-level ephemeral services) to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> allowlist in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go</code>, or re-introduce the Linux ephemeral range (32768-60999) as a filtered dynamic range separate from the generated commatrix documentation.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code> (validation_test.go:161)</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 2: Stale entries in documented matrix for OCP 4.23 SNO (warnings, not direct failure)</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">doc-diff-commatrix:</p>
-<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,80,openshift-ingress,router-default,...</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,443,openshift-ingress,router-default,...</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,8798,openshift-machine-config-operator,...</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,9192,openshift-cluster-machine-approver,...</div>
-<p style="margin:4px 0">matrix-diff-ss:</p>
-<p style="margin:4px 0">+ Ingress,TCP,9443,openshift-cloud-controller-manager-operator,...</p>
-<p style="margin:4px 0">+ Ingress,TCP,10258,openshift-cloud-controller-manager,...</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">docs/stable/raw/aws-sno.csv</code> contains 6 ports no longer active on OCP 4.23 SNO: TCP 80/443 (router-default ingress pods not exposing EndpointSlices in SNO topology), TCP 8798 (MCD now internal on 127.0.0.1:8797), TCP 9192 (machine-approver kube-rbac-proxy port changed), TCP 9443/10258 (cloud-controller-manager-operator ports reorganized). These cause only <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">logrus.Warningf</code> calls (lines 108-110 and 154-155) and do NOT directly trigger the test failure, but the documented CSV needs updating for 4.23.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown (OCP 4.23 infrastructure-side changes removed/moved these services).</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — these services are consistently absent on this 4.23 SNO cluster.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Update <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">docs/stable/raw/aws-sno.csv</code> to remove TCP 80, 443, 8798, 9192 and reconcile 9443/10258 entries to reflect the 4.23 SNO port layout.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> "generated communication matrix should be equal to documented communication matrix" (warnings only, test passed).</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Groups 1 and 2 are independent — Group 1 is caused by a code regression in commatrix (PR #400 removed ephemeral range filtering), while Group 2 reflects OCP 4.23 infrastructure-side port changes that haven't been reflected in the documented matrix CSV. Group 2 doesn't cause test failure; Group 1 does.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.23 (SNO/AWS): Both issues present; Group 1 is the direct failure cause.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c1cb03332d3a5e641eac1ae9732b0924a94a50d3b95866d112bb7c5a12cf0d51</code> (debug pod), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-25-142049</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> matrix_mismatch</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">
