@@ -45,15 +45,56 @@
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">339</div>Active</div>
-    <div class="stat"><div class="stat-num" style="color:#c9d1d9">339</div>Fingerprints</div>
-    <div class="stat"><div class="stat-num" style="color:#a371f7">51</div>Issues</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">340</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">340</div>Fingerprints</div>
+    <div class="stat"><div class="stat-num" style="color:#a371f7">52</div>Issues</div>
   </div>
   <table>
     <thead><tr>
       <th>Root Cause</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
-    <tbody><tr id="e96609ba390be6b2">
+    <tbody><tr id="e434a856f62a68f5">
+  <td class="col-rc">
+    <div class="rc-text">The bare-metal telco5g cluster (`ptpcimno`) failed to complete OCP installation before the CI job ran. After 45+ minutes, worker nodes were still in `provisioning` state, cluster operators were unavailable (stuck on nightly `5.0.0-0.nightly-2026-07-19-060131`), and the cluster setup script wrote an `/home/kni/abort` sentinel file. The Ansible playbook `ocp-install.yml` task &quot;Check if abort file exists&quot; (line 12) detected that file and failed immediately. No kubeconfig was produced, so the entire test suite was skipped — the first domino is the failed worker BMH provisioning on the physical lab host. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** Telco5g bare-metal cluster install failed; abort file detected, kubeconfig never produced, PTP tests never ran.
+
+**Root Cause Groups:**
+
+- **Group 1: OCP cluster installation failure on bare-metal host `ptpcimno`** (affects: all tests — none ran)
+  - **Evidence:**
+    ```
+    fatal: [10.8.34.218]: FAILED! =&gt; {&quot;path&quot;: &quot;/home/kni/abort&quot;, &quot;exists&quot;: true, &quot;failed_when_result&quot;: true}
+    VERSION   AVAILABLE   PROGRESSING   STATUS
+              False       True          Unable to apply 5.0.0-0.nightly-2026-07-19-060131: some cluster operators are not available
+    ptpcimno-worker-0   provisioning   ...  (still provisioning after 45m)
+    ERROR: kubeconfig not found at /tmp/secret/kubeconfig after fetch-kubeconfig
+    ```
+  - **Root Cause:** The bare-metal telco5g cluster (`ptpcimno`) failed to complete OCP installation before the CI job ran. After 45+ minutes, worker nodes were still in `provisioning` state, cluster operators were unavailable (stuck on nightly `5.0.0-0.nightly-2026-07-19-060131`), and the cluster setup script wrote an `/home/kni/abort` sentinel file. The Ansible playbook `ocp-install.yml` task &quot;Check if abort file exists&quot; (line 12) detected that file and failed immediately. No kubeconfig was produced, so the entire test suite was skipped — the first domino is the failed worker BMH provisioning on the physical lab host.
+  - **Breaking PR/Commit:** Unknown — this is an infra/lab environment issue, not a code regression.
+  - **Is it a flake?** Yes — bare-metal lab provisioning failures are transient; the abort mechanism is a safety guard against a stuck prior run or hardware/network issue during BMH provisioning.
+  - **Suggested Fix:** Retry the job; if it fails repeatedly, check the telco5g lab host `10.8.34.218` / cluster `ptpcimno` for stuck BMH provisioning, stale `/home/kni/abort` files, or ironic/network issues preventing worker provisioning.
+  - **Affected tests:** All PTP tests (none executed — job aborted in the `pre` cluster-setup phase)
+
+---
+
+**Relation Between Groups:** Single group; there is no second root cause. The abort file failure is both the first and only domino.
+
+**Per-Version Notes:** OCP 4.20 (nightly 2026-07-20-153735): cluster install failed on bare-metal before any PTP tests could run.
+
+**Affected Images:** No project images failed to build or pull; the OCP release image `registry.ci.openshift.org/ocp/release:4.20.0-0.nightly-2026-07-20-153735` was imported successfully (189 images). The failure is in the physical lab cluster install, not in container images.
+
+**Overall Issue Class:** infra_other
+
+**Overall Severity:** MEDIUM</div></details>
+  </td>
+  <td class="col-date">2026-07-21</td>
+  <td class="col-date">2026-07-21</td>
+  <td class="col-tests"><ul><li>Test failed: ! =&gt; {&quot;ansible_facts&quot;: {&quot;discovered_interpreter_python&quot;: &quot;/usr/libexec/platform-python&quot;}, &quot;changed&quot;: false,</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2079356211832033280" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-21)</span></li></ul></td>
+</tr>
+<tr id="e96609ba390be6b2">
   <td class="col-rc">
     <div class="rc-text">The CI operator created pod `release-images-latest-cli` on build cluster `build10` at 05:01:01Z to import `registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-07-04-165958`. For the entire 1-hour window, 0 of 52–57 nodes were schedulable: 11 consistently failed node affinity/selector, and the rest carried untolerated taints. The `multiarch-tuning-operator` did process and gate-remove the pod (set amd64 arch), but the scheduler still found no viable node. The PTP e2e test step was **never reached**. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---

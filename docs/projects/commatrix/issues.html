@@ -45,15 +45,187 @@
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">113</div>Active</div>
-    <div class="stat"><div class="stat-num" style="color:#c9d1d9">113</div>Fingerprints</div>
-    <div class="stat"><div class="stat-num" style="color:#a371f7">74</div>Issues</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">118</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">118</div>Fingerprints</div>
+    <div class="stat"><div class="stat-num" style="color:#a371f7">78</div>Issues</div>
   </div>
   <table>
     <thead><tr>
       <th>Root Cause</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
-    <tbody><tr id="782906e00e07bf9a">
+    <tbody><tr id="7b516cfd88f0a242">
+  <td class="col-rc">
+    <div class="rc-text">crio (pid 6408, fd 12) is actively listening on TCP/37793, which falls squarely in the Linux ephemeral port range (32768–60999). The port is not backed by any Kubernetes EndpointSlice; it is an internal crio socket. The assertion at `validation_test.go:161` iterates all ports open in the `ss`-generated matrix and checks each for a corresponding EndpointSlice, failing hard when none is found for 37793. The port is assigned at runtime and will differ on every node boot/crio restart. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** crio holds an ephemeral TCP port (37793) with no EndpointSlice, failing the validation test.
+
+**Root Cause Groups:**
+
+- **Group 1: Ephemeral crio port open without EndpointSlice** (affects Tests: `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`, `TestE2e`)
+  - **Evidence:**
+    ```
+    [FAILED] the following ports are used but don&#x27;t have an endpointslice:
+     Ingress,TCP,37793,,crio,,,master,false
+    /tmp/secret/commatrix/test/e2e/validation_test.go:161
+    
+    raw-ss-tcp: LISTEN 0  4096  192.168.17.17:37793 0.0.0.0:* users:((&quot;crio&quot;,pid=6408,fd=12))
+    ```
+  - **Root Cause:** crio (pid 6408, fd 12) is actively listening on TCP/37793, which falls squarely in the Linux ephemeral port range (32768–60999). The port is not backed by any Kubernetes EndpointSlice; it is an internal crio socket. The assertion at `validation_test.go:161` iterates all ports open in the `ss`-generated matrix and checks each for a corresponding EndpointSlice, failing hard when none is found for 37793. The port is assigned at runtime and will differ on every node boot/crio restart.
+  - **Breaking PR/Commit:** Unknown — no commatrix code change is the first domino; this is driven by crio&#x27;s runtime port binding behaviour on OCP nightly `5.0.0-0.nightly-2026-07-19-060131`.
+  - **Is it a flake?** Yes — port 37793 is an OS-assigned ephemeral port that changes on every run; the same crio internal socket will land on a different number next time.
+  - **Suggested Fix:** In `validation_test.go` (around line 161), add a filter to skip ports in the ephemeral range (32768–60999) or explicitly exclude known host-only non-K8s processes (`crio`, `rpc.statd`) from the EndpointSlice check. Alternatively, add an `Optional: true` allowlist pattern for host-level daemons.
+  - **Affected tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports` / `TestE2e`
+
+---
+
+**Relation Between Groups:** Single root cause group. The 5 stale matrix entries (TCP 8798, 9099, 9192, 9443, UDP 68 — documented but not listening on this nightly) are visible in the diff artifacts but did **not** trigger the hard test failure in this run; the sole failing assertion is the EndpointSlice check at line 161 triggered by TCP/37793.
+
+**Per-Version Notes:** OCP 5.0 (nightly 2026-07-19-060131) — crio on node `cnfdu15.upstreamci.bos2.lab` holds an internal ephemeral port that the test&#x27;s EndpointSlice validator does not tolerate.
+
+**Affected Images:** `registry.ci.openshift.org/ocp/release-5:5.0.0-0.nightly-2026-07-19-060131` (196 images imported); test runner clones `openshift-kni/commatrix@release-5.0`.
+
+**Overall Issue Class:** `test_flake`
+
+**Overall Severity:** MEDIUM</div></details>
+  </td>
+  <td class="col-date">2026-07-21</td>
+  <td class="col-date">2026-07-21</td>
+  <td class="col-tests"><ul><li>�[0m �[0mValidation �[38;5;9m�[1m[It] should validate the communication matrix ports match the node&#x27;s open ports�[0m</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2079189903819673600" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-07-21)</span></li></ul></td>
+</tr>
+<tr id="88176c996cb23909">
+  <td class="col-rc">
+    <div class="rc-text">The `telco5g-sno-setup` pre-phase step ran ansible playbooks (`get-cluster-name.yml`, then `check-cluster.yml`) against the baremetal host `cnfdu13`. The OCP 4.23 nightly installation never completed — the expected kubeconfig at `/home/kni/ag-sno/cnfdu13-4.23-nightly/auth/kubeconfig` was absent. Every `oc` command against the cluster (readiness checks, cluster-version poll) failed with `no such file or directory`. The commatrix e2e test step never started; all &quot;RETRYING&quot; JUnit entries are ansible retry loops within `check-cluster.yml` waiting for a cluster that never came up. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** SNO cluster never provisioned — kubeconfig missing, commatrix tests never ran.
+
+**Root Cause Groups:**
+
+- **Group 1: Baremetal SNO cluster provisioning failure** (affects all listed tests)
+  - **Evidence:**
+    ```
+    error: stat /home/kni/ag-sno/cnfdu13-4.23-nightly/auth/kubeconfig: no such file or directory
+    rc: 1
+    PLAY RECAP: ok=0  changed=0  unreachable=0  failed=1  skipped=0  rescued=0  ignored=0
+    Step telco5g-network-flow-matrix-single-node-bm-telco5g-sno-setup failed after 1h11m50s.
+    Step phase pre failed after 1h13m17s.
+    ```
+  - **Root Cause:** The `telco5g-sno-setup` pre-phase step ran ansible playbooks (`get-cluster-name.yml`, then `check-cluster.yml`) against the baremetal host `cnfdu13`. The OCP 4.23 nightly installation never completed — the expected kubeconfig at `/home/kni/ag-sno/cnfdu13-4.23-nightly/auth/kubeconfig` was absent. Every `oc` command against the cluster (readiness checks, cluster-version poll) failed with `no such file or directory`. The commatrix e2e test step never started; all &quot;RETRYING&quot; JUnit entries are ansible retry loops within `check-cluster.yml` waiting for a cluster that never came up.
+  - **Breaking PR/Commit:** Unknown — this is an infrastructure provisioning failure on the baremetal host, not a code regression.
+  - **Is it a flake?** Yes — SNO baremetal provisioning failures (install timeout, kcli/UEFI hang, node not booting) are transient infra flakes; no code change is implicated.
+  - **Suggested Fix:** Retry the job. If the failure recurs consistently on `cnfdu13`, investigate the baremetal node state (powered off, stuck in boot, leftover installation artifacts) and re-provision the host before re-running.
+  - **Affected tests:**
+    - `RETRYING: [XXXXXXXXXXXX]: Check on deployment (90 retries left).`
+    - `RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (60 retries left).`
+    - `RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (59 retries left).`
+    - `RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (58 retries left).`
+    - `RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (57 retries left).`
+
+---
+
+**Relation Between Groups:** Single group — all failures are cascade consequences of the one missing kubeconfig; the cluster simply never came up.
+
+**Per-Version Notes:** OCP 4.23 — SNO baremetal install on `cnfdu13` did not produce a valid kubeconfig within the 1h11m step timeout; no other versions involved.
+
+**Affected Images:** `registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-07-15-024904` (imported successfully; not the cause), `ci/telco-runner:latest` (setup runner, also not the cause).
+
+**Overall Issue Class:** infra_other
+
+**Overall Severity:** MEDIUM</div></details>
+  </td>
+  <td class="col-date">2026-07-21</td>
+  <td class="col-date">2026-07-21</td>
+  <td class="col-tests"><ul><li>RETRYING: [XXXXXXXXXXXX]: Check on deployment (90 retries left).</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2079189890544701440" target="_blank">4.23-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-07-21)</span></li></ul></td>
+</tr>
+<tr id="6badc5ffb815b11d">
+  <td class="col-rc">
+    <div class="rc-text">The static `communication-matrix.csv` in the `release-4.23` branch of `openshift-kni/commatrix` documents TCP/9443 (cloud-controller-manager-operator webhook/health) and TCP/10258 (aws-cloud-controller-manager metrics) as required master-node ingress ports. In OCP 4.23 nightly (`4.23.0-0.nightly-2026-07-15-024904`), these two ports are no longer opened by the respective components — the operator metrics consolidated onto TCP/9258. The `BeforeEach` at `validation_test.go:52` generates the live matrix, then the `generated communication matrix should be equal to documented communication matrix` check diffs them; with 2 extra &quot;documented but not open&quot; entries, it fails and blocks all 4 specs via `BeforeEach`. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** Two cloud-controller-manager ports (TCP/9443, TCP/10258) documented in the static matrix are not open on OCP 4.23 master nodes.
+
+**Root Cause Groups:**
+
+- **Group 1: Stale matrix entries for cloud-controller-manager ports** (affects Tests: `Validation [BeforeEach] generated communication matrix should be equal to documented communication matrix`)
+  - **Evidence:**
+    ```
+    time=&quot;2026-07-20T14:02:17Z&quot; level=warning msg=&quot;the following ports are not used: \n
+    Ingress,TCP,9443,openshift-cloud-controller-manager-operator,cloud-controller-manager-operator,cluster-cloud-controller-manager-operator,cluster-cloud-controller-manager,master,false\n
+    Ingress,TCP,10258,openshift-cloud-controller-manager,aws-cloud-controller-manager,aws-cloud-controller-manager,cloud-controller-manager,master,false\n&quot;
+    
+    [FAIL] Validation [BeforeEach] generated communication matrix should be equal to documented communication matrix
+    /tmp/secret/commatrix/test/e2e/validation_test.go:52
+    ```
+    The `ss-generated-matrix.csv` confirms neither port appears anywhere in the actual node socket scan; TCP/9258 IS open for the same `cluster-cloud-controller-manager-operator` pod, but 9443 and 10258 are absent. The `raw-ss-tcp` file contains zero matches for these ports.
+  - **Root Cause:** The static `communication-matrix.csv` in the `release-4.23` branch of `openshift-kni/commatrix` documents TCP/9443 (cloud-controller-manager-operator webhook/health) and TCP/10258 (aws-cloud-controller-manager metrics) as required master-node ingress ports. In OCP 4.23 nightly (`4.23.0-0.nightly-2026-07-15-024904`), these two ports are no longer opened by the respective components — the operator metrics consolidated onto TCP/9258. The `BeforeEach` at `validation_test.go:52` generates the live matrix, then the `generated communication matrix should be equal to documented communication matrix` check diffs them; with 2 extra &quot;documented but not open&quot; entries, it fails and blocks all 4 specs via `BeforeEach`.
+  - **Breaking PR/Commit:** Unknown — the change is in the OCP 4.23 cloud-controller-manager-operator image (not in commatrix source); no commatrix repo was locally cloned to run `check_backport.py`. The fix belongs in `openshift-kni/commatrix` `release-4.23` branch: remove the two stale CSV rows.
+  - **Is it a flake?** No — the ss-generated matrix consistently shows these ports absent; the warning is deterministic and the raw socket scan contains zero matches.
+  - **Suggested Fix:** Remove the two stale rows from `communication-matrix.csv` on the `release-4.23` branch of `openshift-kni/commatrix`: `Ingress,TCP,9443,...,cluster-cloud-controller-manager,master,false` and `Ingress,TCP,10258,...,cloud-controller-manager,master,false`. Also remove them from the generated `communication-matrix-master.nft` allow list.
+  - **Affected tests:** `Validation [BeforeEach] generated communication matrix should be equal to documented communication matrix` (`validation_test.go:52`)
+
+---
+
+**Relation Between Groups:** Single root cause — one `BeforeEach` failure that would have cascaded to block all specs; the other 3 specs passed independently.
+
+**Per-Version Notes:** OCP 4.23 (nightly `2026-07-15-024904`): TCP/9443 and TCP/10258 removed from cloud-controller-manager components; static matrix not updated for this version.
+
+**Affected Images:** `openshift-cloud-controller-manager-operator` (`cluster-cloud-controller-manager-operator`), `openshift-cloud-controller-manager` (`aws-cloud-controller-manager`) — both from OCP 4.23 nightly release stream.
+
+**Overall Issue Class:** `matrix_mismatch`
+
+**Overall Severity:** MEDIUM</div></details>
+  </td>
+  <td class="col-date">2026-07-21</td>
+  <td class="col-date">2026-07-21</td>
+  <td class="col-tests"><ul><li>Matrix mismatch: 2 port(s) in matrix but not in use</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix/2079189879639511040" target="_blank">4.23-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-21)</span></li></ul></td>
+</tr>
+<tr id="de0819cb1c8795a7">
+  <td class="col-rc">
+    <div class="rc-text">The `ipi-install-install-stableinitial` step attempted to create install manifests by calling the AWS EC2 API to list instance types. AWS returned HTTP 401 `AuthFailure` on both `controlPlane` and `compute[0]` checks, meaning the STS-vended credentials injected from the `aws-sts-cluster-config` secret were invalid or expired at call time. The installer exited with code 3 before any cluster resources were created. All downstream steps (kubeconfig copy failures) are cascades of no cluster existing. -</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** AWS credential AuthFailure (HTTP 401) prevented cluster install; commatrix tests never ran.
+
+**Root Cause Groups:**
+
+- **Group 1: AWS STS Credential AuthFailure — cluster never provisioned** (affects Tests: `ipi-install-install-stableinitial`)
+  - **Evidence:**
+    ```
+    level=error msg=failed to fetch Master Machines: failed to load asset &quot;Install Config&quot;: failed to create install config: [controlPlane.platform.aws: Internal error: error listing instance types: fetching instance types: AuthFailure: AWS was not able to validate the provided access credentials
+    level=error msg=	status code: 401, request id: 61a6baeb-53e2-4334-b3c9-fc1e2ba0730d
+    Create manifests exit code: 3
+    cp: cannot stat &#x27;/tmp/installer/auth/kubeconfig&#x27;: No such file or directory
+    ```
+  - **Root Cause:** The `ipi-install-install-stableinitial` step attempted to create install manifests by calling the AWS EC2 API to list instance types. AWS returned HTTP 401 `AuthFailure` on both `controlPlane` and `compute[0]` checks, meaning the STS-vended credentials injected from the `aws-sts-cluster-config` secret were invalid or expired at call time. The installer exited with code 3 before any cluster resources were created. All downstream steps (kubeconfig copy failures) are cascades of no cluster existing.
+  - **Breaking PR/Commit:** Unknown — this is an AWS/CI infrastructure credential issue, not a code change.
+  - **Is it a flake?** Yes — transient AWS STS token validation failures are known CI infrastructure flakes; no code change is implicated.
+  - **Suggested Fix:** Retry the job. If AuthFailure recurs, investigate the STS role (`aws-sts-cluster-config` secret) on build09 for token TTL or role-assumption policy changes.
+  - **Affected tests:** `ipi-install-install-stableinitial`
+
+---
+
+**Relation Between Groups:** Single root cause — one group only. All downstream artifact-copy failures are cascades of the cluster never being provisioned.
+
+**Per-Version Notes:**
+- 4.21: Confirmed AuthFailure; cluster install aborted at manifest creation (this run).
+- 4.22: Same job pattern; expected same AWS infrastructure failure given shared STS credential infrastructure.
+
+**Affected Images:** `registry.build09.ci.openshift.org/ci-op-qspk8iw2/release@sha256:a3e5193b51cb31ca8c3249fb275ed2eed7a479ac0c3aa85b0403e2830a749b14` (release:initial / 4.20.0-0.nightly-2026-07-19-034625 — never reached deployment)
+
+**Overall Issue Class:** infra_other
+
+**Overall Severity:** LOW</div></details>
+  </td>
+  <td class="col-date">2026-07-21</td>
+  <td class="col-date">2026-07-21</td>
+  <td class="col-tests"><ul><li>ipi-install-install-stableinitial</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2078918112366825472" target="_blank">4.21-upgrade-from-stable-4.20-e2e-aws-upgrade-ovn-single-node-network-flow-matrix</a> <span class="date">(2026-07-21)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-upgrade-from-stable-4.21-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2078918117374824448" target="_blank">4.22-upgrade-from-stable-4.21-e2e-aws-upgrade-ovn-single-node-network-flow-matrix</a> <span class="date">(2026-07-21)</span></li></ul></td>
+</tr>
+<tr id="782906e00e07bf9a">
   <td class="col-rc">
     <div class="rc-text">The Ansible `ocp-install.yml` playbook on the `telco5g-cluster-setup` step polled for an install-finished marker file on bare-metal host `cnfdu21`. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (`https://XXXXXXXXXXXX:64428`) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with `net/http: TLS handshake timeout`. No commatrix tests ever executed. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
