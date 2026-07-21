@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-07-20T00:39:05.564741+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-21T02:38:51.600395+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2078827509083803648" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2079189895577866240" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -62,7 +62,7 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">68m</div>
+    <div class="info-value">78m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
@@ -70,11 +70,11 @@
   </div>
   <div class="info-card">
     <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#d29922">MEDIUM</span></div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-07-19T13:01</div>
+    <div class="info-value" style="font-size:12px">2026-07-20T13:00</div>
   </div>
 </div>
 
@@ -86,41 +86,37 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CRI-O's ephemeral port (38919) now exposed after Linux dynamic-range filter removal in PR #400.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> CRI-O's ephemeral port (36239) is open but has no EndpointSlice and is not filtered after PR #400 removed Linux dynamic ranges.</p>
 <br>
 <p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: CRI-O ephemeral port no longer suppressed by dynamic-range filter</strong> (affects Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: CRI-O ephemeral port not filtered by EPS validation test</strong> (affects Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] should validate the communication matrix ports match the node's open ports</code>)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">[FAILED] the following ports are used but don't have an endpointslice:</p>
-<p style="margin:4px 0">Ingress,TCP,38919,,crio,,,master,false</p>
+<p style="margin:4px 0">[FAIL] Validation [It] should validate the communication matrix ports match the node's open ports</p>
+<p style="margin:4px 0">/tmp/secret/commatrix/test/e2e/validation_test.go:161</p>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">raw-ss-tcp</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LISTEN 0 4096 10.0.71.48:38919 0.0.0.0:* users:(("crio",pid=4187,fd=11))</code></p>
-<br>
-<p style="margin:4px 0">The failing test is at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code> — after calling <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> (which skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code> but <strong>not</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code>) and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)</code>, port 38919 survives both filters and causes the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail(...)</code> call.</p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> PR #400 / commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Remove Linux Dynamic ranges from generated communication matrix</code>) deleted <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">getLinuxDynamicPrivateRange</code>, which previously appended the Linux kernel ephemeral port range (typically 32768–60999, read from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/proc/sys/net/ipv4/ip_local_port_range</code>) to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code>. CRI-O's streaming server binds to an ephemeral port on the node's external IP (38919 here, always in the Linux ephemeral range). Before PR #400, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> would suppress it; now <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DynamicRanges</code> only contains the Kubernetes NodePort range (~30000–32767), leaving 38919 unfiltered. The test fails at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code>.</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> merged via PR #400 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">https://github.com/openshift-kni/commatrix/pull/400</code>), present on both <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> branches.</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — crio always allocates an ephemeral port outside 30000–32767 on the node IP; this will fail consistently after PR #400 on every single-node run.</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> function in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go</code> (alongside <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>), since CRI-O's streaming server port is an internal ephemeral port not intended to be documented in the communication matrix. Alternatively, reintroduce a targeted ephemeral-range filter for services known to use random ports.</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code>)</div>
+<p style="margin:4px 0"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Port 36239: LISTEN 0 4096 10.0.1.66:36239 0.0.0.0:* users:(("crio",pid=2709,fd=12))</code></p>
+<p style="margin:4px 0"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix-diff-ss: - Ingress,TCP,36239,,crio,,,master,false</code></p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> CRI-O (the container runtime, PID 2709) opens a randomly-assigned ephemeral port (36239, in the Linux range 32768–60999) that has no Kubernetes EndpointSlice. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:159</code> calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)</code>, but <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code> is populated by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetDynamicRanges()</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/dynamic-ranges/dynamic-ranges.go</code>) which returns only the Kubernetes NodePort range (30000–32767). Port 36239 > 32767, so it is not filtered. Prior to PR #400 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code>), the Linux ephemeral range was included in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DynamicRanges</code> and this port would have been filtered; that PR removed it to prevent the firewall matrix from leaving all ephemeral ports open, but also broke the EPS validation filter.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">1fec55d</code> Merge pull request #400 from shirmoran/remove-linux-dynamic-range (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> "Remove Linux Dynamic ranges from generated communication matrix")</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — CRI-O consistently opens an ephemeral port above 32767 on every cluster, so this failure will recur on every run until fixed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"crio"</code> to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> allowlist in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go</code> (alongside the existing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> filter), since CRI-O is a host-level process that opens random ephemeral ports with no EndpointSlice by design. Alternatively, add a separate Linux ephemeral range filter (32768–60999) to the EPS validation check without putting it back into the generated firewall matrix.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — one PR removed the Linux ephemeral-range guard, exposing crio's random port.</p>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause. The 7 stale matrix entries (TCP 80, 443, 8798, 9099, 9192, 9443, 10258 — documented or EPS-generated but not actually open on the SNO node) generate only <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">logrus.Warning</code> calls (lines 108–110 and 153–155 of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go</code>) and do not fail any test. They indicate the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">docs/stable/raw/aws-sno.csv</code> documented matrix is drifting from actual OCP 4.23 SNO port usage but are not the direct failure cause.</p>
 <br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 5.0 (SNO, AWS, OVN): fails consistently after PR #400 merged Feb 5 2026.</p>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; OCP 4.23 (evidence): CRI-O ephemeral port 36239 fails the EPS validation; 7 stale matrix entries logged as warnings.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; OCP 5.0 (no evidence file): Same root cause expected — identical <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> logic and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetDynamicRanges</code> returning only NodePort range; CRI-O ephemeral port behavior unchanged.</div>
 <br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">quay.io/openshift-release-dev/ocp-v5.0-art-dev</code> (test container), commatrix test binary built from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> branch.</p>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (test runner); OCP release <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-24-155843</code></p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix_mismatch</code></p>
 <br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
 </div>
 
 <div class="footer">
