@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.21-telco5g-network-flow-matrix-single-node-bm</code></h1>
-  <div class="meta">Generated: 2026-07-21T02:38:51.600395+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-22T00:45:19.130977+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -88,218 +88,31 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+  <p style="margin:4px 0">I now have all the evidence needed. Let me write the analysis.</p>
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Bare metal SNO cluster install failed — API server never reachable, commatrix tests never ran.</p>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Bare-metal SNO cluster provisioning failure</strong> (affects all reported "tests")</div>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[telco5g-sno-setup] RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (60 retries left).</code></h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~9209s (2h33m49s total for the setup step)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> OCP API server unreachable — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 192.168.17.114:6443: connect: no route to host</code></div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">E0625 11:38:33.348497 1755289 memcache.go:265] couldn't get current server API group list:</p>
-<p style="margin:4px 0">Get "https://api.cnfdu14.upstreamci.bos2.lab:6443/api?timeout=32s":</p>
-<p style="margin:4px 0">dial tcp 192.168.17.121:6443: connect: no route to host</p>
-<br>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-single-node-bm-telco5g-sno-setup" failed after 2h34m42s</p>
-<p style="margin:4px 0">(failed containers: test): ContainerFailed — Container test exited with code 2</p>
-<br>
-<p style="margin:4px 0">PLAY RECAP: XXXXXXXXXXXX ok=0 changed=0 unreachable=0 failed=1 skipped=0</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-sno-setup</code> step ran an Ansible playbook (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code>) to provision an OCP 4.21 nightly SNO cluster on bare metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14.upstreamci.bos2.lab</code>. After ~2.5 hours, the cluster API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.121:6443</code> was still completely unreachable ("no route to host"), meaning the install never completed or the node never came up. The "RETRYING: Run oc command to check if cluster is ready" failures are Ansible retry loop iterations in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> (lines 38/46/58) waiting for the API — not commatrix test assertions. The commatrix project tests were never reached.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure/bare-metal provisioning failure, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — "no route to host" on a bare metal lab node is consistent with a transient hardware, network, or OCP installer issue on this specific machine.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it fails again on the same node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code>), investigate the bare metal host health (BMC/IPMI, NIC, routing) and whether the OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-06-25-024321</code> installer is healthy.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (60 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (59 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (58 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (57 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (56 retries left)</code></div>
+<p style="margin:4px 0">> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">E0617 12:02:25.092451 3747229 memcache.go:265] couldn't get current server API group list: Get "https://api.cnfdu7.upstreamci.bos2.lab:6443/api?timeout=32s": dial tcp 192.168.17.114:6443: connect: no route to host</code></p>
+<p style="margin:4px 0">> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PLAY RECAP: XXXXXXXXXXXX: ok=0 changed=0 unreachable=0 failed=1 skipped=0 rescued=0 ignored=0</code></p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The bare-metal SNO node for cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu7</code> failed to complete OCP installation. After ~2.5 hours, the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> Ansible playbook's cluster-readiness <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc</code> check hit "no route to host" on the kube-apiserver (192.168.17.114:6443), indicating the node lost network routing or the OCP bootstrap/install process failed before the API came up. This is a hardware/infra-level failure in the telco5g lab, not a commatrix code issue.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra failure, no code involved</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift-kni/commatrix (commatrix tests never ran)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — SNO bare-metal install failures due to routing loss are known transient lab infrastructure issues</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If persistent, investigate the bare-metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu7</code> for network/BMC issues and confirm the SNO installer can reach the bootstrap host.</div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — all failures cascade from the SNO cluster never becoming ready. Gather steps (must-gather, extra, audit-logs, telco5g-log-gather) all failed for the same reason: TLS handshake timeouts / no route to host against the same dead API endpoint.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-06-25-024321</code> — cluster import succeeded in ci-operator (190 images), but bare metal install of this nightly on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code> failed.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (used for SNO install); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (CI orchestration image — pulled successfully).</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Bare metal SNO cluster install failed — API server never reachable, commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Bare-metal SNO cluster provisioning failure</strong> (affects all reported "tests")</div>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 2: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[telco5g-sno-setup] RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (59 retries left).</code></h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~9209s (same step)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> OCP API server unreachable — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 192.168.17.114:6443: connect: no route to host</code></div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">E0625 11:38:33.348497 1755289 memcache.go:265] couldn't get current server API group list:</p>
-<p style="margin:4px 0">Get "https://api.cnfdu14.upstreamci.bos2.lab:6443/api?timeout=32s":</p>
-<p style="margin:4px 0">dial tcp 192.168.17.121:6443: connect: no route to host</p>
-<br>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-single-node-bm-telco5g-sno-setup" failed after 2h34m42s</p>
-<p style="margin:4px 0">(failed containers: test): ContainerFailed — Container test exited with code 2</p>
-<br>
-<p style="margin:4px 0">PLAY RECAP: XXXXXXXXXXXX ok=0 changed=0 unreachable=0 failed=1 skipped=0</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-sno-setup</code> step ran an Ansible playbook (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code>) to provision an OCP 4.21 nightly SNO cluster on bare metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14.upstreamci.bos2.lab</code>. After ~2.5 hours, the cluster API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.121:6443</code> was still completely unreachable ("no route to host"), meaning the install never completed or the node never came up. The "RETRYING: Run oc command to check if cluster is ready" failures are Ansible retry loop iterations in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> (lines 38/46/58) waiting for the API — not commatrix test assertions. The commatrix project tests were never reached.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure/bare-metal provisioning failure, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — "no route to host" on a bare metal lab node is consistent with a transient hardware, network, or OCP installer issue on this specific machine.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it fails again on the same node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code>), investigate the bare metal host health (BMC/IPMI, NIC, routing) and whether the OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-06-25-024321</code> installer is healthy.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (60 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (59 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (58 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (57 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (56 retries left)</code></div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — all failures cascade from the SNO cluster never becoming ready. Gather steps (must-gather, extra, audit-logs, telco5g-log-gather) all failed for the same reason: TLS handshake timeouts / no route to host against the same dead API endpoint.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-06-25-024321</code> — cluster import succeeded in ci-operator (190 images), but bare metal install of this nightly on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code> failed.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (used for SNO install); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (CI orchestration image — pulled successfully).</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Bare metal SNO cluster install failed — API server never reachable, commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Bare-metal SNO cluster provisioning failure</strong> (affects all reported "tests")</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">E0625 11:38:33.348497 1755289 memcache.go:265] couldn't get current server API group list:</p>
-<p style="margin:4px 0">Get "https://api.cnfdu14.upstreamci.bos2.lab:6443/api?timeout=32s":</p>
-<p style="margin:4px 0">dial tcp 192.168.17.121:6443: connect: no route to host</p>
-<br>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-single-node-bm-telco5g-sno-setup" failed after 2h34m42s</p>
-<p style="margin:4px 0">(failed containers: test): ContainerFailed — Container test exited with code 2</p>
-<br>
-<p style="margin:4px 0">PLAY RECAP: XXXXXXXXXXXX ok=0 changed=0 unreachable=0 failed=1 skipped=0</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-sno-setup</code> step ran an Ansible playbook (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code>) to provision an OCP 4.21 nightly SNO cluster on bare metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14.upstreamci.bos2.lab</code>. After ~2.5 hours, the cluster API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.121:6443</code> was still completely unreachable ("no route to host"), meaning the install never completed or the node never came up. The "RETRYING: Run oc command to check if cluster is ready" failures are Ansible retry loop iterations in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> (lines 38/46/58) waiting for the API — not commatrix test assertions. The commatrix project tests were never reached.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure/bare-metal provisioning failure, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — "no route to host" on a bare metal lab node is consistent with a transient hardware, network, or OCP installer issue on this specific machine.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it fails again on the same node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code>), investigate the bare metal host health (BMC/IPMI, NIC, routing) and whether the OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-06-25-024321</code> installer is healthy.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (60 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (59 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (58 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (57 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (56 retries left)</code></div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — all failures cascade from the SNO cluster never becoming ready. Gather steps (must-gather, extra, audit-logs, telco5g-log-gather) all failed for the same reason: TLS handshake timeouts / no route to host against the same dead API endpoint.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-06-25-024321</code> — cluster import succeeded in ci-operator (190 images), but bare metal install of this nightly on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code> failed.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (used for SNO install); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (CI orchestration image — pulled successfully).</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Bare metal SNO cluster install failed — API server never reachable, commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Bare-metal SNO cluster provisioning failure</strong> (affects all reported "tests")</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">E0625 11:38:33.348497 1755289 memcache.go:265] couldn't get current server API group list:</p>
-<p style="margin:4px 0">Get "https://api.cnfdu14.upstreamci.bos2.lab:6443/api?timeout=32s":</p>
-<p style="margin:4px 0">dial tcp 192.168.17.121:6443: connect: no route to host</p>
-<br>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-single-node-bm-telco5g-sno-setup" failed after 2h34m42s</p>
-<p style="margin:4px 0">(failed containers: test): ContainerFailed — Container test exited with code 2</p>
-<br>
-<p style="margin:4px 0">PLAY RECAP: XXXXXXXXXXXX ok=0 changed=0 unreachable=0 failed=1 skipped=0</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-sno-setup</code> step ran an Ansible playbook (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code>) to provision an OCP 4.21 nightly SNO cluster on bare metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14.upstreamci.bos2.lab</code>. After ~2.5 hours, the cluster API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.121:6443</code> was still completely unreachable ("no route to host"), meaning the install never completed or the node never came up. The "RETRYING: Run oc command to check if cluster is ready" failures are Ansible retry loop iterations in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> (lines 38/46/58) waiting for the API — not commatrix test assertions. The commatrix project tests were never reached.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure/bare-metal provisioning failure, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — "no route to host" on a bare metal lab node is consistent with a transient hardware, network, or OCP installer issue on this specific machine.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it fails again on the same node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code>), investigate the bare metal host health (BMC/IPMI, NIC, routing) and whether the OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-06-25-024321</code> installer is healthy.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (60 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (59 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (58 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (57 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (56 retries left)</code></div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — all failures cascade from the SNO cluster never becoming ready. Gather steps (must-gather, extra, audit-logs, telco5g-log-gather) all failed for the same reason: TLS handshake timeouts / no route to host against the same dead API endpoint.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-06-25-024321</code> — cluster import succeeded in ci-operator (190 images), but bare metal install of this nightly on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code> failed.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (used for SNO install); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (CI orchestration image — pulled successfully).</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Bare metal SNO cluster install failed — API server never reachable, commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Bare-metal SNO cluster provisioning failure</strong> (affects all reported "tests")</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">E0625 11:38:33.348497 1755289 memcache.go:265] couldn't get current server API group list:</p>
-<p style="margin:4px 0">Get "https://api.cnfdu14.upstreamci.bos2.lab:6443/api?timeout=32s":</p>
-<p style="margin:4px 0">dial tcp 192.168.17.121:6443: connect: no route to host</p>
-<br>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-single-node-bm-telco5g-sno-setup" failed after 2h34m42s</p>
-<p style="margin:4px 0">(failed containers: test): ContainerFailed — Container test exited with code 2</p>
-<br>
-<p style="margin:4px 0">PLAY RECAP: XXXXXXXXXXXX ok=0 changed=0 unreachable=0 failed=1 skipped=0</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-sno-setup</code> step ran an Ansible playbook (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code>) to provision an OCP 4.21 nightly SNO cluster on bare metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14.upstreamci.bos2.lab</code>. After ~2.5 hours, the cluster API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.121:6443</code> was still completely unreachable ("no route to host"), meaning the install never completed or the node never came up. The "RETRYING: Run oc command to check if cluster is ready" failures are Ansible retry loop iterations in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> (lines 38/46/58) waiting for the API — not commatrix test assertions. The commatrix project tests were never reached.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure/bare-metal provisioning failure, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — "no route to host" on a bare metal lab node is consistent with a transient hardware, network, or OCP installer issue on this specific machine.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it fails again on the same node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code>), investigate the bare metal host health (BMC/IPMI, NIC, routing) and whether the OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-06-25-024321</code> installer is healthy.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (60 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (59 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (58 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (57 retries left)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (56 retries left)</code></div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — all failures cascade from the SNO cluster never becoming ready. Gather steps (must-gather, extra, audit-logs, telco5g-log-gather) all failed for the same reason: TLS handshake timeouts / no route to host against the same dead API endpoint.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-06-25-024321</code> — cluster import succeeded in ci-operator (190 images), but bare metal install of this nightly on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code> failed.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (used for SNO install); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (CI orchestration image — pulled successfully).</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
+<p style="margin:4px 0">> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 192.168.17.114:6443: connect: no route to host</code></p>
+<p style="margin:4px 0">> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"rc": 1, "end": "2026-06-17 12:02:37.383032"</code></p>
+<div style="padding-left:16px;margin:2px 0">&bull; **Root C</div>
 </div>
 
 <div class="footer">

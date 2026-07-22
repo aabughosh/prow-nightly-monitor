@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-telco5g-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-07-21T02:38:51.600395+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-22T00:45:19.130977+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -88,178 +88,29 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> OCP 4.21 bare-metal cluster install timed out; commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: OCP Cluster Installation Timeout</strong> (affects all 5 reported tests)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-bm-telco5g-cluster-setup" failed after 2h43m43s (failed containers: test): ContainerFailed … Container test exited with code 2</p>
-<p style="margin:4px 0">ClusterVersion: Installing "" for <unknown>: <unknown></p>
-<p style="margin:4px 0">Unable to connect to the server: net/http: TLS handshake timeout</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The Ansible <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> playbook on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code> step polled for an install-finished marker file on bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">https://XXXXXXXXXXXX:64428</code>) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">net/http: TLS handshake timeout</code>. No commatrix tests ever executed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure event, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — bare-metal cluster install timeouts are intermittent CI infrastructure flakes unrelated to the commatrix codebase.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-trigger the job. If the timeout recurs consistently on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code> bare-metal node, investigate the provisioner/kcli installer or the node's hardware/network state; the CI pool may have a degraded host.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All five "RETRYING: Try to grab file to see install finished (N retries left)" entries — these are sequential retry counts of the same polling loop, not distinct test failures.</div>
+  <p style="margin:4px 0">I have all the evidence I need. Here is the analysis:</p>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group; all failures cascade from the one cluster install timeout.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.21 (this run): cluster install timed out on bare-metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>; commatrix tests never ran</div>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.23: same root cause expected — OCP install timeout on bare-metal CI pool; commatrix code is not implicated on either version</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (190 images imported successfully; not the failure source)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW (infrastructure flake; project tests did not regress)</p>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[Run multi-stage test pre phase] RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (150 retries left).</code></h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~43m59s (entire cluster-setup step)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> Ansible unreachable — SSH to bastion/cluster host timed out (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ssh: connect to host XXXXXXXXXXXX port 22: Connection timed out</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code> step ran <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> which polls via SSH until an install-complete file appears on the cluster node. The bare-metal cluster (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu5</code>) was unreachable at SSH level from the first attempt; all 150 retries in the Ansible loop (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">until</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">retries: 150</code>) failed identically. This is a CI infra connectivity issue, not a commatrix code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra issue, not a code change</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift-kni/telco5gci (Ansible playbook <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code>, not commatrix source)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — SSH connectivity to the bare-metal test pool (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu5</code>) is an intermittent infra issue unrelated to commatrix code</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-trigger the job. If the cluster remains unreachable, escalate to the telco5g infra team to inspect/recycle bare-metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu5</code>.</div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> OCP 4.21 bare-metal cluster install timed out; commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: OCP Cluster Installation Timeout</strong> (affects all 5 reported tests)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-bm-telco5g-cluster-setup" failed after 2h43m43s (failed containers: test): ContainerFailed … Container test exited with code 2</p>
-<p style="margin:4px 0">ClusterVersion: Installing "" for <unknown>: <unknown></p>
-<p style="margin:4px 0">Unable to connect to the server: net/http: TLS handshake timeout</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The Ansible <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> playbook on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code> step polled for an install-finished marker file on bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">https://XXXXXXXXXXXX:64428</code>) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">net/http: TLS handshake timeout</code>. No commatrix tests ever executed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure event, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — bare-metal cluster install timeouts are intermittent CI infrastructure flakes unrelated to the commatrix codebase.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-trigger the job. If the timeout recurs consistently on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code> bare-metal node, investigate the provisioner/kcli installer or the node's hardware/network state; the CI pool may have a degraded host.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All five "RETRYING: Try to grab file to see install finished (N retries left)" entries — these are sequential retry counts of the same polling loop, not distinct test failures.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group; all failures cascade from the one cluster install timeout.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.21 (this run): cluster install timed out on bare-metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>; commatrix tests never ran</div>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.23: same root cause expected — OCP install timeout on bare-metal CI pool; commatrix code is not implicated on either version</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (190 images imported successfully; not the failure source)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW (infrastructure flake; project tests did not regress)</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> OCP 4.21 bare-metal cluster install timed out; commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: OCP Cluster Installation Timeout</strong> (affects all 5 reported tests)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-bm-telco5g-cluster-setup" failed after 2h43m43s (failed containers: test): ContainerFailed … Container test exited with code 2</p>
-<p style="margin:4px 0">ClusterVersion: Installing "" for <unknown>: <unknown></p>
-<p style="margin:4px 0">Unable to connect to the server: net/http: TLS handshake timeout</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The Ansible <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> playbook on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code> step polled for an install-finished marker file on bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">https://XXXXXXXXXXXX:64428</code>) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">net/http: TLS handshake timeout</code>. No commatrix tests ever executed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure event, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — bare-metal cluster install timeouts are intermittent CI infrastructure flakes unrelated to the commatrix codebase.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-trigger the job. If the timeout recurs consistently on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code> bare-metal node, investigate the provisioner/kcli installer or the node's hardware/network state; the CI pool may have a degraded host.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All five "RETRYING: Try to grab file to see install finished (N retries left)" entries — these are sequential retry counts of the same polling loop, not distinct test failures.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group; all failures cascade from the one cluster install timeout.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.21 (this run): cluster install timed out on bare-metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>; commatrix tests never ran</div>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.23: same root cause expected — OCP install timeout on bare-metal CI pool; commatrix code is not implicated on either version</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (190 images imported successfully; not the failure source)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW (infrastructure flake; project tests did not regress)</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> OCP 4.21 bare-metal cluster install timed out; commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: OCP Cluster Installation Timeout</strong> (affects all 5 reported tests)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-bm-telco5g-cluster-setup" failed after 2h43m43s (failed containers: test): ContainerFailed … Container test exited with code 2</p>
-<p style="margin:4px 0">ClusterVersion: Installing "" for <unknown>: <unknown></p>
-<p style="margin:4px 0">Unable to connect to the server: net/http: TLS handshake timeout</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The Ansible <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> playbook on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code> step polled for an install-finished marker file on bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">https://XXXXXXXXXXXX:64428</code>) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">net/http: TLS handshake timeout</code>. No commatrix tests ever executed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure event, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — bare-metal cluster install timeouts are intermittent CI infrastructure flakes unrelated to the commatrix codebase.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-trigger the job. If the timeout recurs consistently on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code> bare-metal node, investigate the provisioner/kcli installer or the node's hardware/network state; the CI pool may have a degraded host.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All five "RETRYING: Try to grab file to see install finished (N retries left)" entries — these are sequential retry counts of the same polling loop, not distinct test failures.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group; all failures cascade from the one cluster install timeout.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.21 (this run): cluster install timed out on bare-metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>; commatrix tests never ran</div>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.23: same root cause expected — OCP install timeout on bare-metal CI pool; commatrix code is not implicated on either version</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (190 images imported successfully; not the failure source)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW (infrastructure flake; project tests did not regress)</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> OCP 4.21 bare-metal cluster install timed out; commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: OCP Cluster Installation Timeout</strong> (affects all 5 reported tests)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-bm-telco5g-cluster-setup" failed after 2h43m43s (failed containers: test): ContainerFailed … Container test exited with code 2</p>
-<p style="margin:4px 0">ClusterVersion: Installing "" for <unknown>: <unknown></p>
-<p style="margin:4px 0">Unable to connect to the server: net/http: TLS handshake timeout</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The Ansible <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> playbook on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code> step polled for an install-finished marker file on bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">https://XXXXXXXXXXXX:64428</code>) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">net/http: TLS handshake timeout</code>. No commatrix tests ever executed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure event, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — bare-metal cluster install timeouts are intermittent CI infrastructure flakes unrelated to the commatrix codebase.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-trigger the job. If the timeout recurs consistently on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code> bare-metal node, investigate the provisioner/kcli installer or the node's hardware/network state; the CI pool may have a degraded host.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All five "RETRYING: Try to grab file to see install finished (N retries left)" entries — these are sequential retry counts of the same polling loop, not distinct test failures.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group; all failures cascade from the one cluster install timeout.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.21 (this run): cluster install timed out on bare-metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>; commatrix tests never ran</div>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.23: same root cause expected — OCP install timeout on bare-metal CI pool; commatrix code is not implicated on either version</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (190 images imported successfully; not the failure source)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW (infrastructure flake; project tests did not regress)</p>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 2: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[Run multi-stage test pre phase] RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (149 retries left).</code></h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> Subsumed in the 43m59s cluster-setup step</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> SSH connection to cluster host timed out (port 22, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Connection timed out during banner exchange</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Same as Test 1 — consecutive iteration of the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> retry loop; the cluster node was still unreachable via SSH. Each retry interval elapsed and the host remained <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">UNREACHABLE</code> in Ansible.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra issue</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift-kni/telco5gci (Ansible <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — same infra SSH timeout flake as Test 1</div>
+<p style="margin:4px 0">-</p>
 </div>
 
 <div class="footer">
