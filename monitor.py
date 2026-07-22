@@ -75,6 +75,28 @@ if _projects_file.exists():
                 log.info("Loaded project config: %s", _pname)
                 break
 
+# Load known CI bugs from Jira cache (for AI prompt context)
+KNOWN_BUGS: list[dict] = []
+_bugs_file = Path(__file__).parent / "known_bugs.json"
+if _bugs_file.exists():
+    try:
+        _bugs_data = json.loads(_bugs_file.read_text())
+        KNOWN_BUGS = _bugs_data.get("bugs", [])
+        log.info("Loaded %d known CI bugs (updated: %s)",
+                 len(KNOWN_BUGS), _bugs_data.get("updated_at", "unknown"))
+    except Exception as _e:
+        log.warning("Failed to load known_bugs.json: %s", _e)
+
+
+def _format_known_bugs() -> str:
+    """Format known bugs as context for the AI prompt."""
+    if not KNOWN_BUGS:
+        return ""
+    lines = ["=== KNOWN CI BUGS (from Jira) ==="]
+    for bug in KNOWN_BUGS:
+        lines.append(f"- {bug['key']} ({bug['status']}): {bug['summary']}")
+    return "\n".join(lines)
+
 
 # ---------------------------------------------------------------------------
 # Prow API
@@ -1162,7 +1184,7 @@ def generate_trend_html(history: dict) -> str:
         return ""
 
     versions = sorted(set(
-        v for r in runs for v in r.get("by_version", {})
+        v for r in runs for v in r.get("by_version", {}) if v and "." in v
     ), key=lambda v: [int(x) for x in v.split(".")], reverse=True)
 
     bars_html = ""
@@ -1926,6 +1948,36 @@ def _build_smart_context(job: dict, log_text: str,
     return "\n\n".join(context_parts)[:10000]
 
 
+_token_usage = {"input": 0, "output": 0, "calls": 0}
+
+
+def get_token_usage() -> dict:
+    """Return cumulative token usage for the current run."""
+    return dict(_token_usage)
+
+
+def _track_tokens(data: dict, provider: str):
+    """Extract and accumulate token usage from an API response."""
+    usage = data.get("usage") or {}
+    if provider == "claude":
+        _token_usage["input"] += usage.get("input_tokens", 0)
+        _token_usage["output"] += usage.get("output_tokens", 0)
+    elif provider == "gemini":
+        meta = data.get("usageMetadata") or {}
+        _token_usage["input"] += meta.get("promptTokenCount", 0)
+        _token_usage["output"] += meta.get("candidatesTokenCount", 0)
+    else:
+        _token_usage["input"] += usage.get("prompt_tokens", 0)
+        _token_usage["output"] += usage.get("completion_tokens", 0)
+    _token_usage["calls"] += 1
+    log.info("  Tokens: in=%d out=%d (cumulative: in=%d out=%d, calls=%d)",
+             usage.get("input_tokens", 0) or usage.get("prompt_tokens", 0) or
+             (data.get("usageMetadata") or {}).get("promptTokenCount", 0),
+             usage.get("output_tokens", 0) or usage.get("completion_tokens", 0) or
+             (data.get("usageMetadata") or {}).get("candidatesTokenCount", 0),
+             _token_usage["input"], _token_usage["output"], _token_usage["calls"])
+
+
 def ai_analyze_failure(job: dict, log_text: str,
                        investigation: dict | None = None,
                        category: str = "",
@@ -1942,12 +1994,15 @@ def ai_analyze_failure(job: dict, log_text: str,
         matrix_diff, step_logs, artifacts_data,
     )
     source_section = f"\n{smart_context}" if smart_context else ""
+    known_bugs_section = _format_known_bugs()
 
     prompt = f"""You are a senior CI failure analyst for OpenShift. Analyze this failed CI job thoroughly.
 
 Job: {job['name']}
 State: {job['state']}
 {source_section}
+
+{known_bugs_section}
 
 IMPORTANT: Read the TEST SOURCE CODE provided below to understand what the test checks.
 For ports with no EndpointSlice: determine if the process CAN have an EndpointSlice.
@@ -1986,6 +2041,11 @@ Provide your analysis:
 - If a port is in Linux ephemeral range (32768-60999), note that it changes on reboot
 - Look at the ss output to determine what process owns the port and why it has no EndpointSlice
 
+**Known Issue Match:**
+- Check the KNOWN CI BUGS list above
+- If this failure matches a known bug, state: "Known Issue: KEY — summary"
+- If this failure does NOT match any known bug, state: "Potential New Issue"
+
 **Severity:** CRITICAL / HIGH / MEDIUM / LOW
 
 {source_section}
@@ -2009,6 +2069,7 @@ Provide your analysis:
             )
             if resp.status_code == 200:
                 data = resp.json()
+                _track_tokens(data, "claude")
                 return data["content"][0]["text"].strip()
             else:
                 log.warning("Claude analysis failed: HTTP %d — %s", resp.status_code, resp.text[:200])
@@ -2025,6 +2086,7 @@ Provide your analysis:
             )
             if resp.status_code == 200:
                 data = resp.json()
+                _track_tokens(data, "gemini")
                 candidates = data.get("candidates", [])
                 if candidates:
                     parts = candidates[0].get("content", {}).get("parts", [])
@@ -2056,6 +2118,7 @@ Provide your analysis:
             )
             if resp.status_code == 200:
                 data = resp.json()
+                _track_tokens(data, provider)
                 return data["choices"][0]["message"]["content"].strip()
             else:
                 log.warning("%s analysis failed: HTTP %d — %s", provider, resp.status_code, resp.text[:200])
@@ -2077,6 +2140,7 @@ Provide your analysis:
             )
             if resp.status_code == 200:
                 data = resp.json()
+                _track_tokens(data, "huggingface")
                 choices = data.get("choices", [])
                 if choices:
                     return choices[0].get("message", {}).get("content", "").strip()
@@ -2101,6 +2165,7 @@ Provide your analysis:
             )
             if resp.status_code == 200:
                 data = resp.json()
+                _track_tokens(data, "openai")
                 return data["choices"][0]["message"]["content"].strip()
             else:
                 log.warning("OpenAI analysis failed: HTTP %d", resp.status_code)
@@ -3196,7 +3261,9 @@ def main():
                             timeout=60,
                         )
                         if fb_resp.status_code == 200:
-                            ai_summary = fb_resp.json()["choices"][0]["message"]["content"].strip()
+                            fb_data = fb_resp.json()
+                            _track_tokens(fb_data, fallback_name)
+                            ai_summary = fb_data["choices"][0]["message"]["content"].strip()
                             if ai_summary:
                                 log.info("  %s: %s", fallback_name, ai_summary[:200])
                                 break
@@ -3288,6 +3355,12 @@ def main():
     results_path.write_text(json.dumps(results, indent=2))
     (run_dir / "results.json").write_text(json.dumps(results, indent=2))
     log.info("Results JSON written to %s", results_path)
+
+    usage = get_token_usage()
+    if usage["calls"]:
+        log.info("AI token usage: %d calls, %d input tokens, %d output tokens, %d total",
+                 usage["calls"], usage["input"], usage["output"],
+                 usage["input"] + usage["output"])
 
     _generate_runs_index(OUTPUT_DIR)
     _generate_issues_page(OUTPUT_DIR)
