@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.21-telco5g-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-07-22T00:45:19.130977+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-22T22:24:06.677622+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -89,78 +89,6 @@
 </h2>
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Both Validation tests failed because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc commatrix generate --host-open-ports</code> could not reach the kubelet API (port 10250 <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">connection refused</code>) on a node.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Kubelet exec API (port 10250) connection refused</strong> (affects both Validation tests)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">error: failed to generate matrix: failed to generate SS matrix: error while generating the listening check matrix</p>
-<p style="margin:4px 0">and ss raws: remote command [/bin/sh -c ss -anpltH] error [error dialing backend: dial tcp XXXXXXXXXXXX43:10250:</p>
-<p style="margin:4px 0">connect: connection refused]. output []</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Both Validation BeforeEach failures at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:48</code> share this identical error (15:05:15 and 15:06:19 respectively).</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The BeforeEach at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:47–54</code> runs <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc commatrix generate --host-open-ports</code>, which in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/listening-sockets/listening-sockets.go:119</code> calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RunCommandOnPod(debugPod, []string{"/bin/sh", "-c", "ss -anpltH"})</code> — a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kubectl exec</code>-style call routed through the kubelet streaming API on port 10250. The API server got <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">connection refused</code> when dialing the node's kubelet port 10250, meaning kubelet's exec endpoint was unreachable on that node. The most likely cause on a reused bare-metal cluster is residual nftables rules from a prior periodic CI run that did not include port 10250 in the allow list; the generated <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix-worker.nft</code> for this run does include port 10250, but that rule had not yet been applied when the test started.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no recent code change caused this; it's a cluster-state issue. The nftables test (which passed) runs later and generates rules that do allow port 10250.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — periodic bare-metal CI jobs reuse the same cluster; if a previous run's MCO-applied nftables rules blocked kubelet port 10250, subsequent runs fail until the cluster is reset or the rules are updated.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add a pre-test cleanup step in the CI job to flush or verify residual nftables rules (especially the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift_filter</code> chain) before the Validation test suite runs. Alternatively, add a retry or wait loop in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GenerateSS</code> to tolerate transient kubelet exec failures.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [BeforeEach] generated communication matrix should be equal to documented communication matrix</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:62</code>)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [BeforeEach] should validate the communication matrix ports match the node's open ports</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:138</code>)</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — both Validation tests share the same BeforeEach block (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:41–64</code>) and both failed on the identical error. The Nftables test (which passed) uses <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc commatrix generate --format nft</code> (no <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">--host-open-ports</code>) and never calls the kubelet exec API, confirming the problem is isolated to the kubelet streaming path.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.21.0-0.nightly-2026-06-25-091937</code> — cluster setup succeeded, only the kubelet exec API path was broken at test time.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (test runner), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-091937</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Both Validation tests failed because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc commatrix generate --host-open-ports</code> could not reach the kubelet API (port 10250 <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">connection refused</code>) on a node.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Kubelet exec API (port 10250) connection refused</strong> (affects both Validation tests)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">error: failed to generate matrix: failed to generate SS matrix: error while generating the listening check matrix</p>
-<p style="margin:4px 0">and ss raws: remote command [/bin/sh -c ss -anpltH] error [error dialing backend: dial tcp XXXXXXXXXXXX43:10250:</p>
-<p style="margin:4px 0">connect: connection refused]. output []</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Both Validation BeforeEach failures at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:48</code> share this identical error (15:05:15 and 15:06:19 respectively).</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The BeforeEach at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:47–54</code> runs <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc commatrix generate --host-open-ports</code>, which in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/listening-sockets/listening-sockets.go:119</code> calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RunCommandOnPod(debugPod, []string{"/bin/sh", "-c", "ss -anpltH"})</code> — a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kubectl exec</code>-style call routed through the kubelet streaming API on port 10250. The API server got <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">connection refused</code> when dialing the node's kubelet port 10250, meaning kubelet's exec endpoint was unreachable on that node. The most likely cause on a reused bare-metal cluster is residual nftables rules from a prior periodic CI run that did not include port 10250 in the allow list; the generated <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix-worker.nft</code> for this run does include port 10250, but that rule had not yet been applied when the test started.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no recent code change caused this; it's a cluster-state issue. The nftables test (which passed) runs later and generates rules that do allow port 10250.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — periodic bare-metal CI jobs reuse the same cluster; if a previous run's MCO-applied nftables rules blocked kubelet port 10250, subsequent runs fail until the cluster is reset or the rules are updated.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add a pre-test cleanup step in the CI job to flush or verify residual nftables rules (especially the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift_filter</code> chain) before the Validation test suite runs. Alternatively, add a retry or wait loop in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GenerateSS</code> to tolerate transient kubelet exec failures.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [BeforeEach] generated communication matrix should be equal to documented communication matrix</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:62</code>)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [BeforeEach] should validate the communication matrix ports match the node's open ports</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:138</code>)</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — both Validation tests share the same BeforeEach block (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:41–64</code>) and both failed on the identical error. The Nftables test (which passed) uses <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc commatrix generate --format nft</code> (no <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">--host-open-ports</code>) and never calls the kubelet exec API, confirming the problem is isolated to the kubelet streaming path.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.21.0-0.nightly-2026-06-25-091937</code> — cluster setup succeeded, only the kubelet exec API path was broken at test time.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (test runner), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-091937</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
 <p style="margin:4px 0"><strong>TL;DR:</strong> Both Validation tests failed because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc commatrix generate --host-open-ports</code> could not reach the kubelet API (port 10250 <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">connection refused</code>) on a node.</p>
 <br>

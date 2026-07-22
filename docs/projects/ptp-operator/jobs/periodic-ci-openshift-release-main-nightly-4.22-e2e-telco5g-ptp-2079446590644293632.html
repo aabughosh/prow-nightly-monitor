@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.22-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-07-22T08:27:17.558876+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-07-22T22:58:49.500291+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -85,6 +85,125 @@
 </h2>
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Cross-Suite Summary — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp</code></h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> linuxptp-daemon PR #618 broke T-GM holdover and T-BC sync (9 failures); a test-code key regression in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">d20ffcb</code> broke all 5 parallel event tests (5 failures).</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Root Cause Groups</h4>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Failures</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suites</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px"><strong>9 / 15</strong></td><td style="border:1px solid #30363d;padding:6px 8px">tbc (×6), tgm (×3)</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift/linuxptp-daemon</code> <strong>PR #618</strong> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">d2ff2d154d</code>, merged <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> 2026-06-30): T-GM holdover state machine bypassed — class 7 never emitted, jumps LOCKED (6) → FREERUN (248) directly; T-BC on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code> consequently stuck in FREERUN (class 248) with phc2sys never starting, cascading to all 6 tbc serial tests.</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px"><strong>5 / 15</strong></td><td style="border:1px solid #30363d;padding:6px 8px">bc, dualfollower, dualnicbc, dualnicbcha, oc (all <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">-parallel</code>)</td><td style="border:1px solid #30363d;padding:6px 8px">Test-code regression <strong>commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">d20ffcb</code></strong> (Jul 3, 2026, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>): <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">createStoredEvent</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/pkg/event/event.go</code> changed the values-map key from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DataType</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"notification"</code>) to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ResourceAddress</code>; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testSyncState()</code> still looks up <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">values["notification"]</code>, always gets nil, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">wasLocked</code> never becomes <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">true</code>. All 5 parallel suites ran concurrently, all timed out at ≈363 s (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp.go:393</code>). Secondary contributor: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cloud-event-proxy:release-4.22</code> sidecar and/or the shared <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">consumer</code> pod in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-event-framework-test</code> may not have been serving <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OsClockSyncStateChange</code> events during the parallel window (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PushInitialEvent</code> exhausted all 30 × 10 s retries).</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px"><strong>1 / 15</strong></td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha (serial)</td><td style="border:1px solid #30363d;padding:6px 8px">phc2sys HA failover — phc2sys did not switch to secondary ptp4l after the primary interface was downed, or failed to emit the expected log line. Likely a cascade of the T-BC FREERUN state from Group 1.</td></tr>
+</table>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Cross-Suite Patterns</h4>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>tbc + tgm share one root cause</strong> (PR #618): T-GM FREERUN propagates upstream — T-BC has no grandmaster to lock to, leaving cnfdf32 in class 248 and making all T-BC serial tests deterministically fail. Fixing PR #618 unblocks both suites.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>All 5 parallel suites share one root cause</strong> (commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">d20ffcb</code>): bc, dualfollower, dualnicbc, dualnicbcha, and oc fail with identical timing (≈363 s) and identical failure message, confirming a single shared code path broken by the same commit.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>dualnicbcha is the only suite with failures from two separate groups</strong> (1 parallel event + 1 serial HA), making it appear to have the most diverse failure set.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>No suite-specific flakes</strong> — every failure traces to one of the two breaking changes above.</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Actionable Recommendations</h4>
+<br>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Revert or patch <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift/linuxptp-daemon</code> PR #618 on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code></strong> — restore the T-GM holdover servo-state path so ts2phc emits clock class 7 before transitioning to 248, and re-add the FREERUN <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-state-change</code> CloudEvent dispatch in the restarted-ts2phc code path. This is the highest-leverage fix: <strong>9/15 failures resolved</strong>.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Fix the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">createStoredEvent</code> key regression from commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">d20ffcb</code></strong> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/pkg/event/event.go</code> (runs from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>) — update the consumer in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp.go:413–414</code> to use the new <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ResourceAddress</code>-keyed lookup (e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">values[resourceAddress].(string)</code>) instead of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">values["notification"]</code>, or revert the key to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DataType</code>. Also pin <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">CONSUMER_IMG</code> to a versioned tag instead of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">:latest</code> to prevent silent consumer regressions. <strong>5/15 failures resolved</strong>.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">3. <strong>Add a guard in tbc test AfterEach</strong> to restore the original <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpConfig</code> even on failure — this prevents the cascade from Group 1 (nil <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpConfig</code>) from adding spurious secondary failures when the primary T-BC issue recurs.</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_failure</code> (production image regression in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> + test-code regression on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> <strong>CRITICAL</strong> — 15/15 failures, every suite affected, PTP synchronization infrastructure completely non-functional for both T-GM and T-BC hardware paths.</p>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Per-Suite Details</h2>
+<br>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">bc</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: bc (1 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> The single <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-parallel] Event based tests PTP Slave Clock Sync</code> failure is caused by a test code regression in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> that changed the event-value map key from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DataType</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ResourceAddress</code>, making the state lookup for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"notification"</code> permanently return nil so the clock is never seen as LOCKED.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: createStoredEvent key change breaks state lookup in testSyncState</strong> (affects: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [bc-parallel] Event based tests PTP Slave Clock Sync</code>)</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<br>
+<p style="margin:4px 0">Failure message from artifact XML at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp.go:393</code> at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">07/21/26 11:03:31.053</code>:</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0"><failure message="OS Clock was never LOCKED and test timed out" type="failed"></p>
+<p style="margin:4px 0">[FAILED] OS Clock was never LOCKED and test timed out</p>
+<p style="margin:4px 0">In [It] at: .../test/conformance/parallel/ptp.go:393 @ 07/21/26 11:03:31.053</p>
+<p style="margin:4px 0">```</p>
+<br>
+<p style="margin:4px 0">The PushInitialEvents goroutine DID find and parse a LOCKED event (at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">event.go:730</code>, 10:58:36):</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">[Jul 21 10:58:36.093][event.go: 730] Context Attributes,</p>
+<p style="margin:4px 0">type: event.sync.sync-status.os-clock-sync-state-change</p>
+<p style="margin:4px 0">Data, {"values":[{"ResourceAddress":"/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME",</p>
+<p style="margin:4px 0">"data_type":"notification","value":"LOCKED"},</p>
+<p style="margin:4px 0">{"ResourceAddress":"/cluster/node/cnfdf32.../CLOCK_REALTIME","data_type":"metric","value":"-..."}]}</p>
+<p style="margin:4px 0">```</p>
+<br>
+<p style="margin:4px 0">Git diff from commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">d20ffcb</code> (Jul 3, 2026) in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/pkg/event/event.go</code>:</p>
+<p style="margin:4px 0">```diff</p>
+<div style="padding-left:16px;margin:2px 0">&bull;  dataType := string(v.DataType)</div>
+<div style="padding-left:16px;margin:2px 0">&bull;  values[dataType] = v.Value</div>
+<p style="margin:4px 0">+  // Use ResourceAddress as key to avoid collisions…</p>
+<p style="margin:4px 0">+  key := v.Resource</p>
+<p style="margin:4px 0">+  if key == "" {</p>
+<p style="margin:4px 0">+      key = string(v.DataType)</p>
+<p style="margin:4px 0">+  }</p>
+<p style="margin:4px 0">+  values[key] = v.Value</p>
+<p style="margin:4px 0">```</p>
+<br>
+<p style="margin:4px 0">Consumer in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testSyncState</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/conformance/parallel/ptp.go:413-414</code>):</p>
+<p style="margin:4px 0">```go</p>
+<p style="margin:4px 0">values, _ := singleEvent[exports.EventValues].(exports.StoredEventValues)</p>
+<p style="margin:4px 0">state, _ := values["notification"].(string)   // always nil now</p>
+<p style="margin:4px 0">```</p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">d20ffcb</code> (CNF-19588, Jul 3 2026) changed <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">createStoredEvent</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/pkg/event/event.go</code> to key the values map by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">v.Resource</code> (ResourceAddress, e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/cluster/node/cnfdf32.../CLOCK_REALTIME</code>) instead of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">v.DataType</code> (e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"notification"</code>). Because the two event values both share the same <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ResourceAddress</code>, the metric value also overwrites the notification value. The test consumer at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp.go:413-414</code> still looks up <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">values["notification"]</code>, which is now always nil, so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">state</code> is always <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">""</code>. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">wasLocked</code> never becomes <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">true</code>, and when the 5-minute test window expires the test fails at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp.go:393</code> with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail("OS Clock was never LOCKED and test timed out")</code>.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">d20ffcb</code> — CNF-19588: CI test for clockClass recovery after cloud-event-proxy crash — merged Jul 3, 2026 on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>. This commit is in the test code (which runs from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>), so no backport to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> is required for this fix; the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">scripts/check_backport.py</code> script was not present to run.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — this is a deterministic regression. The same failure pattern appears across all parallel event suites (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bc</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dualfollower</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dualnicbc</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc</code>) confirming systematic breakage, not timing-related flakiness.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/pkg/event/event.go</code> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">createStoredEvent</code>, additionally store events using <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DataType</code> as a secondary key (or switch <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testSyncState</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testSyncState</code> consumer to look up by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ResourceAddress</code> suffix <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">CLOCK_REALTIME</code> instead of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"notification"</code>). Alternatively, store both keys: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">values[string(v.DataType)] = v.Value</code> alongside the ResourceAddress key so existing consumers are not broken.</div>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_regression</code></p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">dualfollower</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualfollower (1 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> The single dualfollower failure is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Event based tests PTP Slave Clock Sync</code> (parallel), which timed out because the OS clock never reported a LOCKED state within the configured ~6-minute test window — the identical failure simultaneously hit all five parallel suites (bc, dualfollower, dualnicb</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
 <p style="margin:4px 0"><strong>TL;DR:</strong> A test-code key collision in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">createStoredEvent</code> (commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">d20ffcbf0c</code>, 2026-07-03) causes every "PTP Slave Clock Sync" event test to miss the LOCKED state and time out.</p>
 <br>

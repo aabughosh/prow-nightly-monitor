@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-07-22T00:45:19.130977+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-22T22:24:06.677622+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -106,86 +106,6 @@
 <p style="margin:4px 0"><strong>Relation Between Failures:</strong> There is only one failed test. The 6 ports reported as "in matrix but not in use" (TCP 80, 443, 8798, 9192 — in the documented aws-sno.csv but absent from EndpointSlices; TCP 9443, 10258 — in the generated EPS matrix but not open on the node) are logged as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">logrus.Warningf</code> calls and do not cause a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail</code>. They are independent documentation drift issues (stale entries in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">docs/stable/raw/aws-sno.csv</code>) unrelated to the single test failure.</p>
 <br>
 <p style="margin:4px 0"><strong>Per-Version Notes:</strong> Only OCP 5.0 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node</code>) was examined. PR #400 targets the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> branch, so any version tracking</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0">Now I have all the information I need. Let me write the final analysis:</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[TestE2e/Validation] should validate the communication matrix ports match the node's open ports</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 44.076s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">the following ports are used but don't have an endpointslice: Ingress,TCP,40359,,crio,,,master,false</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> CRI-O (container runtime) opened an ephemeral listening socket on TCP/40359 (Linux ephemeral range 32768–60999). <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices()</code> at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:221</code> only skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code> — not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code>. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges()</code> only covers NodePort range 30000–32767 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">KubeletNodePortDefaultDynamicRange</code>), so 40359 is not filtered and the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail()</code> at line 161 is triggered.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code regression; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> was never added to the known-services filter, and this is a newly-observed ephemeral port binding by crio in OCP 4.23/5.0.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go#L161</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — port 40359 is OS-assigned and changes each run; this specific port number is ephemeral but the underlying crio behavior may be consistent.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices()</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:221–238</code>, analogous to how <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> is handled, since crio's dynamically-bound sockets are host-level process ports with no Kubernetes EndpointSlice.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 2: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[TestE2e] TestE2e</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 507.44s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">--- FAIL: TestE2e (507.44s)</code> — suite-level failure due to 1 failed spec</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TestE2e</code> is the Go test function that runs the Ginkgo suite (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/</code>). It fails because the child spec "should validate the communication matrix ports match the node's open ports" failed. The suite ran 4 of 4 specs; 3 passed, 1 failed. This is a cascading failure from Test 1 above.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — same root cause as Test 1.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Same as Test 1 — conditional on crio binding an ephemeral port not covered by the filter.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Same fix as Test 1; resolving the child spec failure resolves the suite.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Failures:</strong> Both failures are the same root cause: a single failing Ginkgo <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">It</code> spec causes the parent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TestE2e</code> suite to fail. Port TCP/40359 is a crio-owned ephemeral socket that passes through all filters (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code>) because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is not in the known-services skip list and 40359 falls outside the NodePort dynamic range.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; OCP 4.23: Confirmed affected — this evidence run; crio opens TCP/40359 with no EndpointSlice.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; OCP 5.0: Also affected per the prompt; same root cause is expected since crio ephemeral port behavior is not version-specific to OCP.</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">quay.io/openshift-kni/commatrix</code> (test container image built from the commatrix repo, run in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests</code> step)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix_mismatch</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM — the test correctly identifies a real discrepancy (crio ephemeral port lacks EndpointSlice), but the fix is a test-side filter addition rather than a cluster misconfiguration; the cluster itself is functioning normally.</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0">Now I have all the information I need. Let me write the final analysis:</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[TestE2e/Validation] should validate the communication matrix ports match the node's open ports</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 44.076s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">the following ports are used but don't have an endpointslice: Ingress,TCP,40359,,crio,,,master,false</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> CRI-O (container runtime) opened an ephemeral listening socket on TCP/40359 (Linux ephemeral range 32768–60999). <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices()</code> at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:221</code> only skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code> — not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code>. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges()</code> only covers NodePort range 30000–32767 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">KubeletNodePortDefaultDynamicRange</code>), so 40359 is not filtered and the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail()</code> at line 161 is triggered.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code regression; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> was never added to the known-services filter, and this is a newly-observed ephemeral port binding by crio in OCP 4.23/5.0.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go#L161</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — port 40359 is OS-assigned and changes each run; this specific port number is ephemeral but the underlying crio behavior may be consistent.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices()</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:221–238</code>, analogous to how <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> is handled, since crio's dynamically-bound sockets are host-level process ports with no Kubernetes EndpointSlice.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 2: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[TestE2e] TestE2e</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 507.44s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">--- FAIL: TestE2e (507.44s)</code> — suite-level failure due to 1 failed spec</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TestE2e</code> is the Go test function that runs the Ginkgo suite (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/</code>). It fails because the child spec "should validate the communication matrix ports match the node's open ports" failed. The suite ran 4 of 4 specs; 3 passed, 1 failed. This is a cascading failure from Test 1 above.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — same root cause as Test 1.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift-kni/commatrix/blob/main/test/e2e/validation_test.go</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Same as Test 1 — conditional on crio binding an ephemeral port not covered by the filter.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Same fix as Test 1; resolving the child spec failure resolves the suite.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Failures:</strong> Both failures are the same root cause: a single failing Ginkgo <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">It</code> spec causes the parent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TestE2e</code> suite to fail. Port TCP/40359 is a crio-owned ephemeral socket that passes through all filters (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code>) because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is not in the known-services skip list and 40359 falls outside the NodePort dynamic range.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; OCP 4.23: Confirmed affected — this evidence run; crio opens TCP/40359 with no EndpointSlice.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; OCP 5.0: Also affected per the prompt; same root cause is expected since crio ephemeral port behavior is not version-specific to OCP.</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">quay.io/openshift-kni/commatrix</code> (test container image built from the commatrix repo, run in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests</code> step)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix_mismatch</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM — the test correctly identifies a real discrepancy (crio ephemeral port lacks EndpointSlice), but the fix is a test-side filter addition rather than a cluster misconfiguration; the cluster itself is functioning normally.</p>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>

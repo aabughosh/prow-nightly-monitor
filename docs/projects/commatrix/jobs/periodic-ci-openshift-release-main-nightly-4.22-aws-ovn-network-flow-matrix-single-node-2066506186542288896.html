@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.22-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-07-22T00:45:19.130977+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-22T22:24:06.677622+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -86,44 +86,6 @@
 </h2>
 <div class="analysis-box">
   <p style="margin:4px 0">Based on all the evidence, here is the full analysis:</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[install] install should succeed: cluster bootstrap</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~3708s (1h1m48s install pod runtime)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift cluster install failed with cluster bootstrap</code> — API server unreachable: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 3.229.70.24:6443: connect: connection refused</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The AWS IPI installer pod (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">aws-ovn-network-flow-matrix-single-node-ipi-install-install</code>) timed out after 1h1m48s during cluster bootstrap. The control plane API never became reachable — all cluster operators report <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">not available (<missing>)</code>, indicating the bootstrap node never handed off to the master. This is an AWS infrastructure provisioning failure in the CI environment, not a commatrix code issue.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change involved; AWS/CI infra failure.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift/release/blob/main/ci-operator/step-registry/ipi/install/install/ipi-install-install-commands.sh</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — transient AWS provisioning timeouts are a known intermittent CI infra problem; the commatrix project tests never ran.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it recurs, check AWS region capacity and CAPI bootstrap node logs for the specific SNO provisioning failure.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 2: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[install] install should succeed: overall</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~3708s (same install pod, reported as overall failure)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift cluster install failed overall</code> — cascades directly from the bootstrap failure; cluster never reached a running state.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> This is the aggregate "overall" verdict from the same <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ipi-install-install</code> container failure. Because bootstrap never completed, the installer exited with code 5 (timeout), causing the pre-phase to abort and all subsequent test/gather steps to fail with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">connection refused</code> to the API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3.229.70.24:6443</code>.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — same infra event as Test 1.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift/release/blob/main/ci-operator/step-registry/ipi/install/install/ipi-install-install-commands.sh</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — same transient AWS infra timeout as Test 1; both failures share a single root cause.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If failures persist across multiple runs, escalate to the OpenShift CI infra team to inspect AWS quota/capacity in the target region.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Failures:</strong> Both failures are two facets of the same single event: the AWS single-node IPI cluster bootstrap timed out and the API server never came up. The "cluster bootstrap" failure triggered the "overall" failure automatically — they share one root cause (AWS infra provisioning timeout) and the commatrix project's own tests never executed.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.22 — failure is in the cluster provisioning (pre) phase; no version-specific commatrix regression observed.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.redhat.io/openshift4/ose-must-gather:latest</code> (gather steps failed as a consequence); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-installer</code> image used by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ipi-install-install</code> step. No commatrix images affected.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0">Based on all the evidence, here is the full analysis:</p>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>

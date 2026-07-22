@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-telco5g-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-07-22T00:45:19.130977+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-22T22:24:06.677622+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -90,90 +90,6 @@
 </h2>
 <div class="analysis-box">
   <p style="margin:4px 0">Now I have enough information to write the full analysis.</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[network-flow-matrix-tests] network-flow-matrix-tests container test</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~67s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unable to connect to the server: dial tcp 10.1.104.200:64416: i/o timeout</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The bare-metal cluster API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.1.104.200:64416</code> was completely unreachable when the test pod started. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc</code> client could not reach the cluster before any commatrix test code ran. A secondary error (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error: pathspec 'release-.' did not match any file(s) known to git</code>) shows the OCP version env var was empty/unset when the script tried to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">git checkout release-${OCP_VERSION}</code>, meaning the cluster environment was never properly initialized.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra cluster loss, not a code regression</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift-kni/commatrix (test entrypoint script, not commatrix Go code)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — bare-metal cluster became unreachable before test execution; commatrix tests never actually ran</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If recurs, investigate bare-metal cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu9</code> health and whether the API server recovers after reboot; also audit the OCP_VERSION variable substitution in the entrypoint script.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 2: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[gather-must-gather] gather-must-gather container test</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~547s (9m7s)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 10.1.104.200:64416: i/o timeout</code> — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc adm must-gather</code> could not reach cluster API</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> This is a CI artifact-collection step (not a commatrix test). <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc adm must-gather</code> repeatedly failed to connect to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.1.104.200:64416</code> over a 9-minute window. The cluster API was unreachable by the time this post-test step ran. This is a downstream symptom of the cluster losing connectivity.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra cluster loss</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://steps.ci.openshift.org/reference/gather-must-gather (CI framework step, not commatrix)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — CI artifact-gather step failing solely because the cluster API server was unreachable</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> No code change needed. Retry the job; investigate why the bare-metal cluster became unreachable during/after the test phase.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 3: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[gather-extra] gather-extra container test</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~31s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">couldn't get current server API group list: Get "https://10.1.104.200:64416/api?timeout=5s": context deadline exceeded</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> CI artifact-gather step <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-extra</code> could not reach the cluster API server within its short 5-second timeout (repeated over ~25s before giving up). The cluster at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.1.104.200:64416</code> was fully unresponsive, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-extra</code> exited with code 1 after exhausting retries.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra cluster loss</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://steps.ci.openshift.org/reference/gather-extra (CI framework step, not commatrix)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — cluster API unreachable; not related to commatrix code</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. The 31s failure indicates fast-fail on context deadline; if the cluster is healthy on retry this step will pass.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 4: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[gather-audit-logs] gather-audit-logs container test</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~547s (9m7s)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 10.1.104.200:64416: i/o timeout</code> — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc adm inspect</code> failed; cluster version and operators unreachable</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Audit-log collection (CI framework step) failed because the cluster API at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.1.104.200:64416</code> was unreachable. Repeated 30-second timeout cycles are visible in the log. The reprinted cluster state shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ClusterOperators: clusteroperators are missing</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error getting cluster version</code>, confirming full API loss.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra cluster loss</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://steps.ci.openshift.org/reference/gather-audit-logs (CI framework step, not commatrix)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — all errors are connectivity failures to the cluster API; no commatrix logic involved</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. Check bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu9</code> for power or network issues that could cause the API server to drop.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 5: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[telco5g-log-gather] telco5g-log-gather container test</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~70s (1m10s)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> Container exited with code 1 after pip-install phase; log truncated mid-download of Python dependencies</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-log-gather</code> step began installing Python dependencies (requests, markupsafe, etc.) but the pod was killed/failed before completing. The log ends abruptly mid-pip-download, consistent with the broader cluster connectivity loss cutting off the pod's ability to communicate with or complete its work. No actual log-gather output was produced.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra cluster loss</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://steps.ci.openshift.org/reference/telco5g-log-gather (CI framework step)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — pod terminated mid-execution due to infrastructure failure, not a script bug</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If Python deps download is slow, consider pre-baking them into the step container image to reduce setup time.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 6: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[unknown] Run multi-stage test test phase</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~67s (1m7s, matching network-flow-matrix-tests pod)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"telco5g-network-flow-matrix-bm" pod "telco5g-network-flow-matrix-bm-network-flow-matrix-tests" failed: could not watch pod</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> This is the ci-operator outer wrapper reporting the multi-stage test phase failure. It was unable to watch the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests</code> pod because the cluster API (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.1.104.200:64416</code>) became unreachable. This entry is a duplicate/aggregate of Test 1 seen from the ci-operator perspective.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra cluster loss</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">sigs.k8s.io/prow/pkg/entrypoint/run.go:84</code> (Prow entrypoint, CI framework)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — ci-operator lost watch on the pod due to the same API server outage</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Same as Test 1 — retry the job; no commatrix code change needed.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Bare-metal cluster API server unreachable; all 6 steps failed before commatrix tests ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Relation Between Failures:</strong> All 6 failures share a single root cause: the bare-metal cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu9</code>'s Kubernetes API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.1.104.200:64416</code> became unreachable with I/O timeouts during or before the test phase. The network-flow-matrix-tests pod could not connect to the cluster, causing test abort; all subsequent gather/log steps then failed for the same reason. The secondary <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error: pathspec 'release-.'</code> error in the test log indicates the OCP_VERSION environment variable was empty, which may indicate the cluster environment was never properly provisioned.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.22 — bare-metal cluster infra outage; no code-level regression identified on this version.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">quay.io/openshift/origin-tests</code> (gather steps), telco5g-log-gather image (Python-based), network-flow-matrix-tests image (go1.22.4/oc 4.12.29)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0">Now I have enough information to write the full analysis.</p>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
@@ -379,117 +295,6 @@
 <p style="margin:4px 0"><strong>TL;DR:</strong> Bare-metal cluster API server unreachable post-provisioning; all 6 steps timed out.</p>
 <br>
 <p style="margin:4px 0"><strong>Relation Between Failures:</strong> All six failures share a single root cause: the bare-metal OCP c</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0">Now I have enough to write the full analysis. Let me write it to stdout:</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests</code> container test</h4>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 1m11s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error: pathspec 'release-.' did not match any file(s) known to git</code> (entrypoint exits 1)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Unable to connect to the server: dial tcp 10.1.104.200:64413: i/o timeout</p>
-<p style="margin:4px 0">Cloning into '/tmp/secret/commatrix'...</p>
-<p style="margin:4px 0">/tmp/secret/commatrix /</p>
-<p style="margin:4px 0">error: pathspec 'release-.' did not match any file(s) known to git</p>
-<p style="margin:4px 0">{"component":"entrypoint","error":"wrapped process failed: exit status 1",...}</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The CI test script clones the commatrix repo and immediately attempts <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">git checkout release-<VERSION></code>, but the version variable resolves to an empty string, producing branch name <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-.</code> — which does not exist. The commatrix repo contains <strong>only a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> branch</strong> (confirmed via <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">git branch -a</code>); there are no <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-X.Y</code> branches. For OCP 5.0, the version string substitution in the step script yields <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-.</code> instead of e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>, because the minor-version env var (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OCP_MINOR_VERSION</code> or similar) is undefined or empty for the 5.0 nightly variant. Additionally, the API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.1.104.200:64413</code> is unreachable even before the git failure, indicating the test cluster's control plane went down before tests could run.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — likely a CI step script config issue in openshift/release for the nightly-5.0 variant (see step: https://steps.ci.openshift.org/reference/network-flow-matrix-tests)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift-kni/commatrix/blob/main/test/e2e/</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — the commatrix repo has no <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-*</code> branches at all; this will fail on every run of nightly-5.0 until the CI step is fixed to use <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> or the correct ref.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> The CI step script should not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">git checkout release-.</code>; for OCP 5.0 the step should check out <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> (no release branch exists). Fix the version env-var substitution in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests</code> step in openshift/release so it falls back to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> when no <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-X.Y</code> branch is found, or remove the checkout entirely for 5.0.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 2: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-must-gather</code> container test</h4>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 9m7s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 10.1.104.200:64413: i/o timeout</code> — cannot reach cluster API server</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">E0619 15:28:10.705299 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: Get \"https://10.1.104.200:64413/api?timeout=32s\": dial tcp 10.1.104.200:64413: i/o timeout"</p>
-<p style="margin:4px 0">error completing cluster type inspection: error running backup collection: Get "https://10.1.104.200:64413/api?timeout=32s": dial tcp 10.1.104.200:64413: i/o timeout</p>
-<p style="margin:4px 0">error: creating temp namespace: Post "https://10.1.104.200:64413/api/v1/namespaces": dial tcp 10.1.104.200:64413: i/o timeout</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The bare-metal cluster API server at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.1.104.200:64413</code> became completely unreachable before/during the post phase. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc adm must-gather</code> requires a live API server to collect cluster state; since the API server is timing out on all TCP connections, must-gather cannot start a temp namespace or inspect cluster resources. This is a cascade from the same cluster connectivity loss that caused Test 1 to fail.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra/network issue with bare-metal cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu6</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://steps.ci.openshift.org/reference/gather-must-gather</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — transient API server connectivity loss on bare-metal cluster; unrelated to commatrix code.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Infra retry; investigate bare-metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu6</code> network and API server health at the time of the run.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 3: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-extra</code> container test</h4>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 36s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Gathering artifacts ...</p>
-<p style="margin:4px 0">E0619 15:31:30.347290 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: Get \"https://10.1.104.200:64413/api?timeout=5s\": net/http: request canceled while waiting for connection"</p>
-<p style="margin:4px 0">Unable to connect to the server: net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Same as Test 2 — bare-metal cluster API server unreachable. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-extra</code> runs after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-must-gather</code> and encounters the same TCP timeout on every API call. Cascade failure.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://steps.ci.openshift.org/reference/gather-extra</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — cascade from infra connectivity loss.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Same as Test 2 — retry after restoring cluster network connectivity.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 4: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-audit-logs</code> container test</h4>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 9m5s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 10.1.104.200:64413: i/o timeout</code> — cluster API unreachable</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">E0619 15:38:58.789482 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: Get \"https://10.1.104.200:64413/api?timeout=32s\": dial tcp 10.1.104.200:64413: i/o timeout"</p>
-<p style="margin:4px 0">error getting cluster version: Get "https://10.1.104.200:64413/apis/config.openshift.io/v1/clusterversions/version": dial tcp 10.1.104.200:64413: i/o timeout</p>
-<p style="margin:4px 0">clusteroperators are missing</p>
-<p style="margin:4px 0">error: creating temp namespace: Post "https://10.1.104.200:64413/api/v1/namespaces": dial tcp 10.1.104.200:64413: i/o timeout</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Same cluster API server unreachable. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-audit-logs</code> runs last in post phase, still hitting the same dead API server endpoint. Cascade failure — cluster API remained down throughout the entire post phase.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://steps.ci.openshift.org/reference/gather-audit-logs</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — cascade from infra.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Same as Test 2.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 5: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-log-gather</code> container test</h4>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 1m11s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> Exit code 1; no test result files were produced for it to parse</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">cp: cannot stat '/tmp/secret/cnf-tests-run.log': No such file or directory</p>
-<p style="margin:4px 0">cp: cannot stat '/tmp/secret/cnf-validations-run.log': No such file or directory</p>
-<p style="margin:4px 0">OC client version from the container:</p>
-<p style="margin:4px 0">Client Version: 4.12.29</p>
-<p style="margin:4px 0">Unable to connect to the server: dial tcp 10.1.104.200:64413: i/o timeout</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-log-gather</code> step expects <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/tmp/secret/cnf-tests-run.log</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/tmp/secret/cnf-validations-run.log</code> to exist (produced by the test step). Since <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests</code> exited with error before any tests ran, those files were never created. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc</code> call at the end also confirms the cluster API is unreachable. The step fails because the missing log files triggered an error path. Note: the OC client version 4.12.29 is extremely outdated for an OCP 5.0 cluster.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — the missing logs are a cascade; the outdated OC client (4.12.29) may indicate a stale telco-runner image.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://steps.ci.openshift.org/reference/telco5g-log-gather</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No (for this run) — test artifacts were never produced because the test step failed before execution; log-gather will always fail when tests don't run.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> The test step must be fixed first (Test 1). Additionally, update the OC client in the telco-runner image to match OCP 5.0.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 6: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">unknown</code> (pod watcher / test phase JUnit)</h4>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 1m7s</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pod "telco5g-network-flow-matrix-bm-network-flow-matrix-tests" failed: could not watch pod</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">"telco5g-network-flow-matrix-bm" pod "telco5g-network-flow-matrix-bm-network-flow-matrix-tests" failed: could not watch pod: the pod ci-op-t8ngdsfn/telco5g-network-flow-matrix-bm-network-flow-matrix-tests failed after 1m7s (failed containers: test): ContainerFailed one or more containers exited</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> This is the ci-operator JUnit entry for the te</div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>

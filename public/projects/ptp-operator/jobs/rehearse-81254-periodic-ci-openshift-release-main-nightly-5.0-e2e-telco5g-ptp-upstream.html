@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>rehearse-81254-5.0-e2e-telco5g-ptp-upstream</code></h1>
-  <div class="meta">Generated: 2026-07-22T08:27:17.558876+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-07-22T22:58:49.500291+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -84,7 +84,39 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
+  <p style="margin:4px 0">I now have all the data needed.</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Worker node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf30</code> was <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NotReady/Unknown</code> at test start; pre-flight check aborted before any PTP tests ran.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Unhealthy cluster node prevented test execution</strong> (affects Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">e2e-telco5g-ptp-upstream-telco5g-ptp-tests</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">cnfdf30.telco5gran.eng.rdu2.redhat.com   NotReady,SchedulingDisabled   worker   15m</p>
+<p style="margin:4px 0">NOT_READY_NODES='cnfdf30.telco5gran.eng.rdu2.redhat.com Unknown'</p>
+<p style="margin:4px 0">[ERROR] All nodes must be Ready before starting PTP tests. Aborting.</p>
+<p style="margin:4px 0">+ exit 1</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test step's pre-flight script (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-ptp-tests</code>) checks that all cluster nodes are <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Ready</code> before launching PTP tests. Worker node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf30.telco5gran.eng.rdu2.redhat.com</code> was in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NotReady,SchedulingDisabled</code> with condition <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unknown</code> at the time the test pod started. The script detected this via <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc get nodes</code> and exited 1 immediately — no PTP tests ran at all. The node being in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">SchedulingDisabled/Unknown</code> indicates it was either mid-reboot, cordoned by a prior step, or lost contact with the control plane.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a transient infrastructure/cluster state issue.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NotReady/Unknown</code> at test start time is a classic transient infra flake caused by hardware or network instability in the bare-metal telco5g pool.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-run the job; if the node is consistently unhealthy, investigate the bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf30</code> in the telco5g pool and re-provision or replace it. Optionally extend the pre-flight check to wait/retry for node readiness instead of immediately aborting.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All PTP tests (none ran; job aborted at pre-flight)</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — one bad cluster node. No code regression involved.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.22 (nightly 2026-06-07-152904) — cluster infrastructure issue on bare-metal telco5g pool; unrelated to the OCP version itself.</p>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-06-07-152904</code> (successfully imported; not the cause)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 </div>
 
 <div class="footer">

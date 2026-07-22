@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-telco5g-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-07-22T00:45:19.130977+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-22T22:24:06.677622+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -87,78 +87,6 @@
 </h2>
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CI infra failure — no free telco bare-metal cluster available; commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: CI infrastructure — no free cluster lease</strong> (affects Tests: telco5g-cluster-setup, telco5g-log-gather, telco5g-release-cluster)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">"stderr": "Failed to find a free cluster!",</p>
-<p style="margin:4px 0">"stderr_lines": ["Failed to find a free cluster!"]</p>
-<p style="margin:4px 0">fatal: [XXXXXXXXXXXX]: FAILED! => { "cmd": ["python3", "~/telco5g-lab-deployment/scripts/upstream_cluster_all.py", "--get-cluster", "-e", "upstreambil", "--exclude", "cnfdu1", "--exclude", "cnfdu3"], "rc": 1 }</p>
-<p style="margin:4px 0">Step telco5g-network-flow-matrix-bm-telco5g-cluster-setup failed after 22s.</p>
-<p style="margin:4px 0">Cluster doesn't exist, job failed, no need to run gather</p>
-<p style="margin:4px 0">Cluster doesn't exist, job failed</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code> pre-phase step invoked <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">upstream_cluster_all.py --get-cluster -e upstreambil --exclude cnfdu1 --exclude cnfdu3</code> on the bastion host. The script returned <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"Failed to find a free cluster!"</code> with rc=1, meaning the telco bare-metal cluster pool (upstreambil environment) had no available slot. The commatrix tests never started. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-log-gather</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-release-cluster</code> failures are direct cascades — their scripts explicitly check for cluster existence and exit immediately when none was allocated.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a CI resource contention issue, not a code change.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — cluster pool exhaustion is transient and resolves when other jobs finish and return their leases.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it recurs frequently, investigate whether the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">upstreambil</code> pool size is sufficient for the current job load or whether other long-running jobs are holding clusters.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> telco5g-cluster-setup, telco5g-log-gather, telco5g-release-cluster</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — all three failures are one cascade chain: cluster not provisioned → log-gather and release-cluster both exit immediately with "Cluster doesn't exist."</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 5.0 nightly (5.0.0-0.nightly-2026-06-22-235733) — no OCP-version-specific issue; the cluster was never provisioned so OCP version is irrelevant.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> None — no image pull failures. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release:latest</code> (192 images) imported successfully before failure.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_quota</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CI infra failure — no free telco bare-metal cluster available; commatrix tests never ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: CI infrastructure — no free cluster lease</strong> (affects Tests: telco5g-cluster-setup, telco5g-log-gather, telco5g-release-cluster)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">"stderr": "Failed to find a free cluster!",</p>
-<p style="margin:4px 0">"stderr_lines": ["Failed to find a free cluster!"]</p>
-<p style="margin:4px 0">fatal: [XXXXXXXXXXXX]: FAILED! => { "cmd": ["python3", "~/telco5g-lab-deployment/scripts/upstream_cluster_all.py", "--get-cluster", "-e", "upstreambil", "--exclude", "cnfdu1", "--exclude", "cnfdu3"], "rc": 1 }</p>
-<p style="margin:4px 0">Step telco5g-network-flow-matrix-bm-telco5g-cluster-setup failed after 22s.</p>
-<p style="margin:4px 0">Cluster doesn't exist, job failed, no need to run gather</p>
-<p style="margin:4px 0">Cluster doesn't exist, job failed</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code> pre-phase step invoked <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">upstream_cluster_all.py --get-cluster -e upstreambil --exclude cnfdu1 --exclude cnfdu3</code> on the bastion host. The script returned <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"Failed to find a free cluster!"</code> with rc=1, meaning the telco bare-metal cluster pool (upstreambil environment) had no available slot. The commatrix tests never started. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-log-gather</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-release-cluster</code> failures are direct cascades — their scripts explicitly check for cluster existence and exit immediately when none was allocated.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a CI resource contention issue, not a code change.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — cluster pool exhaustion is transient and resolves when other jobs finish and return their leases.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job. If it recurs frequently, investigate whether the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">upstreambil</code> pool size is sufficient for the current job load or whether other long-running jobs are holding clusters.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> telco5g-cluster-setup, telco5g-log-gather, telco5g-release-cluster</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — all three failures are one cascade chain: cluster not provisioned → log-gather and release-cluster both exit immediately with "Cluster doesn't exist."</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 5.0 nightly (5.0.0-0.nightly-2026-06-22-235733) — no OCP-version-specific issue; the cluster was never provisioned so OCP version is irrelevant.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> None — no image pull failures. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release:latest</code> (192 images) imported successfully before failure.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_quota</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
 <p style="margin:4px 0"><strong>TL;DR:</strong> CI infra failure — no free telco bare-metal cluster available; commatrix tests never ran.</p>
 <br>
