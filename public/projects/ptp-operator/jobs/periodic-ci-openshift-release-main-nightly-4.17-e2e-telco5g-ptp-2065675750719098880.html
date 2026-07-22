@@ -119,43 +119,6 @@
 <br>
 <p style="margin:4px 0"><strong>Affected Images:</strong></p>
 <div style="padding-left:16px;margin:2px 0">&bull; `image-registry.openshift-image-registry.svc:5000/openshift-p</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0">Now I have enough information to write the final analysis.</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[telco5g-ptp-tests] Run multi-stage test e2e-telco5g-ptp - e2e-telco5g-ptp-telco5g-ptp-tests container test</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 497s (8m17s)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Error from server (NotFound): daemonsets.apps "linuxptp-daemon" not found</code> — wait loop timed out after ~90s polling</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test setup script (step <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-ptp-tests</code>) builds the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator</code> image from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.17</code>, deploys the operator to the cluster, then polls for the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code>. The DaemonSet is created by the ptp-operator controller upon reconciling a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpOperatorConfig</code> CR. The operator either was never fully reconciled, the PtpOperatorConfig was not applied in time, or the image build consumed so much of the 8m17s budget that the 90-second DaemonSet wait window started too late for the operator to finish deploying.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — ptp-operator source on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.17</code> was not cloned locally; the linuxptp-daemon HEAD is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3b01872</code> (ART consistency image bump, Jun 8 2026) and cloud-event-proxy HEAD is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3d9234c</code> (PTP repo URL update, Jun 11 2026), neither directly related.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift/release/blob/main/ci-operator/step-registry/telco5g/ptp/tests/telco5g-ptp-tests-commands.sh (step reference: https://steps.ci.openshift.org/reference/telco5g-ptp-tests)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Possibly yes — the failure occurs in the setup/deployment phase, not in actual PTP sync logic; slow image builds or image pulls on the cluster can cause the fixed-deadline DaemonSet readiness check to expire, and this pattern does appear as a recurring flake in periodic telco5g-ptp jobs.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Extend the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet wait timeout in the test step script, or separate the image-build phase from the deployment-wait phase to avoid a single combined deadline running out before the operator can reconcile.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 2: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[unknown] Run multi-stage test test phase</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 497s (8m17s) — same event</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"e2e-telco5g-ptp" pod "e2e-telco5g-ptp-telco5g-ptp-tests" failed after 8m17s (failed containers: test): ContainerFailed one or more containers exited</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> This is the CI framework (ci-operator pod watcher) reporting the same container exit-code-1 failure from Test 1. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test</code> container inside the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">e2e-telco5g-ptp-telco5g-ptp-tests</code> pod exited with code 1 when the DaemonSet wait script returned 1, and ci-operator surfaced it as a second JUnit failure for the "test phase" step. There is no independent root cause — it is a re-reporting of the same event.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Same as Test 1 — Unknown</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> https://github.com/openshift/release/blob/main/ci-operator/jobs/openshift/release/openshift-release-main-periodics.yaml (CI framework, not project source)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — this entry is generated by the CI framework watching the pod; it appears whenever the test container fails and does not represent an independent failure.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> No code fix needed for this entry; fixing Test 1 eliminates this failure automatically.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Failures:</strong> Both failures are two views of the same single root event: the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet was never created in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> before the test container's deadline expired. Test 1 is the shell-script timeout inside the container; Test 2 is the ci-operator pod watcher detecting the resulting exit code 1. There is no second independent failure.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.17: Confirmed affected — evidence from this run (Jun 13 2026), all 6 nodes Ready, DaemonSet never appeared, operator built from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.17</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.18: Also affected per prompt — same job variant on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">nightly-4.18</code>; root cause is expected to be identical (same test step script and same operator deployment flow on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.18</code>)</div>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; `image-registry.openshift-image-registry.svc:5000/openshift-p</div>
 </div>
 
 <div class="footer">

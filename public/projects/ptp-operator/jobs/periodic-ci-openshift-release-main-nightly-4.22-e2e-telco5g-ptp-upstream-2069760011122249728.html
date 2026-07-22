@@ -154,48 +154,6 @@
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0">I have all the evidence needed. Here is the final analysis:</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> GNSS receiver on WPC T-GM lab node cnfdf32 never achieved satellite lock, so ptp4l stayed at clockClass 248 instead of 6.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: GNSS hardware failure on WPC T-GM node (cnfdf32)</strong> (affects all 5 tests)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">[linuxptp-daemon-xt6qs] 2026-06-23T13:01:18Z gnss[..] ens7f0 gnss_status -1 offset -1 s0</p>
-<p style="margin:4px 0">[linuxptp-daemon-xt6qs] 2026-06-23T13:01:36Z ptp4l[..] CLOCK_CLASS_CHANGE 248</p>
-<p style="margin:4px 0">[linuxptp-daemon-xt6qs] 2026-06-23T13:01:37Z event.go:528] dpll State s2, gnss State s0, tsphc state s2, gm state s0</p>
-<p style="margin:4px 0">[linuxptp-daemon-xt6qs] 2026-06-23T13:01:09Z gpsd.go:179] stty: /dev/gnss0: Inappropriate ioctl for device</p>
-<p style="margin:4px 0">[FAILED] could not find regex in log stream for openshift-ptp/linuxptp-daemon-lmlk4 container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The GNSS receiver (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/dev/gnss0</code>) on node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code> reported <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gnss_status -1 offset -1 s0</code> (no fix) from the first ts2phc sample at 13:01:18 through the entire test window. Without GNSS lock (s2), the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gm state</code> stays <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">s0</code>, and ptp4l cannot advance past clockClass 248 to the required clockClass 6 (Locked). The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">stty: Inappropriate ioctl for device</code> at gpsd startup suggests a low-level GNSS device interface fault. In parallel, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> on cnfdf32 cycled through at least 4 pod instances (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4zqzk</code> → <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2l8nt</code> → <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">xt6qs</code> → <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">lmlk4</code>) during the test session, causing the log-stream context deadline on the final pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">lmlk4</code> for the first test.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change involved; this is a physical hardware / lab environment issue.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — GNSS reported <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gnss_status -1</code> for every single second across the full tgm test run; this is a sustained hardware fault, not a transient timing race.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Inspect the GNSS antenna connection and receiver hardware on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code>. Verify <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/dev/gnss0</code> is returning valid NMEA sentences and that the antenna has clear sky visibility. Until fixed, the tgm serial test suite cannot pass on this node.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] PTP e2e tests WPC GM Verification Tests is verifying WPC GM state based on logs [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] PTP e2e tests WPC GM Verification Tests is verifying WPC GM state based on metrics [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] PTP e2e tests WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</code></div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group — all 5 failures share the same first domino: the GNSS receiver on cnfdf32 returned <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gnss_status -1</code> with no satellite fix, preventing ptp4l from ever reaching clockClass 6. The pod restart loop is a secondary symptom on the same node that additionally caused the log-stream deadline error in test 1.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.22 nightly (4.22.0-0.nightly-2026-06-23-025516): all 5 WPC GM tests fail; all other test suites (bc, dualfollower, dualnicbc) passed (142 pass / 0 fail in their suites).</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/linuxptp-daemon:4.22</code> (git commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">502725f392d851a441df7f502b02dcc743207cb4</code>), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cloud-event-proxy:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator:4.22</code> — all deployed successfully; the failure is not in these images.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 </div>
 
 <div class="footer">
