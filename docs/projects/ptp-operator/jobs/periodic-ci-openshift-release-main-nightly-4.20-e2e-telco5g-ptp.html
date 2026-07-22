@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.20-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-07-21T03:39:42.280000+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-07-22T08:27:17.558876+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -84,7 +84,38 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Telco5g bare-metal cluster install failed; abort file detected, kubeconfig never produced, PTP tests never ran.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: OCP cluster installation failure on bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code></strong> (affects: all tests — none ran)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">fatal: [10.8.34.218]: FAILED! => {"path": "/home/kni/abort", "exists": true, "failed_when_result": true}</p>
+<p style="margin:4px 0">VERSION   AVAILABLE   PROGRESSING   STATUS</p>
+<p style="margin:4px 0">False       True          Unable to apply 5.0.0-0.nightly-2026-07-19-060131: some cluster operators are not available</p>
+<p style="margin:4px 0">ptpcimno-worker-0   provisioning   ...  (still provisioning after 45m)</p>
+<p style="margin:4px 0">ERROR: kubeconfig not found at /tmp/secret/kubeconfig after fetch-kubeconfig</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The bare-metal telco5g cluster (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code>) failed to complete OCP installation before the CI job ran. After 45+ minutes, worker nodes were still in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">provisioning</code> state, cluster operators were unavailable (stuck on nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">5.0.0-0.nightly-2026-07-19-060131</code>), and the cluster setup script wrote an <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> sentinel file. The Ansible playbook <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> task "Check if abort file exists" (line 12) detected that file and failed immediately. No kubeconfig was produced, so the entire test suite was skipped — the first domino is the failed worker BMH provisioning on the physical lab host.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infra/lab environment issue, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — bare-metal lab provisioning failures are transient; the abort mechanism is a safety guard against a stuck prior run or hardware/network issue during BMH provisioning.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job; if it fails repeatedly, check the telco5g lab host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.8.34.218</code> / cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code> for stuck BMH provisioning, stale <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> files, or ironic/network issues preventing worker provisioning.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All PTP tests (none executed — job aborted in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pre</code> cluster-setup phase)</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group; there is no second root cause. The abort file failure is both the first and only domino.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.20 (nightly 2026-07-20-153735): cluster install failed on bare-metal before any PTP tests could run.</p>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> No project images failed to build or pull; the OCP release image <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.20.0-0.nightly-2026-07-20-153735</code> was imported successfully (189 images). The failure is in the physical lab cluster install, not in container images.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 </div>
 
 <div class="footer">
