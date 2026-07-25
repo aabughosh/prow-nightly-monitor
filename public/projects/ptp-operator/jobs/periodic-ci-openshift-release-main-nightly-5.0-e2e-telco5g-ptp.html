@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-07-22T22:58:49.500291+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-07-25T06:09:11.475829+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2079718655444127744" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2080443423365533696" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -62,19 +62,19 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">176m</div>
+    <div class="info-value">4m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
+    <div class="info-value"><span class="badge" style="background:#f85149">TEST</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">MEDIUM</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-07-22T00:01</div>
+    <div class="info-value" style="font-size:12px">2026-07-24T00:01</div>
   </div>
 </div>
 
@@ -84,49 +84,38 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <p style="margin:4px 0">Now I have everything I need.</p>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CI builder image <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code> was missing, preventing ptp-operator image build and deployment.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Telco5g bare-metal cluster install failed; abort file detected, kubeconfig never produced, PTP tests never ran.</p>
 <br>
 <p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: CI builder image unavailable (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">manifest unknown</code>)</strong> (affects: deployment setup / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet wait timeout)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: OCP cluster installation failure on bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code></strong> (affects: all tests — none ran)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">[1/2] STEP 1/6: FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17 AS builder</p>
-<p style="margin:4px 0">Trying to pull registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17...</p>
-<p style="margin:4px 0">Error: creating build container: initializing source docker://registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17: reading manifest rhel-9-golang-1.22-openshift-4.17 in registry.ci.openshift.org/ocp/builder: manifest unknown</p>
-<p style="margin:4px 0">make: *** [Makefile:122: docker-build] Error 125</p>
-<p style="margin:4px 0">+ podman push image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17 --tls-verify=false</p>
-<p style="margin:4px 0">Error: image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17: image not known</p>
+<p style="margin:4px 0">fatal: [10.8.34.218]: FAILED! => {"path": "/home/kni/abort", "exists": true, "failed_when_result": true}</p>
+<p style="margin:4px 0">VERSION   AVAILABLE   PROGRESSING   STATUS</p>
+<p style="margin:4px 0">False       True          Unable to apply 5.0.0-0.nightly-2026-07-19-060131: some cluster operators are not available</p>
+<p style="margin:4px 0">ptpcimno-worker-0   provisioning   ...  (still provisioning after 45m)</p>
+<p style="margin:4px 0">ERROR: kubeconfig not found at /tmp/secret/kubeconfig after fetch-kubeconfig</p>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Then operator is deployed with the unpushed image → DaemonSet never created:</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Error from server (NotFound): daemonsets.apps "linuxptp-daemon" not found</p>
-<p style="margin:4px 0">+ '[' 1781942433 -gt 1781942431 ']'</p>
-<p style="margin:4px 0">+ return 1</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator</code> Dockerfile (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code>) references a CI builder image that no longer exists at registry.ci.openshift.org (manifest unknown). The build pod's script uses <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set +xe</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set -x</code> (without restoring <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">-e</code>), so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">make docker-build</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman push</code> both fail silently and the pod exits 0. The outer deploy script then runs <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">make deploy</code> pointing at an image that was never pushed; the ptp-operator pod cannot start, so it never reconciles the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpOperatorConfig</code> and the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet is never created. The 400-second wait times out and the step exits 1.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — the builder image <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rhel-9-golang-1.22-openshift-4.17</code> was likely pruned or never promoted to registry.ci for this nightly; no source code change is responsible.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — the builder image tag is deterministically absent; every run on 4.17 (and likely 4.18 with its equivalent tag) will reproduce this until the image is re-published or the Dockerfile is updated.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-publish or pin to an available builder image in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator</code> Dockerfile (e.g. a quay.io mirror or a tag that is known to be retained). Additionally, restore <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set -e</code> after the credential-hiding <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set +e</code> block so that image build failures are not silently swallowed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">e2e-telco5g-ptp-telco5g-ptp-tests</code> (the sole test step; no individual test names extracted because deployment never completed)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The bare-metal telco5g cluster (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code>) failed to complete OCP installation before the CI job ran. After 45+ minutes, worker nodes were still in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">provisioning</code> state, cluster operators were unavailable (stuck on nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">5.0.0-0.nightly-2026-07-19-060131</code>), and the cluster setup script wrote an <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> sentinel file. The Ansible playbook <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> task "Check if abort file exists" (line 12) detected that file and failed immediately. No kubeconfig was produced, so the entire test suite was skipped — the first domino is the failed worker BMH provisioning on the physical lab host.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infra/lab environment issue, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — bare-metal lab provisioning failures are transient; the abort mechanism is a safety guard against a stuck prior run or hardware/network issue during BMH provisioning.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Retry the job; if it fails repeatedly, check the telco5g lab host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.8.34.218</code> / cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code> for stuck BMH provisioning, stale <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> files, or ironic/network issues preventing worker provisioning.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All PTP tests (none executed — job aborted in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pre</code> cluster-setup phase)</div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — the missing CI builder image cascades: build fails → image not pushed → operator pod cannot start → DaemonSet not created → timeout.</p>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group; there is no second root cause. The abort file failure is both the first and only domino.</p>
 <br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.17: confirmed — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code> returns <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">manifest unknown</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; 4.18: same root cause expected — the equivalent tag <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rhel-9-golang-1.22-openshift-4.18</code> is likely also absent; no direct evidence in this run but the failure pattern is identical</div>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.20 (nightly 2026-07-20-153735): cluster install failed on bare-metal before any PTP tests could run.</p>
 <br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code> (missing); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17</code> (never built/pushed)</p>
+<p style="margin:4px 0"><strong>Affected Images:</strong> No project images failed to build or pull; the OCP release image <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.20.0-0.nightly-2026-07-20-153735</code> was imported successfully (189 images). The failure is in the physical lab cluster install, not in container images.</p>
 <br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code></p>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
 <br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH — the entire ptp-operator deployment is blocked on every nightly run until the builder image is restored or the Dockerfile is fixed.</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 </div>
 
 <div class="footer">
