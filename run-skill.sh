@@ -141,8 +141,9 @@ PYEOF
         if "$CURSOR_CLI" agent status >> "$LOG_FILE" 2>&1; then
             log "  Running AI analysis for $PROJECT_NAME..."
             cd "$REPO_DIR"
-            if ! python3 "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
-                log "  WARNING: inject_claude.py had errors for $PROJECT_NAME"
+            # Timeout: max 90 minutes for AI analysis per project
+            if ! timeout 5400 python3 "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
+                log "  WARNING: inject_claude.py had errors or timed out for $PROJECT_NAME"
             fi
 
             log "  Regenerating dashboard with AI analysis..."
@@ -260,7 +261,7 @@ if [ -n "$GITLAB_REPO" ]; then
     log "Pushing to GitLab Pages..."
     rm -rf "$GITLAB_DIR" 2>/dev/null
     if git clone --depth=1 "$GITLAB_REPO" "$GITLAB_DIR" >> "$LOG_FILE" 2>&1; then
-        rsync -a --delete --exclude='.git' "$REPO_DIR/public/" "$GITLAB_DIR/public/"
+        rsync -a --delete --exclude='.git' --exclude='projects/commatrix' --exclude='cursor' "$REPO_DIR/public/" "$GITLAB_DIR/public/"
         cp "$REPO_DIR/.gitlab-ci.yml" "$GITLAB_DIR/.gitlab-ci.yml" 2>/dev/null || true
         # Sync skills, scripts, and corrections for team collaboration
         mkdir -p "$GITLAB_DIR/.cursor/rules" "$GITLAB_DIR/scripts"

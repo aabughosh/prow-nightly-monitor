@@ -38,7 +38,7 @@ OUTPUT_DIR = os.environ.get("OUTPUT_DIR", f"{REPO_DIR}/public")
 RESULTS = os.path.join(OUTPUT_DIR, "results.json")
 
 MAX_RESULTS_SIZE = 50 * 1024 * 1024
-AGENT_TIMEOUT = 1800  # 30 minutes per issue
+AGENT_TIMEOUT = 600  # 10 minutes per suite/issue — enough for thorough analysis
 MIN_VERSION = os.environ.get("MIN_VERSION", "")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/cursor/")
@@ -61,7 +61,7 @@ def check_auth() -> bool:
     return False
 
 
-def run_cursor_agent(prompt: str, cwd: str = INVESTIGATE_DIR) -> str:
+def run_cursor_agent(prompt: str, cwd: str = INVESTIGATE_DIR, retries: int = 1) -> str:
     """Run Cursor CLI agent with full tool access. Returns the response text.
 
     Writes the prompt to ci-evidence/prompt.txt and tells the agent to read it,
@@ -79,37 +79,49 @@ def run_cursor_agent(prompt: str, cwd: str = INVESTIGATE_DIR) -> str:
         "Follow them exactly. Write your final analysis to stdout."
     )
 
-    try:
-        proc = subprocess.Popen(
-            [CURSOR_CLI, "agent", "--trust", "--yolo", "--print", short_prompt],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            cwd=cwd, preexec_fn=os.setsid,
-        )
+    for attempt in range(retries + 1):
         try:
-            stdout, stderr = proc.communicate(timeout=AGENT_TIMEOUT)
-        except subprocess.TimeoutExpired:
+            proc = subprocess.Popen(
+                [CURSOR_CLI, "agent", "--trust", "--yolo", "--print", short_prompt],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                cwd=cwd, preexec_fn=os.setsid,
+            )
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                proc.wait(timeout=5)
-            except Exception:
+                stdout, stderr = proc.communicate(timeout=AGENT_TIMEOUT)
+            except subprocess.TimeoutExpired:
                 try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                    proc.wait(timeout=5)
                 except Exception:
-                    pass
-            print(f"    Agent timed out after {AGENT_TIMEOUT}s")
-            return ""
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except Exception:
+                        pass
+                print(f"    Agent timed out after {AGENT_TIMEOUT}s")
+                if attempt < retries:
+                    print(f"    Retrying (attempt {attempt + 2})...")
+                    continue
+                return ""
 
-        if proc.returncode != 0:
-            print(f"    Agent exit code {proc.returncode}")
-            if stderr:
-                print(f"    stderr: {stderr[:500]}")
-            if stdout:
-                return _dedup_output(stdout.strip())
-            return ""
+            if proc.returncode != 0:
+                print(f"    Agent exit code {proc.returncode}")
+                if stderr:
+                    print(f"    stderr: {stderr[:500]}")
+                if stdout and stdout.strip():
+                    return _dedup_output(stdout.strip())
+                if attempt < retries:
+                    print(f"    Retrying (attempt {attempt + 2})...")
+                    import time; time.sleep(5)
+                    continue
+                return ""
 
-        return _dedup_output(stdout.strip()) if stdout.strip() else ""
-    except Exception as e:
-        print(f"    Agent error: {e}")
+            return _dedup_output(stdout.strip()) if stdout.strip() else ""
+        except Exception as e:
+            print(f"    Agent error: {e}")
+            if attempt < retries:
+                print(f"    Retrying (attempt {attempt + 2})...")
+                import time; time.sleep(5)
+                continue
     return ""
 
 
