@@ -38,7 +38,7 @@ OUTPUT_DIR = os.environ.get("OUTPUT_DIR", f"{REPO_DIR}/public")
 RESULTS = os.path.join(OUTPUT_DIR, "results.json")
 
 MAX_RESULTS_SIZE = 50 * 1024 * 1024
-AGENT_TIMEOUT = 600  # 10 minutes per suite/issue — enough for thorough analysis
+AGENT_TIMEOUT = 1200  # 20 minutes per suite/issue — enough for thorough analysis
 MIN_VERSION = os.environ.get("MIN_VERSION", "")
 SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL", "")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "https://aabughosh.github.io/prow-nightly-monitor/cursor/")
