@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-metal-ovn-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-07-24T00:22:15.270327+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-07-26T05:05:54.541722+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2080277111074983936" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2081001855986438144" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -62,7 +62,7 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">114m</div>
+    <div class="info-value">111m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
@@ -74,7 +74,7 @@
   </div>
   <div class="info-card">
     <div class="info-label">Started</div>
-    <div class="info-value" style="font-size:12px">2026-07-23T13:00</div>
+    <div class="info-value" style="font-size:12px">2026-07-25T13:01</div>
   </div>
 </div>
 
@@ -84,41 +84,66 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <p style="margin:4px 0">Now I have enough to write the complete analysis.</p>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Crio ephemeral ports on 5 nodes fail the EndpointSlice check because dynamic-range filtering was removed.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Six crio ephemeral TCP ports have no EndpointSlice because the Linux dynamic-range filter was removed, failing the matrix-vs-ss validation test.</p>
 <br>
 <p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: crio ephemeral ports have no EndpointSlice and are no longer filtered</strong> (affects Test: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: crio ephemeral ports — no EndpointSlice filter</strong> (affects Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code>)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
 <p style="margin:4px 0">[FAILED] the following ports are used but don't have an endpointslice:</p>
-<p style="margin:4px 0">Ingress,TCP,44829,,crio,,,master,false</p>
-<p style="margin:4px 0">Ingress,TCP,45195,,crio,,,master,false</p>
-<p style="margin:4px 0">Ingress,TCP,45913,,crio,,,master,false</p>
-<p style="margin:4px 0">Ingress,TCP,37363,,crio,,,worker,false</p>
-<p style="margin:4px 0">Ingress,TCP,39509,,crio,,,worker,false</p>
-<p style="margin:4px 0">Ingress,TCP,40519,,crio,,,worker,false</p>
+<p style="margin:4px 0">Ingress,TCP,36231,,crio,,,master,false</p>
+<p style="margin:4px 0">Ingress,TCP,37273,,crio,,,master,false</p>
+<p style="margin:4px 0">Ingress,TCP,38679,,crio,,,master,false</p>
+<p style="margin:4px 0">Ingress,TCP,34333,,crio,,,worker,false</p>
+<p style="margin:4px 0">Ingress,TCP,39625,,crio,,,worker,false</p>
+<p style="margin:4px 0">Ingress,TCP,42251,,crio,,,worker,false</p>
+<p style="margin:4px 0">In [It] at: /tmp/secret/commatrix/test/e2e/validation_test.go:161</p>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">raw-ss-tcp</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LISTEN 0 4096 192.168.111.20:44829 0.0.0.0:* users:(("crio",pid=4426,fd=12))</code> — confirmed as crio process on node IP, not a Kubernetes Service, so no EndpointSlice exists.</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> (PR #400, "Remove Linux Dynamic ranges from generated communication matrix", Feb 5 2026) stripped <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DynamicRanges</code> from the generated commatrix. The test at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:159</code> calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)</code> — but <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code> is now empty, so the filter is a no-op. Crio binds to random ephemeral ports (32768–60999) on each node IP, which previously fell inside the dynamic range and were silently filtered. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> at line 157 also does not handle <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> (only <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>). Both filters now fail to exclude these ports, exposing the regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> / PR #400 — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">https://github.com/openshift-kni/commatrix/pull/400</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — crio always binds ephemeral ports on startup; the specific port numbers vary per run but the failure reproduces on every job.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"crio"</code> to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> allowlist in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go:221–239</code>, or restore ephemeral-range filtering specifically for the EndpointSlice check (separate from the matrix generation path). Alternatively, investigate whether crio's gRPC stream-server ports should carry a static <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ComDetails</code> entry so they match an EndpointSlice.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:141</code>)</div>
+<p style="margin:4px 0">Raw ss confirms each is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> on a node-specific ephemeral port (32768–60999 Linux range), e.g.:</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">LISTEN 0 4096  192.168.111.21:36231 0.0.0.0:* users:(("crio",pid=4446,fd=11))</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> opens one ephemeral TCP port per node (health/gRPC endpoint, 32768–60999 range) with no Kubernetes EndpointSlice. Previously these ports were silently excluded because the generated commatrix included the Linux dynamic range, causing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:159</code>) to drop them. Commit <strong><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code></strong> ("Remove Linux Dynamic ranges from generated communication matrix") removed those ranges from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code>, so the filter now passes crio ports through. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:157</code>) only skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code> — not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> — so all 6 ports reach the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail()</code> at line 161.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> / PR #400 ("Remove Linux Dynamic ranges from generated communication matrix"). Branch-awareness note: the build log confirms the job cloned and ran from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Switched to a new branch 'release-5.0'</code>), so this change is present on the production branch.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — crio always opens exactly one ephemeral port per node; the dynamic-range removal makes this a deterministic failure on every run.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> allowlist in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go</code>, or introduce a separate "exclude-from-endpointslice-check" dynamic range distinct from the firewall range so crio ephemeral ports are skipped without re-opening the broad Linux range for firewall purposes.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:141–163</code>)</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 2: Stale documented matrix entries</strong> (generates warnings; not the direct FAIL trigger)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">level=warning msg="the following ports are not used: \n</p>
+<p style="margin:4px 0">Ingress,TCP,6180,openshift-machine-api,metal3-state,metal3,metal3-httpd,master,false</p>
+<p style="margin:4px 0">Ingress,TCP,6183 ... Ingress,TCP,6385 ... Ingress,TCP,9443,openshift-cloud-controller-manager-operator,...</p>
+<p style="margin:4px 0">Ingress,UDP,68,,NetworkManager,,,master,false</p>
+<p style="margin:4px 0">Ingress,UDP,68,,NetworkManager,,,worker,false"</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">And from test 2:</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">level=warning msg="the following ports are documented but are not used:</p>
+<p style="margin:4px 0">Ingress,TCP,6388,openshift-machine-api,metal3-state,metal3,metal3-httpd,master,false</p>
+<p style="margin:4px 0">Ingress,TCP,8798,openshift-machine-config-operator,machine-config-daemon,...,master,false</p>
+<p style="margin:4px 0">Ingress,TCP,9192,openshift-cluster-machine-approver,machine-approver,...,master,false</p>
+<p style="margin:4px 0">Ingress,TCP,8798,...,worker,false"</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> 10 ports in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">docs/stable/raw/bm.csv</code> no longer exist on OCP 5.0 nodes: metal3 ports 6180/6183/6385/6388 are absent (metal3-httpd configuration changed), machine-config-daemon port 8798 moved to loopback-only (ss shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">127.0.0.1:8797</code>), machine-approver kube-rbac-proxy port 9192 was dropped, cloud-controller-manager 9443 no longer open, and NetworkManager UDP 68 is not showing in ss. These are component-side changes in OCP 5.0 not yet reflected in the matrix docs.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown (upstream OCP component changes in 5.0, not in commatrix repo).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — these ports are consistently absent from ss output; the cluster configuration changed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Remove the 10 stale entries from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">docs/stable/raw/bm.csv</code> (and any derived unique/platform-specific CSVs). Confirm with the respective OCP component teams (machine-api/metal3, MCO, cluster-machine-approver, cloud-controller-manager) that the port removals are intentional for 5.0.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation generated communication matrix should be equal to documented communication matrix</code> (warning only, passed) and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code> (warning only for this group; the FAIL is Group 1).</div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause group. The 7 stale matrix entries (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">6388</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">8798</code> ×2, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9192</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9443</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">UDP/68</code> ×2) only produce log warnings (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">logrus.Warningf</code> at line 154) and do not contribute to the test failure; they represent documentation drift independent of the crio regression.</p>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Independent root causes — Group 1 is a test-logic regression (missing filter after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code>), Group 2 is a documentation drift as OCP 5.0 components changed their port bindings. Group 2 does not cause the test FAIL but will eventually cause a FAIL in the "equal to documented matrix" test if thresholds are tightened. No common upstream cause.</p>
 <br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 5.0 (nightly 2026-06-22-235733) — failure is deterministic on this version due to missing dynamic-range filtering for crio ephemeral ports.</p>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 5.0 (nightly, bare-metal, OVN): both issues manifest together; no data for other versions.</p>
 <br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (test runner), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-kni/test:dev-scripts</code> (cluster setup); no image pull errors — all images pulled successfully.</p>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix</code> e2e test binary (cloned from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-kni/commatrix</code> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>); no container image pull failures detected.</p>
 <br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_regression</code></p>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix_mismatch</code></p>
 <br>
 <p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
 </div>
