@@ -142,7 +142,7 @@ PYEOF
             log "  Running AI analysis for $PROJECT_NAME..."
             cd "$REPO_DIR"
             # Timeout: max 90 minutes for AI analysis per project
-            if ! timeout 5400 python3 "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
+            if ! gtimeout 5400 python3 "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
                 log "  WARNING: inject_claude.py had errors or timed out for $PROJECT_NAME"
             fi
 
