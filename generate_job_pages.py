@@ -514,6 +514,45 @@ def _generate_job_files(
     return job_pages
 
 
+def _backfill_ai_from_fingerprints(jobs: list[dict]) -> int:
+    """Fill missing ai_summary from fingerprint DB for known recurring issues."""
+    fp_path = PUBLIC_DIR / "fingerprints.json"
+    if not fp_path.exists():
+        return 0
+    try:
+        fp_data = json.loads(fp_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return 0
+
+    fp_issues = fp_data.get("issues", {})
+    if not fp_issues:
+        return 0
+
+    filled = 0
+    for job in jobs:
+        if job.get("state") != "failure":
+            continue
+        analysis = job.get("analysis", {})
+        if analysis.get("ai_summary"):
+            continue
+        # Match by failed test names against fingerprint titles
+        failed_tests = analysis.get("investigation", {}).get("failed_tests", [])
+        if not failed_tests:
+            failed_tests = analysis.get("junit_failures", [])
+        for t in failed_tests:
+            tname = t.get("name", "")
+            if not tname:
+                continue
+            for iss in fp_issues.values():
+                if iss.get("title", "") == tname and iss.get("ai_summary_short"):
+                    analysis["ai_summary"] = iss["ai_summary_short"][:16000]
+                    filled += 1
+                    break
+            if analysis.get("ai_summary"):
+                break
+    return filled
+
+
 def process_project(project_name: str) -> int:
     """Generate per-job pages for a single project. Returns count of pages generated."""
     results_path = PUBLIC_DIR / "projects" / project_name / "results.json"
@@ -543,6 +582,11 @@ def process_project(project_name: str) -> int:
                         seen_builds.add(bid)
             except (json.JSONDecodeError, OSError):
                 pass
+
+    # Auto-backfill missing AI analysis from fingerprint DB
+    backfilled = _backfill_ai_from_fingerprints(all_jobs)
+    if backfilled:
+        print(f"  Backfilled AI analysis for {backfilled} jobs from fingerprint DB")
 
     job_pages = _generate_job_files(all_jobs, project_name, generated_at, jobs_dir)
 

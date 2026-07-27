@@ -3110,7 +3110,15 @@ def _render_only():
         "jobs": data["jobs"],
     }
     results_path.write_text(json.dumps(data_out, indent=2))
-    (run_dir / "results.json").write_text(json.dumps(data_out, indent=2))
+    # Per-run results: only include jobs that completed on this date
+    run_jobs = [j for j in data["jobs"]
+                if j.get("start_time", "")[:10] == today
+                and j.get("state") in ("failure", "success", "error")]
+    run_data_out = dict(data_out, jobs=run_jobs,
+                        total_jobs=len(run_jobs),
+                        passed=sum(1 for j in run_jobs if j.get("state") == "success"),
+                        failed=sum(1 for j in run_jobs if j.get("state") in ("failure", "error")))
+    (run_dir / "results.json").write_text(json.dumps(run_data_out, indent=2))
     _generate_runs_index(OUTPUT_DIR)
     _generate_issues_page(OUTPUT_DIR)
 
@@ -3331,29 +3339,38 @@ def main():
     html_path.write_text(html)
     log.info("Latest dashboard written to %s", html_path)
 
+    all_job_entries = [
+        {
+            "name": j["name"],
+            "version": extract_version(j["name"]),
+            "state": j["state"],
+            "start_time": j.get("start_time", ""),
+            "completion_time": j.get("completion_time", ""),
+            "duration": compute_duration(j),
+            "url": j["url"],
+            "analysis": analyses.get(j["name"], {}),
+        }
+        for j in jobs
+    ]
     results = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "job_filter": JOB_FILTER,
         "total_jobs": len(jobs),
         "passed": sum(1 for j in jobs if j["state"] == "success"),
         "failed": sum(1 for j in jobs if j["state"] in ("failure", "error")),
-        "jobs": [
-            {
-                "name": j["name"],
-                "version": extract_version(j["name"]),
-                "state": j["state"],
-                "start_time": j.get("start_time", ""),
-                "completion_time": j.get("completion_time", ""),
-                "duration": compute_duration(j),
-                "url": j["url"],
-                "analysis": analyses.get(j["name"], {}),
-            }
-            for j in jobs
-        ],
+        "jobs": all_job_entries,
     }
     results_path = OUTPUT_DIR / "results.json"
     results_path.write_text(json.dumps(results, indent=2))
-    (run_dir / "results.json").write_text(json.dumps(results, indent=2))
+    # Per-run results: only include jobs that completed on this date
+    run_jobs = [j for j in all_job_entries
+                if j.get("start_time", "")[:10] == today
+                and j.get("state") in ("failure", "success", "error")]
+    run_results = dict(results, jobs=run_jobs,
+                       total_jobs=len(run_jobs),
+                       passed=sum(1 for j in run_jobs if j.get("state") == "success"),
+                       failed=sum(1 for j in run_jobs if j.get("state") in ("failure", "error")))
+    (run_dir / "results.json").write_text(json.dumps(run_results, indent=2))
     log.info("Results JSON written to %s", results_path)
 
     usage = get_token_usage()
