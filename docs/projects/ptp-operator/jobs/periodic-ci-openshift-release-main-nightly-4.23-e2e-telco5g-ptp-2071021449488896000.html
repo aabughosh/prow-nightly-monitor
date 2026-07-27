@@ -84,87 +84,98 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+  <p style="margin:4px 0"><strong>TL;DR:</strong> WPC T-GM grandmaster never achieved GNSS lock (class 248), collapsing all 4 suites; pmc argument bug added 5 independent failures.</p>
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> WPC T-GM node cnfdf32 DPLL never entered HOLDOVER (clock class 7) after GNSS coldboot.</p>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
 <p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: DPLL fails to reach/maintain clock class 7 (HOLDOVER) after GNSS loss</strong> (affects Tests: both)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 1 — DPLL stuck at FREERUN for full 200s after GNSS disabled:</h2>
-<p style="margin:4px 0">Matched line: [ptp4l 248]  → GNSS disabled → Clock class not yet 7, retrying... (×32+)</p>
-<p style="margin:4px 0">→ GNSS enabled → [FAILED] Timed out waiting for clock class 7 (ptp.go:3802, 3m20s elapsed)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>20/25 failures — GM in FREERUN (clock class 248), cascading to all BC/slave/follower sync tests</strong></div>
+<p style="margin:4px 0">Affects: tgm (5/5), dualnicbcha (~6/8), dualnicbc (~6/9), dualfollower (3/3). The WPC T-GM node hosting <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-7g7z8</code> never transitioned out of FREERUN during the run. With no locked GM advertising Announce messages, the entire downstream chain — BC → dualnicbc → dualnicbcha → dualfollower slaves — could not lock. The tgm log stream stayed open but hit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> after 340 s without ever emitting a LOCKED event; all four state-based tgm tests timed out on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Expected ptp4l clock class to eventually be 6 for GM</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px"><bool>: false</code>. The dualfollower node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf31</code> exhibits both missing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift_ptp_clock_state</code> metric for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ens2f0np0</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ens2f3np3</code> stuck in LISTENING — consistent with no upstream Announce to trigger SLAVE election.</p>
 <br>
-<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 2 — class 7 transient, immediately overtaken by 248:</h2>
-<p style="margin:4px 0">PtpClockClassChange Event recieved  map[metric:6], map[metric:7], map[metric:248]</p>
-<p style="margin:4px 0">GnssStateChange Event recieved  map[metric:0 notification:FAILURE-NOFIX]</p>
-<p style="margin:4px 0">→ STEP: Verifying ClockClass value to 7 → [FAILED] expected a metric [7.000000] but got map[metric:248] (ptp.go:3898)</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> After GNSS signal loss on node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code>, the WPC hardware DPLL transitions directly from LOCKED to FREERUN (class 248) without sustaining HOLDOVER (class 7). In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/event/event.go</code>, clock class 7 requires <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dpllState == PTP_HOLDOVER</code>; since the DPLL reports FREERUN immediately, that path is never taken. In test 2, HOLDOVER was briefly entered (class 7 visible in the event stream) but exhausted faster than the metric-polling step could verify it — confirming the DPLL holdover window on this hardware is abnormally short.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — the upstream sync PR #613 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0459bc0</code>, CNF-24996/OCPBUGS-90708, merged 2026-06-23) was an upstream sync to the main branch and does not directly affect the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> branch under test; no code regression identified.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — test 2 shows holdover <em>does</em> occur but transiently; this is a hardware-timing sensitivity, consistent with intermittent failures when DPLL holdover duration is at the margins.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Investigate DPLL holdover configuration on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code> (check <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LocalHoldoverTimeout</code> configured for the WPC hardware); if hardware is degraded or misconfigured for holdover, reprovisioning or reconfiguring the node should resolve it. Retry the job to confirm transience.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>5/25 failures — pmc invoked with split arguments; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GET PARENT_DATA_SET</code> rejected as two bad commands</strong></div>
+<p style="margin:4px 0">Affects: dualnicbc ("Slave can sync to master", "Downstream slave can sync to BC master", "Can provide a profile with higher priority") and dualnicbcha ("Slave can sync to master", "Downstream slave can sync to BC master"). <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pmc</code> is called with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GET</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PARENT_DATA_SET</code> as separate argv elements; the binary responds <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bad command: GET</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bad command: PARENT_DATA_SET</code>. Identical verbatim error appears in both suites, ruling out a flake. Likely triggered by the RHCOS 10.2 pmc binary (linuxptp ≥ 4.3, el10_2) changing batch-mode argument tokenization, or the test helper failing to quote the combined string. Other pmc queries (e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GET DEFAULT_DATA_SET</code>) still succeed, confirming the socket and ptp4l process are reachable.</p>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group — both failures share the same root cause: DPLL on cnfdf32 not sustaining HOLDOVER state long enough after GNSS loss. Test 1 never sees class 7 at all; test 2 sees it transiently. Both are direct manifestations of the same abnormally short holdover window on this hardware.</p>
+<p style="margin:4px 0"><strong>Cross-Suite Patterns:</strong></p>
 <br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.22 (nightly-2026-06-23-164229) — both failures in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial]</code> suite only; all other suites (bc, dualfollower, dualnicbc) show 0 failures and passed cleanly.</p>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">dualfollower</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">dualnicbc</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">dualnicbcha</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">tgm</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">GM FREERUN / GNSS never locked</td><td style="border:1px solid #30363d;padding:6px 8px">All 3</td><td style="border:1px solid #30363d;padding:6px 8px">~6</td><td style="border:1px solid #30363d;padding:6px 8px">~6</td><td style="border:1px solid #30363d;padding:6px 8px">All 5</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">pmc split-arg bug</td><td style="border:1px solid #30363d;padding:6px 8px">—</td><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">—</td></tr>
+</table>
 <br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/linuxptp-daemon:4.22</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/cloud-event-proxy:4.22</code></p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_flake</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<div style="padding-left:16px;margin:2px 0">&bull; The GM FREERUN failure is <strong>shared across all 4 suites</strong> — it is the single largest driver and the only failure in tgm and dualfollower.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; The pmc split-arg bug is <strong>shared between dualnicbc and dualnicbcha only</strong> (suites that exercise <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PARENT_DATA_SET</code> queries via the BC node).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; No failures are genuinely suite-specific; the dualfollower and tgm failures are pure downstream consequences of the shared GM not locking.</div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
+<p style="margin:4px 0"><strong>Actionable Recommendations:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Re-run the job and inspect GM GNSS hardware first.</strong> Confirm whether the WPC T-GM node achieves GNSS/DPLL lock in a fresh run. If it fails again, check the GNSS antenna cable, receiver status, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ts2phc</code> DPLL netlink events on that node. This single fix would resolve ~20/25 failures.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Fix pmc invocation to pass <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GET PARENT_DATA_SET</code> as a single quoted argument.</strong> In both the test helper (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator-conformance-test</code>) and any <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">exec.Command</code> / shell call in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code>, ensure the action+management-ID are passed as one argument string (e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">exec.Command("pmc", ..., "GET PARENT_DATA_SET")</code>), or switch to the interactive <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">RunPMCExpGetParentDS</code> path with lowercase command (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"get PARENT_DATA_SET"</code>) to match the RHCOS 10.2 pmc binary's expected input. This resolves the remaining 5 failures.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">3. <strong>Add a pre-flight GM-lock gate to the CI job.</strong> Before running any BC/slave/follower suite, assert that the T-GM node has clock class ≤ 7 (LOCKED); fail fast with a clear infra error rather than letting all 4 suites time out. This would surface the GNSS issue immediately and save ~30 min of wasted CI time per run.</div>
+<br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> WPC T-GM node (cnfdf32) had no GNSS lock throughout the run, blocking all 5 WPC GM tests.</p>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_flake</code> (dominant: GNSS hardware failure is a known lab environmental flake) + <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_regression</code> (secondary: pmc argument bug introduced with RHCOS 10.2 / linuxptp upstream sync <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0459bc0</code>)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> CRITICAL — 25/25 failures, 4/4 suites completely down in a nightly periodic job.</p>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Per-Suite Details</h2>
+<br>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">dualfollower</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualfollower (3 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> All 3 dualfollower ClockSync tests timed out waiting for node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf31</code>'s follower interfaces to reach LOCKED state because the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift_ptp_clock_state</code> metric for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ens2f0np0</code> was never emitted by linuxptp-daemon, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ens2f3np3</code> was stuck in LISTENING rather than SLAVE role.</p>
 <br>
 <p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: GNSS signal unavailable on WPC T-GM node</strong> (affects all 5 failing tests)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Slave node never locked — missing clock_state metric and port stuck in LISTENING</strong> (affects: all 3 tests)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">gnss[1782614238]:[ts2phc.0.config] ens7f0 gnss_status -1 offset -1 s0</p>
-<p style="margin:4px 0">GM[1782614238]:[ts2phc.0.config] ens7f0 T-GM-STATUS s0</p>
-<p style="margin:4px 0">event.go:528] dpll State -2, gnss State s0, tsphc state s0, gm state s0</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Tests 1 & 2 — identical error</h2>
+<p style="margin:4px 0">no Follower port in expected LOCKED state for ptpconfig test-slave1</p>
+<p style="margin:4px 0">(node=cnfdf31.telco5gran.eng.rdu2.redhat.com, label="ptp/clock-under-test",</p>
+<p style="margin:4px 0">slaveIfs=[ens2f0np0 ens2f3np3]). Per-interface results:</p>
+<p style="margin:4px 0">ens2f0np0: clock state metric error: metric: openshift_ptp_clock_state,</p>
+<p style="margin:4px 0">nodeName: cnfdf31.telco5gran.eng.rdu2.redhat.com, aIf: ens2f0np0 not found,</p>
+<p style="margin:4px 0">available op[tions: ...]</p>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">(repeats every second from 02:37:18Z through 03:07:42Z — the entire TGM test window)</p>
-<br>
-<p style="margin:4px 0">First failing test: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">could not find regex in log stream for openshift-ptp/linuxptp-daemon-lnbks container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded</code></p>
-<br>
-<p style="margin:4px 0">All subsequent: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[FAILED] Timed out after 300.000s. Expected ptp4l clock class to eventually be 6 for GM — Expected <bool>: false to be true</code> (ptp.go:3457)</p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code> (pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-lnbks</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-p7c88</code>) reported <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gnss_status -1</code> (no valid satellite fix) and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dpll State -2</code> (FREERUN/uninitialized) from the very first second of the TGM test suite. With GNSS perpetually in FREERUN (s0), ts2phc cannot discipline the clock and ptp4l never reaches clock class 6 (LOCKED). The wait-for-clock-class helper at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp.go:3457</code> exhausts its 300–340 s timeout on every WPC GM test. The DPLL later shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DPLL_LOCKED_HO_ACQ</code> (s2) — holdover from a prior run — but the GNSS receiver itself never provides a valid signal during this job.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change involved; this is a hardware/infrastructure condition.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — GNSS signal availability on bare-metal lab nodes is environment-dependent and can be intermittently lost without any code change.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Investigate the GNSS antenna/receiver on cnfdf32 (check antenna cable, sky view obstruction, or u-blox receiver firmware reset). Retry the job; if GNSS is restored, all 5 tests should pass.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] PTP e2e tests WPC GM Verification Tests is verifying WPC GM state based on logs [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] PTP e2e tests WPC GM Verification Tests is verifying WPC GM state based on metrics [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] PTP e2e tests WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED [Serial]</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</code></div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group — all 5 tests share the exact same upstream cause: GNSS receiver on cnfdf32 stuck in FREERUN (s0) with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gnss_status -1</code>. No common software regression; purely hardware-level.</p>
-<br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.23 — all 5 failures are in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial]</code> suite on cnfdf32; bc/dualfollower/dualnicbc suites all passed (142 pass, 127 skip, 5 error total).</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/linuxptp-daemon:4.23</code> (running on cnfdf32 as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-lnbks</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-p7c88</code>)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<p style="margin:4px 0">```</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Test 3 — additional symptom</h2>
+<p style="margin:4px 0">no Follower port in expected LOCKED state for ptpconfig temp</p>
+<p style="margin:4px 0">(node=cnfdf31.telco5gran.eng.rdu2.redhat.com, label="<nil>",</p>
+<p style="margin:4px 0">slaveIfs=[ens2f3np3 ens2f0np0]). Per-interface results:</p>
+<p style="margin:4px 0">ens2f3np3: role mismatch (expected=SLAVE, got=LISTENING)</p>
+<p style="margin:4px 0">ens2f0np0: clock state metric error: metric: openshift_ptp_clock_state,</p>
+<p style="margin:4px 0">nodeName: cnfdf31.telco5gran.eng.rdu2.redhat.com, aIf: ens2f0np0 not found</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">```</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Broader context from other suites (junit-failures.txt)</h2>
+<p style="margin:4px 0">parentPortIdentity.clockIdentity not found in pmc output for /var/run/ptp4l.1.config:</p>
+<p style="margin:4px 0">bad command: GET</p>
+<p style="margin:4px 0">bad command: PARENT_DATA_SET</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">```</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">tgm suite (junit-failures.txt)</h2>
+<p style="margin:4px 0">Expected ptp4l clock class state to eventually be Locked (class 6)</p>
+<p style="margin:4px 0">...clock class: 248  (← default/FREERUN value, never reached 6)</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift_ptp_clock_state</code> metric (registered in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon/pkg/metrics/register.go:57-63</code> with labels <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">{process, node, iface}</code>) is only set when <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">UpdateClockStateMetrics()</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkg/metrics/exporter.go:15-23</code> is called with a servo state change for that interface. A metric label combination <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">{node=cnfdf31, iface=ens2f0np0}</code> being entirely absent means linuxptp-daemon on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf31</code> never processed a servo state log line for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ens2f0np0</code> — i.e., ptp4l never elected that port as SLAVE and never emitted a servo lock event. The explicit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">role mismatch (expected=SLAVE, got=LISTENING)</code> in Test 3 for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ens2f3np3</code> corroborates this: both follower ports are stuck in LISTENING/unelected state. The tgm suite failures (clock class 248 = freerun, never 6) indicate the upstream Grandmaster never achieved GNSS lock; with the T-GM in freerun the entire downstream chain — BC → dualfollower slave — cannot lock, which is consistent with all suites failing in the same run. Additionally, the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pmc bad command: GET / PARENT_DATA_SET</code> errors in the dualnicbc suite (same run, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> branch <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>) indicate a ptp4l management interface issue. The commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OCPBUGS-90708: Sync from upstream (22-Jun-2026)</code> in linuxptp-daemon (merged 2026-06-23, two days after this run) and the commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OCPBUGS-88369: Fix CLOCK_REALTIME dual-publisher conflict in ParseTBCLogs</code> in cloud-event-proxy (merged 2026-06-25) were both pending at the time of this job.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Likely pre-dates the fix in linuxptp-daemon PR #613 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OCPBUGS-90708 / CNF-24996</code>, merged 2026-06-23, SHA <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0459bc0</code>) and cloud-event-proxy PR #701 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OCPBUGS-88369</code>, merged 2026-06-25, SHA <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fc5d567</code>) — both merged after this CI run on 2026-06-21. The breaking change introducing the regression is Unknown (upstream/downstream commit not visible in the shallow clone).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — all four test suites in the same job (dualfollower, dualnicbc, dualnicbcha, tgm) failed with consistent, correlated errors. The T-GM staying at clock class 248 is a systematic fa</div>
 </div>
 
 <div class="footer">

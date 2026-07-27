@@ -84,7 +84,85 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
+  <p style="margin:4px 0"><strong>TL;DR:</strong> T-GM GNSS lock loss (ClockClass 248/Freerun) collapsed the entire PTP sync chain, causing all 14 failures across all 5 suites.</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>12/14 failures — T-GM GNSS unlocked (ClockClass 248), cascading to all BC/slave ClockSync tests</strong> (suites: bc ×3, dualfollower ×3, dualnicbc ×3, dualnicbcha ×2, tgm ×2): The WPC T-GM node in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5gran.eng.rdu2.redhat.com</code> lost GNSS lock and, critically, failed to enter holdover (ClockClass 7) — instead transitioning directly to Freerun (ClockClass 248). This is confirmed directly by the tgm suite ("expected a metric [7.000000] but got map[metric:248]", "Timed out waiting for clock class 7") and is the upstream cause of all ClockSync timeouts in every other suite: without a GNSS-locked grandmaster, ptp4l on BC/slave nodes never reaches SLAVE state and the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetForeignClockID</code> log-stream helper never matches its regex, firing the 202-second timeout on every test. The same <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">could not get any profile line / could not find regex in log stream</code> error message appears across 6 different daemon pods (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">jvf75</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9ssfb</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">z7mfj</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">lkhnx</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">s8frf</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cklkh</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">h4bbm</code>) on multiple nodes.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>1/14 failures — Prometheus not returning valid responses during CPU Utilization test</strong> (suite: bc ×1): The parallel CPU Utilization test in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bc</code> failed because Prometheus was returning no valid data. This is a secondary symptom of the same cluster-health degradation: a lab with a broken PTP grandmaster and, in some suites, API server credential expiry (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">07:53:36Z</code>) is consistent with a broader cluster instability window on 2026-07-03.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Contributing factor (not a separate root cause) — Kubernetes API server degradation mid-run</strong>: Some suites saw <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error reading from stream: context deadline exceeded</code> (dualnicbcha ×2) rather than the log-stream <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">timedout waiting for matches</code> pattern (bc, dualfollower, dualnicbc). The API server also emitted <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> errors at job teardown. This is a compounding instability but does not change the root cause — the PTP tests would have failed regardless due to the absent grandmaster signal.</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Cross-Suite Patterns:</strong></p>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Failures</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root cause</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite-specific?</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">bc</td><td style="border:1px solid #30363d;padding:6px 8px">3 ClockSync + 1 CPU-util</td><td style="border:1px solid #30363d;padding:6px 8px">GNSS loss (ClockSync); Prometheus degraded (CPU-util)</td><td style="border:1px solid #30363d;padding:6px 8px">No — shared GNSS root</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">dualfollower</td><td style="border:1px solid #30363d;padding:6px 8px">3 ClockSync</td><td style="border:1px solid #30363d;padding:6px 8px">GNSS loss</td><td style="border:1px solid #30363d;padding:6px 8px">No</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">dualnicbc</td><td style="border:1px solid #30363d;padding:6px 8px">3 ClockSync</td><td style="border:1px solid #30363d;padding:6px 8px">GNSS loss (most direct confirmation via tgm cross-reference)</td><td style="border:1px solid #30363d;padding:6px 8px">No</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha</td><td style="border:1px solid #30363d;padding:6px 8px">2 ClockSync</td><td style="border:1px solid #30363d;padding:6px 8px">GNSS loss + API server dropping streams</td><td style="border:1px solid #30363d;padding:6px 8px">No</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">2 holdover/event tests</td><td style="border:1px solid #30363d;padding:6px 8px">GNSS loss / DPLL not entering holdover</td><td style="border:1px solid #30363d;padding:6px 8px">Primary source — not cascading from another suite</td></tr>
+</table>
+<br>
+<p style="margin:4px 0">All 5 suites share a single upstream root cause. No failure is suite-specific. The tgm suite is the causal origin (DPLL hardware or GNSS disable behavior); all other suites are downstream victims.</p>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Actionable Recommendations:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Immediately: Verify and restore GNSS lock on the T-GM node.</strong> SSH to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf30/cnfdf31/cnfdf32.telco5gran.eng.rdu2.redhat.com</code> T-GM node, check <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> logs for GNSS lock status, and confirm the DPLL reports ClockClass 7 before re-triggering the nightly job. Check GNSS antenna connectivity and signal health (GPS signal availability at the lab site).</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Investigate DPLL holdover behavior on GNSS loss.</strong> The tgm evidence shows the WPC NIC's DPLL transitions directly from LOCKED → FREERUN (ClockClass 248) without an intermediate HOLDOVER (ClockClass 7) period. This may be caused by the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ubxtool CFG-NAVSPG-INFIL_NCNOTHRS=50</code> test-disabling mechanism producing an abrupt GNSS cutoff, or the hardware DPLL holdover timeout being shorter than the test's 3-minute polling window. Verify the holdover duration configuration on the WPC NIC and consider whether the test should wait longer or use a softer GNSS-disable method.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">3. <strong>Investigate API server token TTL relative to job duration.</strong> The job runs for ~2h50m and the API server was issuing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> errors at teardown. If the CI kubeconfig token has a TTL shorter than the job duration, all long-running nightly jobs will degrade. Rotate or extend the credential lifetime in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5gran</code> lab CI configuration.</div>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code> (hardware GNSS failure in the test lab, not a code regression or transient flake)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH — 14/14 failures in a nightly periodic job, all suites impacted, no code changes implicated. The job is completely blocked until GNSS lock is restored, but there is no OCP 4.20 code defect to fix.</p>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Per-Suite Details</h2>
+<br>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">bc</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: bc (4 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> All 3 ClockSync serial tests timed out unable to read the foreign-clock-ID from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-container</code> pod logs, and the parallel CPU Utilization test failed because Prometheus was not returning valid responses — both symptoms of a systemic infrastructure failure on the test cluster on 2026-07-03.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: linuxptp-daemon log stream returns no foreign-clock-ID output</strong> (affects: "Slave can sync to master", "Downstream slave can sync to BC master", "Can provide a profile with higher priority")</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for</p>
+<p style="margin:4px 0">openshift-ptp/linuxptp-daemon-jvf75 container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=error reading from stream: context deadline exceeded</p>
+<br>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for</p>
+<p style="margin:4px 0">openshift-ptp/linuxptp-daemon-9ssfb container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=error reading from stream: context deadline exceeded</p>
+<br>
+<p style="margin:4px 0">could not get any profile line, err=could not find regex in log stream for</p>
+<p style="margin:4px 0">openshift-ptp/linuxptp-daemon-jvf75 container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=timedout waiting for matches</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">All three failures occur against different daemon pods (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">jvf75</code> for test-bc-master1/temp, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9ssfb</code> for test-slave1), confirming the problem spans multiple nodes. The same <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">could not find regex in log stream</code> pattern with identical semantics appears in every other suite that ran on the same cluster (dualfollower, dualnicbc, dualnicbcha) — 9+ failures total with the same root.</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The conformance tests open a Kubernetes log stream to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-container</code> and look for ptp4l lines containing the foreign-clock-ID (the grandmaster clock identity that ptp4l emits once it reaches SLAVE state, e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FOREIGN_MASTER_RECORD_SET</code> or similar). When ptp4l is NOT synchronized — because the upstream PTP grandmaster is unavailable or the sync chain broke — those log lines are never produced and the test times out. The fact that every ClockSync test on every suite failed simultaneously against multiple different pods on multiple nodes points to a cluster-wide PTP environment failure (grandmaster or uplink down), not an isolated daemon crash. Configuration/API tests in the same suite (operator deployment, lease, namespace) all passed, confirming the daemon pods were running; only the PTP-sync-dependent tests failed.</div>
+<br>
+<p style="margin:4px 0">The only candidate code change in the window is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift/linuxptp-daemon</code> commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">b022e1d</code> (OCPBUGS-95610, "Send ptp4l event when running without proxy", merged 2026-07-02, one day before the run). Inspection of the pre-OCPBUGS-95610 release-4.20 source (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3c31e2f</code>) shows that this commit adds <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">tBCTransitionCheck</code> only in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">!stdoutToSocket</code> branch (lines 1059-1082 of daemon.go) — the path taken when the cloud-event-proxy (CEP) sidecar is absent. The CI job deploys CEP (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">SIDECAR_IMG=...cloud-event-proxy:4.20</code>), so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">stdoutToSocket=true</code> and the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">!stdoutToSocket</code> block is bypassed entirely. OCPBUGS-95610 is therefore not in the hot path for this job and is ruled out as the cause of these failures.</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change found on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.20</code> that would affect the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">stdoutToSocket=true</code> (with-CEP) ptp4l sync path. Infrastructure instability on 2026-</div>
 </div>
 
 <div class="footer">
