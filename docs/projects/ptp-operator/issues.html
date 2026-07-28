@@ -53,7 +53,212 @@
     <thead><tr>
       <th>Root Cause</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
-    <tbody><tr id="0472cb7d4d279a4f">
+    <tbody><tr id="ba8da3309a8a1d89">
+  <td class="col-rc">
+    <div class="rc-text">`testSyncState()` in `test/conformance/parallel/ptp.go` subscribes to `OsClockSyncStateChange` events via the `cloud-event-proxy` sidecar, calls `event.PushInitialEvent()` (which succeeded — otherwise line 378 would have fired), then waits up to 5 minutes for any event carrying `state == &quot;LOCKED&quot;`. The timer (`tcEndChan`) expired before `wasLocked` was set to `true`, meaning the initial event published a non-LOCKED state (FREERUN or HOLDOVER) and the clock did not transition to LOCKED within 5 minutes. The fact that all 6 parallel suites fail the same event-based clock sync test simultaneously while all bc serial tests pass is the defining signal: this is a cross-mode systemic PTP environment instability, not a bc-specific code regression. A relevant contextual factor is commit `4aa5310` (`ci: fix timeout onPushInitialEvent`, Aug 2025) which notes that OCPBUGS-60570 changed when `OsClockSyncStateChange` events can be pulled from the socket — this fix is on `main` (test code), but the `</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">**TL;DR:** A `main`-branch test key-naming regression breaks all 6 parallel event-sync tests; 4 tgm-serial failures stem from unported daemon features.
+
+---
+
+**Root Cause Groups:**
+
+- **~6/16 failures — `createStoredEvent()` key-change regression breaks `testSyncState()` in all parallel suites** (`[bc-parallel]`, `[dualfollower-parallel]`, `[dualnicbc-parallel]`, `[dualnicbcha-parallel]`, `[oc-parallel]`, `[tbc-parallel]` — all: `Event based tests PTP Slave Clock Sync`)
+  Commit `d20ffcb` (2026-07-03) / PR #711 commit `5e9ecf0` (2026-07-15) changed `createStoredEvent()` in `test/pkg/event/event.go` to store values under `v.Resource` (e.g. `/cluster/node/…/CLOCK_REALTIME`) instead of `v.DataType` (`&quot;notification&quot;`). `testSyncState()` in `test/conformance/parallel/ptp.go` still reads `values[&quot;notification&quot;].(string)` — that key is now always absent. `state` is permanently `&quot;&quot;`, `wasLocked` never flips, and every parallel event suite exhausts its configured window (~6 min) and fails deterministically at `ptp.go:393`.
+
+- **1/16 failures — ts2phc `process_restart_count` reset on PtpConfig delete/re-apply** (`[tgm-serial] Verify ts2phc metrics are cleaned up after GM PtpConfig delete and re-apply`)
+  Commit `be1eb0d3` (2026-06-28) added a `main`-only CI test asserting the restart counter is monotonically non-decreasing across a delete/re-apply cycle. The linuxptp-daemon unconditionally deletes the `CounterVec` label set in `DeleteProcessStatusMetrics` (`cleanup.go:58`), resetting the counter to 1. The corresponding daemon fix does not exist in `release-4.22` or `main`, so the assertion fails every run.
+
+- **3/16 failures — T-GM ClockClass 7 holdover window too brief for detection** (`[tgm-serial]` &quot;Testing WPC T-GM holdover through connection loss&quot;, &quot;Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED&quot;, &quot;Testing T-GM Events on GNSS reboot and recovery&quot;)
+  After GNSS disable, the hardware transitions through ClockClass 7 (holdover) transiently before reaching 248 (FREERUN). The polling interval and event-window size in the `main`-branch test code are too coarse to catch this transition against `release-4.22` images, which may move through holdover more quickly than assumed. By the time the test polls, ptp4l is already at class 248.
+
+- **~6/16 failures — origin unclear from provided analyses** (may be additional serial failures or unanalyzed suite variants)
+
+---
+
+**Cross-Suite Patterns:**
+
+| Pattern | Suites affected | Suite-specific? |
+|---|---|---|
+| `values[&quot;notification&quot;]` key mismatch | bc, dualfollower, dualnicbc, dualnicbcha, oc, tbc (all parallel) | No — cross-suite, same root cause |
+| ts2phc restart-count assertion | tgm only | Yes |
+| T-GM ClockClass 7 holdover window | tgm only | Yes |
+
+All 6 parallel suites share a single root cause (the key-change regression in `test/pkg/event/event.go`). Serial suites in bc, dualfollower, dualnicbc, oc passed their clock-sync tests — confirming PTP hardware sync was functional and only the event-reporting/test-parsing path was broken. The tgm failures are entirely independent and suite-specific.
+
+---
+
+**Actionable Recommendations:**
+
+1. **Fix `testSyncState()` in `test/conformance/parallel/ptp.go` (highest impact — unblocks ~6 failures):** Update the `values[&quot;notification&quot;]` and `values[&quot;metric&quot;]` lookups to use the ResourceAddress key emitted by `cloud-event-proxy` (e.g. look up by iterating the map or by a named constant matching the resource path format), or add a `GetValueByDataType(dataType)` helper in `test/pkg/event/event.go` so all consumers are decoupled from the raw key format. This single change restores all 6 parallel event-based suites.
+
+2. **Gate the ts2phc restart-count test behind a daemon capability check or skip it on `release-4.22` (fixes 1 failure):** The test in `ptp.go:2628` was merged to `main` before the linuxptp-daemon fix exists. Either implement and cherry-pick the daemon-side counter-preservation fix to `release-4.22`, or add a version/feature guard so the assertion is skipped when running against images that do not support it.
+
+3. **Extend T-GM ClockClass 7 detection polling in tgm serial tests (fixes 3 failures):** Increase the poll interval tolerance or use event-based detection (subscribing to `ClockClassChange` events) rather than log-polling to observe the holdover transition. The current test assumes a minimum holdover window that `release-4.22` images do not guarantee.
+
+---
+
+**Overall Issue Class:** `test_regression`
+
+**Overall Severity:** HIGH — 10+ of 16 failures are deterministic regressions introduced by `main`-branch test code changes that were not paired with matching updates to all call sites or with the required daemon fixes; every run will reproduce these failures until the test code is corrected.
+
+
+---
+
+# Per-Suite Details
+
+
+## bc
+
+---
+
+### Suite: bc (1 failures)
+
+**Suite TL;DR:** The single bc-parallel failure is the &quot;Event based tests PTP Slave Clock Sync&quot; test timing out because the BC slave OS clock was never observed in LOCKED state within the 5-minute test window.
+
+**Root Cause Groups:**
+
+- **Group 1: BC slave OS clock never reached LOCKED state within test window** (affects: `[bc-parallel] Event based tests PTP Slave Clock Sync`)
+
+  - **Evidence:**
+    - From `investigation-summary.txt`: `Source: ptp.go:393, run.go:84`
+    - From `junit-failures.txt`: `Test: [It] [bc-parallel] Event based tests PTP Slave Clock Sync — Message: result: error`
+    - From `test/conformance/parallel/ptp.go:393`: `Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)`
+    - From `test/conformance/parallel/ptp.go:386–392` (tcEndChan branch):
+      ```go
+      case &lt;-tcEndChan:
+          if !wasLocked {
+              Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)
+          }
+      ```
+    - From `test/conformance/config/ptptestconfig.yaml`: `slave_clock_sync.spec.duration: 5` (5-minute window), `slave_clock_sync.spec.failure_threshold: 10`
+    - From `ci-operator-build-log.txt`: `+ export PTP_UNDER_TEST_BRANCH=release-4.22` and `+ export TEST_BRANCH=main` — test scripts from `main`, production images from `release-4.22`
+    - From `junit-failures.txt`: The **identical test fails in all 6 parallel suites simultaneously** — `[bc-parallel]`, `[dualfollower-parallel]`, `[dualnicbc-parallel]`, `[dualnicbcha-parallel]`, `[oc-parallel]`, `[tbc-parallel]` — all with `result: error`. Serial bc suite had `failures=&quot;0&quot;` (78 tests passed).
+
+  - **Root Cause:** `testSyncState()` in `test/conformance/parallel/ptp.go` subscribes to `OsClockSyncStateChange` events via the `cloud-event-proxy` sidecar, calls `event.PushInitialEvent()` (which succeeded — otherwise line 378 would have fired), then waits up to 5 minutes for any event carrying `state == &quot;LOCKED&quot;`. The timer (`tcEndChan`) expired before `wasLocked` was set to `true`, meaning the initial event published a non-LOCKED state (FREERUN or HOLDOVER) and the clock did not transition to LOCKED within 5 minutes. The fact that all 6 parallel suites fail the same event-based clock sync test simultaneously while all bc serial tests pass is the defining signal: this is a cross-mode systemic PTP environment instability, not a bc-specific code regression. A relevant contextual factor is commit `4aa5310` (`ci: fix timeout onPushInitialEvent`, Aug 2025) which notes that OCPBUGS-60570 changed when `OsClockSyncStateChange` events can be pulled from the socket — this fix is on `main` (test code), but the `release-4.22` production images may have that bug fix applied, meaning the event socket behavior is correct; the issue is the underlying clock sync state at test time.
+
+  - **Breaking PR/Commit:** Unknown — no `check_backport.py` available and repos are shallow main-branch clones; the cross-suite pattern points to a transient PTP environment condition rather than a specific code commit. Related context: OCPBUGS-60570 (event socket behavior, fixed in `4aa5310` on main).
+
+  - **Is it a flake?** yes — The simultaneous failure of all 6 parallel `PTP Slave Clock Sync` tests while all serial bc tests pass is the hallmark of a transient PTP grandmaster or GPS-signal instability causing all downstream clocks to remain in FREERUN during the parallel test window. The `[tgm-serial]` test suite also shows failures for `WPC GM GNSS signal loss tests` and `ts2phc termination tests` (which intentionally disrupt the grandmaster), and the 5-minute test window is narrow enough that a temporary GPS/upstream disruption could prevent all parallel suites from observing a LOCKED transition.
+
+  - **Suggested Fix:** Re-run the periodic job to confirm this is a transient flake. If it recurs consistently, check the `cloud-event-proxy` sidecar logs on `release-4.22` images for FREERUN/HOLDOVER reasons, and verify whether the GNSS/TGM disruption tests in `[tgm-serial]` are sharing timing infrastructure with the BC test nodes.
+
+**Suite Issue Class:** test_flake
+**Suite Severity:** MEDIUM
+
+## dualfollower
+
+---
+
+### Suite: dualfollower (1 failures)
+
+**Suite TL;DR:** The single &quot;Event based tests PTP Slave Clock Sync&quot; failure is a deterministic test regression introduced by commit `d20ffcb` on `main` (July 3, 2026), which broke how PTP sync-state events are looked up in the test&#x27;s key-value store, causing all parallel-mode suites to never detect a LOCKED clock state.
+
+**Root Cause Groups:**
+
+- **Group 1: `createStoredEvent` key-change regression breaks `values[&quot;notification&quot;]` lookup** (affects: `[dualfollower-parallel] Event based tests PTP Slave Clock Sync`)
+  - **Evidence:**
+    - JUnit result: `&quot;[It] [dualfollower-parallel] Event based tests PTP Slave Clock Sync&quot;: {&quot;time&quot;: 363.898387443, &quot;result&quot;: &quot;error&quot;}` — test ran its full ~6-minute configured duration before dying.
+    - `investigation-summary.txt`: `Source: ptp.go:393` → which is `Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)` in `test/conformance/parallel/ptp.go:393`.
+    - Same test fails in **all** parallel suites (bc, dualfollower, dualnicbc, dualnicbcha, oc, tbc) in `junit-failures.txt`, confirming a systematic rather than per-mode cause.
+    - From commit `d20ffcb` diff (`test/pkg/event/event.go`, lines 711–716 and 742–751 as shipped):
+      ```go
+      // Use ResourceAddress as key to avoid collisions…
+      key := v.Resource   // e.g. &quot;/cluster/node1/ptp/CLOCK_REALTIME&quot;
+      if key == &quot;&quot; {
+          key = string(v.DataType)
+      }
+      values[key] = v.Value
+      ```
+    - `cloud-event-proxy/plugins/ptp_operator/metrics/manager.go:319–324` always sets `Resource: eventSource` (non-empty path like `/cluster/node1/ptp/CLOCK_REALTIME`) and `DataType: NOTIFICATION` for the sync-state value.
+    - `test/conformance/parallel/ptp.go` `testSyncState()` reads: `state, _ := values[&quot;notification&quot;].(string)` — this key is now **never populated** because the storage key is the resource path, not `&quot;notification&quot;`. `wasLocked` stays false for the full test duration.
+    - CI build log confirms `TEST_BRANCH=main` — test scripts are from `main`, which includes `d20ffcb`.
+  - **Root Cause:** Commit `d20ffcb` (July 3, 2026) refactored `createStoredEvent` in `test/pkg/event/event.go` to use `v.Resource` as the map key (to handle BC-mode multi-instance collisions), but the cloud-event-proxy always emits a non-empty `Resource` field (a full cluster resource path). The existing `testSyncState` in `test/conformance/parallel/ptp.go` still reads `values[&quot;notification&quot;]` (the old `DataType`-based key), which is now empty for every event. Consequently, `state` is always `&quot;&quot;`, `wasLocked` never flips to `true`, and the test exhausts its 6-minute window before failing at `ptp.go:393`.
+  - **Breaking PR/Commit:** `d20ffcb` (`CNF-19588: CI test for clockClass recovery after cloud-event-proxy crash`) — merged `main` 2026-07-03. Not cherry-picked to `release-4.22`; this is purely a test-code regression on `main`.
+  - **Is it a flake?** No — deterministic. The storage key change is unconditional; the lookup mismatch will reproduce on every run with this test binary.
+  - **Suggested Fix:** In `testSyncState` (and any other consumer of `StoredEventValues`), replace `values[&quot;notification&quot;]` with a lookup that iterates over the map looking for a value whose key ends in `CLOCK_REALTIME` (or reconstruct the expected resource path), OR revert the `createStoredEvent` key strategy for notification values to keep `string(v.DataType)` as the key and use a qualified key only for `METRIC` values where collision is the actual concern.
+
+**Suite Issue Class:** test_regression
+
+**Suite Severity:** HIGH
+
+## dualnicbc
+
+Now I have enough to write the analysis.
+
+---
+
+### Suite: dualnicbc (1 failures)
+
+**Suite TL;DR:** The single dualnicbc failure is the parallel &quot;Event based tests PTP Slave Clock Sync&quot; test timing out after ~364 seconds because the OS clock never reported a LOCKED state event during the test window, a pattern shared identically across all six parallel event-based suites in this run.
+
+**Root Cause Groups:**
+
+- **Group 1: OS Clock LOCKED event never received before test timeout** (affects: `[It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync`)
+  - **Evidence:**
+    - From `telco5g-ptp-tests__test_results.json`: `&quot;[It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync&quot;: {&quot;time&quot;: 363.898387443, &quot;result&quot;: &quot;error&quot;}` — ran for exactly one configured test duration (≈6 min) then errored.
+    - From `junit-failures.txt`: `Test: [It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync  /  Message: result: error`
+    - Same error appears for **all six** parallel event suites: `[bc-parallel]`, `[dualfollower-parallel]`, `[dualnicbc-parallel]`, `[dualnicbcha-parallel]`, `[oc-parallel]`, `[tbc-parallel]` — all show `result: error` for the identical test name.
+    - From `investigation-summary.txt`: `Source: ptp.go:393, run.go:84`
+    - From `test/conformance/parallel/ptp.go:390-393`: `case &lt;-tcEndChan: // The os clock never reach LOCKED status and the test has timed out / if !wasLocked { / Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)`
+    - From `ci-operator-build-log.txt` (serial tests passing): `[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]` — status `passed`, confirming hardware PTP sync was functional; only the event-reporting path failed.
+  - **Root Cause:** `testSyncState()` in `test/conformance/parallel/ptp.go` subscribes to `OsClockSyncStateChange` events via the consumer pod&#x27;s log stream and waits for a LOCKED state notification. The test&#x27;s `tcEndChan` fired at the configured 6-minute mark with `wasLocked == false`, triggering the `Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)` at line 393. Because serial clock-sync tests passed concurrently (hardware PTP sync was working), the failure is in the PTP events layer — either the cloud-event-proxy/consumer sidecar was not emitting LOCKED `OsClockSyncStateChange` events during this window, or the consumer pod log-scan in `PushInitialEvent` / `MonitorPodLogsRegex` did not observe them. Notably, commit `4aa5310` on `main` (not backported to `release-4.22`) was created specifically to extend the `PushInitialEvent` retry budget to 300 s (`maxPushInitialEventAttempts=30 × 10 s`) to cope with the behavioral change introduced by OCPBUGS-60570 in release-4.22 images, indicating the event infrastructure has known timing fragility in this configuration.
+  - **Breaking PR/Commit:** Unknown — no single `release-4.22` commit identified as the direct trigger; OCPBUGS-60570 (cloud-event-proxy behavior change) is the background factor, addressed on `main` by `4aa5310` (https://github.com/openshift/ptp-operator/commit/4aa531017e2f4b8e24f9ed75c9a88c55b4416907) but **not cherry-picked to `release-4.22`**.
+  - **Is it a flake?** yes — the simultaneous, identical failure across all six parallel event suites while all serial tests pass is characteristic of a transient environment/timing disruption in the events infrastructure (consumer pod not logging LOCKED events during that ~6-minute window), not a deterministic code regression.
+  - **Suggested Fix:** Cherry-pick `4aa5310` (`ci: fix timeout onPushInitialEvent`) to `release-4.22` to align the test retry budget with the changed OCPBUGS-60570 behavior; additionally, investigate whether the cloud-event-proxy consumer pod on `release-4.22` images reliably emits `OsClockSyncStateChange: LOCKED` log lines within 6 minutes of test start.
+
+**Suite Issue Class:** test_flake
+**Suite Severity:** MEDIUM
+
+## oc
+
+---
+
+### Suite: oc (1 failures)
+
+**Suite TL;DR:** The `[oc-parallel] Event based tests PTP Slave Clock Sync` test always times out because a key-naming change in the event parsing library broke how the test reads clock state from received events.
+
+**Root Cause Groups:**
+
+- **Group 1: StoredEventValues map key change breaks `testSyncState()`** (affects: `[It] [oc-parallel] Event based tests PTP Slave Clock Sync`)
+  - **Evidence:**
+    ```
+    # From test_results_oc.xml (fetched from GCS):
+    &lt;failure message=&quot;OS Clock was never LOCKED and test timed out&quot; type=&quot;failed&quot;&gt;
+    [FAILED] OS Clock was never LOCKED and test timed out
+    In [It] at: /tmp/cnf-v6YRb/ptp-operator-conformance-test/test/conformance/parallel/ptp.go:393 @ 07/23/26 11:10:38.94
+
+    # Received event contained value=&quot;LOCKED&quot; in the raw CloudEvent data:
+    DEBUG [event.go: 730] Context Attributes, ... &quot;value&quot;:&quot;LOCKED&quot;
+
+    # But the test extracted an empty state:
+    DEBUG [ptp.go: 419] clockOffset=0.000000
+    # And the eventvalues map shows the ResourceAddress key (not &quot;notification&quot;):
+    DEBUG [ptp.go: 411] got map[...eventvalues:map[/cluster/node/cnfdf30.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME:-3]]
+    ```
+  - **Root Cause:** PR #711 (commit `5e9ecf0`, merged 2026-07-15) changed `createStoredEvent()` in `test/pkg/event/event.go` to use `v.Resource` (the ResourceAddress, e.g. `/cluster/node/cnfdf30.../CLOCK_REALTIME`) as the `StoredEventValues` map key instead of `v.DataType` (the string `&quot;notification&quot;` or `&quot;metric&quot;`). However, `testSyncState()` at `test/conformance/parallel/ptp.go:414-415` was **not updated** and still reads `values[&quot;notification&quot;].(string)` and `values[&quot;metric&quot;].(float64)`. Both type-assertions fail silently, `state` is always `&quot;&quot;`, the test never observes `state == &quot;LOCKED&quot;`, runs the full 5-minute duration (`Duration:5`), and then fails at `ptp.go:393` with `&quot;OS Clock was never LOCKED and test timed out&quot;`. The raw event DID carry `&quot;LOCKED&quot;` — the data is correct, but the key under which it is stored changed.
+  - **Breaking PR/Commit:** Commit `5e9ecf0` — PR #711 `jzding/upstream-sync-2026-07-08` merged into `main` on 2026-07-15. This is a change to the `main`-branch test code; the `release-4.22` production images are not implicated. (`test/conformance/serial/ptp.go` was also updated in the same commit with 397 lines changed, but `test/conformance/parallel/ptp.go` was missed.)
+  - **Is it a flake?** No — the key mismatch is deterministic; every run of this test will produce the same timeout.
+  - **Suggested Fix:** In `test/conformance/parallel/ptp.go:testSyncState()` (lines 413–415), update the event-value lookup to use the ResourceAddress key (e.g. the first key in the `StoredEventValues` map, or a named constant matching the address format), **or** revert the `createStoredEvent()` change for the `data_type`-keyed path. A less-invasive fix is to add a helper in `event.go` that looks up by `DataType` so both serial and parallel consumers can use it without hardcoding key strings.
+
+**Suite Issue Class:** test_regression
+**Suite Severity:** HIGH
+
+## tgm
+
+---
+
+### Suite: tgm (4 failures)
+
+**Suite TL;DR:** All 4 tgm-serial tests fail because `main`-only tests test behaviors not yet present in `release-4.22` linuxptp-daemon images — specifically, ts2phc restart-counter preservation after PtpConfig delete/re-apply (Test 1), and a holdover clock-class transition window (Tests 2-4) so brief that polling and short event windows miss it.
+
+**Root</div></details>
+  </td>
+  <td class="col-date">2026-07-26</td>
+  <td class="col-date">2026-07-28</td>
+  <td class="col-tests"><ul><li>[It] [tbc-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [tgm-serial] PTP e2e tests WPC GM Verification Tests Verify ts2phc metrics are cleaned up after GM PtpConfig delete and re-apply [Serial]</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2081620970677735424" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-07-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2080171378220208128" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-26)</span></li></ul></td>
+</tr>
+<tr id="0472cb7d4d279a4f">
   <td class="col-rc">
     <div class="rc-text">In `test/conformance/parallel/ptp.go`, the `testSyncState` function subscribes to `OsClockSyncStateChange` events and waits up to the configured soak-test duration for the OS clock to report `LOCKED`. The test ran for 363 seconds (≈ ~60 s of `PushInitialEvent` retries + a ~5-minute soak window), matching the `tcEndChan` path at `ptp.go:393`. Commit `4aa5310` on `main` (&quot;ci: fix timeout onPushInitialEvent&quot;) introduced the 30-retry loop specifically because OCPBUGS-60570 changed `release-5.0` cloud-event-proxy to only serve `CurrentState` from real PTP socket data. Despite eventually getting an initial event, the `OsClockSyncStateChange` events never carried a `LOCKED` state before the soak period expired — indicating the OS clock did not lock during that window on the test cluster. This same pattern recurs in all five parallel suites (`bc-parallel`, `dualfollower-parallel`, `dualnicbc-parallel`, `dualnicbcha-parallel`, `oc-parallel`), pointing to a systemic sync or event-delivery proble</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
@@ -282,9 +487,246 @@
   - **Is it a fl</div></details>
   </td>
   <td class="col-date">2026-07-27</td>
-  <td class="col-date">2026-07-27</td>
+  <td class="col-date">2026-07-28</td>
   <td class="col-tests"><ul><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Verify clockClass when locking PTP source on dual NIC boundary clock [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP metric is present verifies on slave [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests Running with event enabled Should recover clockClass via event API after cloud-event-proxy crash [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests Running with event enabled Should receive events after linuxptp-daemon pod restart [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP Outage recovery The slave node network interface is taken down and up [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP Outage recovery BC clock class recovers to Locked after upstream link outage [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP Outage recovery Should restart phc2sys with no socket errors after SIGTERM [Serial]</li><li class='more'>+16 more</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2081620970677735424" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-07-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li></ul></td>
+</tr>
+<tr id="6b718e8d55f2c993">
+  <td class="col-rc">
+    <div class="rc-text">Commit `d20ffcbf0c` on `k8snetworkplumbingwg/ptp-operator` (merged 2026-07-03, title: &quot;CNF-19588: CI test for clockClass recovery after cloud-event-proxy crash&quot;) changed `createStoredEvent` in `test/pkg/event/event.go` (v2 path, line 730) to use `v.Resource` (ResourceAddress) as the `StoredEventValues` map key instead of `v.DataType`. For `os-clock-sync-state-change` events, both DataValues — the `notification` (&quot;LOCKED&quot;) and the `metric` (-2) — share the **same** ResourceAddress (`/cluster/node/.../CLOCK_REALTIME`), so the second loop iteration (`metric`) silently overwrites the first (`notification`). The resulting map has no `&quot;notification&quot;` key, so `testSyncState` in `test/conformance/parallel/ptp.go:413–414` always reads `state = &quot;&quot;` and `wasLocked` never becomes `true`. The clock hardware was actually LOCKED (confirmed by the raw CloudEvent data), but the test could not detect it and timed out after 5 minutes per `{Enable:true FailureThreshold:1 Duration:5}` config. This is a **t</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** A test-code key collision in `createStoredEvent` (commit `d20ffcbf0c`, 2026-07-03) causes every &quot;PTP Slave Clock Sync&quot; event test to miss the LOCKED state and time out.
+
+---
+
+**Root Cause Groups:**
+
+- **15/15 failures: Key collision in `createStoredEvent` silently drops LOCKED notification state, causing all PTP Slave Clock Sync tests to time out** — commit `d20ffcbf0c` on `k8snetworkplumbingwg/ptp-operator` main (merged 2026-07-03) changed the `StoredEventValues` map key from `v.DataType` to `v.Resource` (ResourceAddress). For `os-clock-sync-state-change` events, both the `notification` (&quot;LOCKED&quot;) and `metric` (-2) DataValues share the same ResourceAddress (`/cluster/node/.../CLOCK_REALTIME`), so the metric entry silently overwrites the notification entry. `ptp.go:414` then reads `values[&quot;notification&quot;]` as `&quot;&quot;` (key absent), `wasLocked` never becomes `true`, and the test times out after 5 minutes. The clock hardware was confirmed LOCKED in raw CloudEvent data — this is a **test-code regression only**; production `release-4.22` images are unaffected.
+
+---
+
+**Cross-Suite Patterns:**
+
+- **All suites share the same root cause** (`bc`, `oc`, and per the oc analysis also `dualfollower`, `dualnicbc`, `dualnicbcha`). The failure is systematic and code-level: every suite running `Event based tests PTP Slave Clock Sync` hits the same bad key lookup path in `testSyncState`. No suite-specific variation is present — the `clockOffset=0.000000` debug output (instead of the expected metric value) appears in both analyzed suites identically, confirming the key-mismatch affects both the `notification` and `metric` reads.
+
+---
+
+**Actionable Recommendations:**
+
+1. **Revert the map key change in `createStoredEvent`** (`test/pkg/event/event.go`, v2 path, ~line 730): restore `v.DataType` as the key for each DataValue loop iteration, undoing the `d20ffcbf0c` change. This directly fixes all 15 failures across every suite.
+
+2. **Add a regression test for `createStoredEvent`** that asserts the returned map contains both `&quot;notification&quot;` and `&quot;metric&quot;` keys when given a dual-DataValue `os-clock-sync-state-change` event — preventing future key changes from silently breaking event parsing.
+
+3. **Block the PR that introduced `d20ffcbf0c`** (or open a revert PR) against `k8snetworkplumbingwg/ptp-operator` main immediately, as every nightly run on this job will continue to fail 100% of the time until the fix lands.
+
+---
+
+**Overall Issue Class:** `test_regression`
+
+**Overall Severity:** HIGH — all 15 test failures trace to a single deterministic code regression on main; no hardware or infra issues involved, but the entire nightly job is broken on every run until resolved.
+
+
+---
+
+# Per-Suite Details
+
+
+## bc
+
+---
+
+### Suite: bc (1 failures)
+
+**Suite TL;DR:** The single bc-parallel test &quot;PTP Slave Clock Sync&quot; timed out unable to detect a LOCKED OS clock because a test-code change in `k8snetworkplumbingwg/ptp-operator` commit `d20ffcbf0c` (July 3, 2026) introduced a key collision bug in `createStoredEvent` that silently drops the notification state from received CloudEvents.
+
+**Root Cause Groups:**
+
+- **Group 1: Key collision in `createStoredEvent` drops LOCKED notification state** (affects: `[It] [bc-parallel] Event based tests PTP Slave Clock Sync`)
+
+  - **Evidence:**
+    ```
+    [event.go: 730] Context Attributes,
+      type: event.sync.sync-status.os-clock-sync-state-change
+      source: /sync/sync-status/os-clock-sync-state
+    Data,
+      {&quot;version&quot;:&quot;1.0&quot;,&quot;values&quot;:[
+        {&quot;ResourceAddress&quot;:&quot;/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME&quot;,&quot;data_type&quot;:&quot;notification&quot;,&quot;value_type&quot;:&quot;enumeration&quot;,&quot;value&quot;:&quot;LOCKED&quot;},
+        {&quot;ResourceAddress&quot;:&quot;/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME&quot;,&quot;data_type&quot;:&quot;metric&quot;,&quot;value_type&quot;:&quot;decimal64.3&quot;,&quot;value&quot;:&quot;-2&quot;}
+      ]}
+    [event.go: 734] Latency for the event: 36942 ms
+    [ptp.go: 411] got map[eventsource:/sync/sync-status/os-clock-sync-state ... eventvalues:map[/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME:-2]]
+    [ptp.go: 419] clockOffset=0.000000
+    [ptp.go: 393] [FAILED] OS Clock was never LOCKED and test timed out
+    ```
+
+  - **Root Cause:** Commit `d20ffcbf0c` on `k8snetworkplumbingwg/ptp-operator` (merged 2026-07-03, title: &quot;CNF-19588: CI test for clockClass recovery after cloud-event-proxy crash&quot;) changed `createStoredEvent` in `test/pkg/event/event.go` (v2 path, line 730) to use `v.Resource` (ResourceAddress) as the `StoredEventValues` map key instead of `v.DataType`. For `os-clock-sync-state-change` events, both DataValues — the `notification` (&quot;LOCKED&quot;) and the `metric` (-2) — share the **same** ResourceAddress (`/cluster/node/.../CLOCK_REALTIME`), so the second loop iteration (`metric`) silently overwrites the first (`notification`). The resulting map has no `&quot;notification&quot;` key, so `testSyncState` in `test/conformance/parallel/ptp.go:413–414` always reads `state = &quot;&quot;` and `wasLocked` never becomes `true`. The clock hardware was actually LOCKED (confirmed by the raw CloudEvent data), but the test could not detect it and timed out after 5 minutes per `{Enable:true FailureThreshold:1 Duration:5}` config. This is a **test-code regression on main** — the production `release-4.22` images are unaffected.
+
+  - **Breaking PR/Commit:** `d20ffcbf0c` on `k8snetworkplumbingwg/ptp-operator` main (2026-07-03) — https://github.com/k8snetworkplumbingwg/ptp-operator/commit/d20ffcbf0c
+
+  - **Is it a flake?** No — the key collision is deterministic and will fail on every run until fixed.
+
+  - **Suggested Fix:** In `test/pkg/event/event.go` `createStoredEvent` v2 path, restore `v.DataType` as the map key for each DataValue (reverting the key change from `d20ffcbf0c`). To also support the multiple-`metric` BC clock-class use case that motivated the change, either accumulate values into a slice or use a composite key like `&quot;&lt;ResourceAddress&gt;/&lt;DataType&gt;&quot;` and update all callers that read `values[&quot;notification&quot;]` and `values[&quot;metric&quot;]` accordingly.
+
+**Suite Issue Class:** test_regression  
+**Suite Severity:** HIGH
+
+## oc
+
+---
+
+### Suite: oc (1 failures)
+
+**Suite TL;DR:** The single `[oc-parallel] Event based tests PTP Slave Clock Sync` test timed out because the OS clock LOCKED state event was received but its values were keyed by `ResourceAddress` (e.g. `/cluster/node/cnfdf30.../CLOCK_REALTIME:15`) instead of by `DataType` (`&quot;notification&quot;`), so `ptp.go:414` never resolved `state == &quot;LOCKED&quot;` and `wasLocked` remained `false` until the 5-minute timeout fired.
+
+**Root Cause Groups:**
+
+- **Group 1: Event value key mismatch — OS clock LOCKED state never recognized** (affects: `[It] [oc-parallel] Event based tests PTP Slave Clock Sync`)
+  - **Evidence:**
+    ```
+    [FAILED] OS Clock was never LOCKED and test timed out
+    In [It] at: /tmp/cnf-s7FwM/ptp-operator-conformance-test/test/conformance/parallel/ptp.go:393 @ 07/12/26 11:01:22.395
+    ```
+    ```
+    DEBUG  [ptp.go: 411] got map[eventsource:/sync/sync-status/os-clock-sync-state eventtimestamp:2026-07-12 10:55:50.49315292 +0000 UTC eventtype:event.sync.sync-status.os-clock-sync-state-change eventvalues:map[/cluster/node/cnfdf30.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME:15]]
+    DEBUG  [ptp.go: 419] clockOffset=0.000000
+    ```
+    ```
+    INFO   [event.go: 734] Latency for the event: 36928 ms
+    INFO   [event.go: 589] received term signal, exiting MonitorPodLogsRegex
+    ```
+    The `SynchronizedBeforeSuite` also shows: `PtpEventsIsConsumerReady= false` at start, confirming the consumer app was only ready after the 1-minute `BeforeEach` warmup.
+
+  - **Root Cause:** `testSyncState` in `test/conformance/parallel/ptp.go` subscribes to `OsClockSyncStateChange` events and calls `event.PushInitialEvent` to get the current clock state. The initial event IS received (a stale LOCKED event timestamped 37 seconds earlier), but its `StoredEventValues` map uses the `ResourceAddress` path (`/cluster/node/cnfdf30.../CLOCK_REA</div></details>
+  </td>
+  <td class="col-date">2026-07-15</td>
+  <td class="col-date">2026-07-28</td>
+  <td class="col-tests"><ul><li>[It] [dualfollower-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails [Serial]</li><li>[It] [dualnicbcha-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [oc-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [tbc-serial] PTP e2e tests PTP ClockSync PTP daemon apply match rule based on nodeLabel [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [tbc-serial] PTP e2e tests Running with event enabled Should recover clockClass via event API after cloud-event-proxy crash [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP Outage recovery Should restart phc2sys with no socket errors after SIGTERM [Serial]</li><li class='more'>+4 more</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081258581503512576" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2081620970677735424" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-07-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081258581503512576" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2080171378220208128" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2079446590644293632" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-22)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2078721882944704512" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-21)</span></li><li class='more'>+2 more runs</li></ul></td>
+</tr>
+<tr id="fb71a446d7825ee8">
+  <td class="col-rc">
+    <div class="rc-text">Commit `d20ffcb` (CNF-19588, Jul 3 2026) changed `createStoredEvent` in `test/pkg/event/event.go` to key the values map by `v.Resource` (ResourceAddress, e.g., `/cluster/node/cnfdf32.../CLOCK_REALTIME`) instead of `v.DataType` (e.g., `&quot;notification&quot;`). Because the two event values both share the same `ResourceAddress`, the metric value also overwrites the notification value. The test consumer at `ptp.go:413-414` still looks up `values[&quot;notification&quot;]`, which is now always nil, so `state` is always `&quot;&quot;`. `wasLocked` never becomes `true`, and when the 5-minute test window expires the test fails at `ptp.go:393` with `Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)`.</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+## Cross-Suite Summary — `periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp`
+
+---
+
+**TL;DR:** linuxptp-daemon PR #618 broke T-GM holdover and T-BC sync (9 failures); a test-code key regression in `d20ffcb` broke all 5 parallel event tests (5 failures).
+
+---
+
+### Root Cause Groups
+
+| # | Failures | Suites | Root Cause |
+|---|----------|--------|------------|
+| 1 | **9 / 15** | tbc (×6), tgm (×3) | `openshift/linuxptp-daemon` **PR #618** (`d2ff2d154d`, merged `release-4.22` 2026-06-30): T-GM holdover state machine bypassed — class 7 never emitted, jumps LOCKED (6) → FREERUN (248) directly; T-BC on `cnfdf32` consequently stuck in FREERUN (class 248) with phc2sys never starting, cascading to all 6 tbc serial tests. |
+| 2 | **5 / 15** | bc, dualfollower, dualnicbc, dualnicbcha, oc (all `-parallel`) | Test-code regression **commit `d20ffcb`** (Jul 3, 2026, `main`): `createStoredEvent` in `test/pkg/event/event.go` changed the values-map key from `DataType` (`&quot;notification&quot;`) to `ResourceAddress`; `testSyncState()` still looks up `values[&quot;notification&quot;]`, always gets nil, `wasLocked` never becomes `true`. All 5 parallel suites ran concurrently, all timed out at ≈363 s (`ptp.go:393`). Secondary contributor: `cloud-event-proxy:release-4.22` sidecar and/or the shared `consumer` pod in `ptp-event-framework-test` may not have been serving `OsClockSyncStateChange` events during the parallel window (`PushInitialEvent` exhausted all 30 × 10 s retries). |
+| 3 | **1 / 15** | dualnicbcha (serial) | phc2sys HA failover — phc2sys did not switch to secondary ptp4l after the primary interface was downed, or failed to emit the expected log line. Likely a cascade of the T-BC FREERUN state from Group 1. |
+
+---
+
+### Cross-Suite Patterns
+
+- **tbc + tgm share one root cause** (PR #618): T-GM FREERUN propagates upstream — T-BC has no grandmaster to lock to, leaving cnfdf32 in class 248 and making all T-BC serial tests deterministically fail. Fixing PR #618 unblocks both suites.
+- **All 5 parallel suites share one root cause** (commit `d20ffcb`): bc, dualfollower, dualnicbc, dualnicbcha, and oc fail with identical timing (≈363 s) and identical failure message, confirming a single shared code path broken by the same commit.
+- **dualnicbcha is the only suite with failures from two separate groups** (1 parallel event + 1 serial HA), making it appear to have the most diverse failure set.
+- **No suite-specific flakes** — every failure traces to one of the two breaking changes above.
+
+---
+
+### Actionable Recommendations
+
+1. **Revert or patch `openshift/linuxptp-daemon` PR #618 on `release-4.22`** — restore the T-GM holdover servo-state path so ts2phc emits clock class 7 before transitioning to 248, and re-add the FREERUN `ptp-state-change` CloudEvent dispatch in the restarted-ts2phc code path. This is the highest-leverage fix: **9/15 failures resolved**.
+
+2. **Fix the `createStoredEvent` key regression from commit `d20ffcb`** in `test/pkg/event/event.go` (runs from `main`) — update the consumer in `ptp.go:413–414` to use the new `ResourceAddress`-keyed lookup (e.g., `values[resourceAddress].(string)`) instead of `values[&quot;notification&quot;]`, or revert the key to `DataType`. Also pin `CONSUMER_IMG` to a versioned tag instead of `:latest` to prevent silent consumer regressions. **5/15 failures resolved**.
+
+3. **Add a guard in tbc test AfterEach** to restore the original `ptpConfig` even on failure — this prevents the cascade from Group 1 (nil `ptpConfig`) from adding spurious secondary failures when the primary T-BC issue recurs.
+
+---
+
+**Overall Issue Class:** `test_failure` (production image regression in `release-4.22` + test-code regression on `main`)
+
+**Overall Severity:** **CRITICAL** — 15/15 failures, every suite affected, PTP synchronization infrastructure completely non-functional for both T-GM and T-BC hardware paths.
+
+
+---
+
+# Per-Suite Details
+
+
+## bc
+
+---
+
+### Suite: bc (1 failures)
+
+**Suite TL;DR:** The single `[bc-parallel] Event based tests PTP Slave Clock Sync` failure is caused by a test code regression in `main` that changed the event-value map key from `DataType` to `ResourceAddress`, making the state lookup for `&quot;notification&quot;` permanently return nil so the clock is never seen as LOCKED.
+
+**Root Cause Groups:**
+
+- **Group 1: createStoredEvent key change breaks state lookup in testSyncState** (affects: `[It] [bc-parallel] Event based tests PTP Slave Clock Sync`)
+
+  - **Evidence:**
+
+    Failure message from artifact XML at `ptp.go:393` at `07/21/26 11:03:31.053`:
+    ```
+    &lt;failure message=&quot;OS Clock was never LOCKED and test timed out&quot; type=&quot;failed&quot;&gt;
+    [FAILED] OS Clock was never LOCKED and test timed out
+    In [It] at: .../test/conformance/parallel/ptp.go:393 @ 07/21/26 11:03:31.053
+    ```
+
+    The PushInitialEvents goroutine DID find and parse a LOCKED event (at `event.go:730`, 10:58:36):
+    ```
+    [Jul 21 10:58:36.093][event.go: 730] Context Attributes,
+      type: event.sync.sync-status.os-clock-sync-state-change
+    Data, {&quot;values&quot;:[{&quot;ResourceAddress&quot;:&quot;/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME&quot;,
+      &quot;data_type&quot;:&quot;notification&quot;,&quot;value&quot;:&quot;LOCKED&quot;},
+      {&quot;ResourceAddress&quot;:&quot;/cluster/node/cnfdf32.../CLOCK_REALTIME&quot;,&quot;data_type&quot;:&quot;metric&quot;,&quot;value&quot;:&quot;-...&quot;}]}
+    ```
+
+    Git diff from commit `d20ffcb` (Jul 3, 2026) in `test/pkg/event/event.go`:
+    ```diff
+    -  dataType := string(v.DataType)
+    -  values[dataType] = v.Value
+    +  // Use ResourceAddress as key to avoid collisions…
+    +  key := v.Resource
+    +  if key == &quot;&quot; {
+    +      key = string(v.DataType)
+    +  }
+    +  values[key] = v.Value
+    ```
+
+    Consumer in `testSyncState` (`test/conformance/parallel/ptp.go:413-414`):
+    ```go
+    values, _ := singleEvent[exports.EventValues].(exports.StoredEventValues)
+    state, _ := values[&quot;notification&quot;].(string)   // always nil now
+    ```
+
+  - **Root Cause:** Commit `d20ffcb` (CNF-19588, Jul 3 2026) changed `createStoredEvent` in `test/pkg/event/event.go` to key the values map by `v.Resource` (ResourceAddress, e.g., `/cluster/node/cnfdf32.../CLOCK_REALTIME`) instead of `v.DataType` (e.g., `&quot;notification&quot;`). Because the two event values both share the same `ResourceAddress`, the metric value also overwrites the notification value. The test consumer at `ptp.go:413-414` still looks up `values[&quot;notification&quot;]`, which is now always nil, so `state` is always `&quot;&quot;`. `wasLocked` never becomes `true`, and when the 5-minute test window expires the test fails at `ptp.go:393` with `Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)`.
+
+  - **Breaking PR/Commit:** `d20ffcb` — CNF-19588: CI test for clockClass recovery after cloud-event-proxy crash — merged Jul 3, 2026 on `main`. This commit is in the test code (which runs from `main`), so no backport to `release-4.22` is required for this fix; the `scripts/check_backport.py` script was not present to run.
+
+  - **Is it a flake?** No — this is a deterministic regression. The same failure pattern appears across all parallel event suites (`bc`, `dualfollower`, `dualnicbc`, `oc`) confirming systematic breakage, not timing-related flakiness.
+
+  - **Suggested Fix:** In `test/pkg/event/event.go` `createStoredEvent`, additionally store events using `DataType` as a secondary key (or switch `testSyncState` / `testSyncState` consumer to look up by `ResourceAddress` suffix `CLOCK_REALTIME` instead of `&quot;notification&quot;`). Alternatively, store both keys: `values[string(v.DataType)] = v.Value` alongside the ResourceAddress key so existing consumers are not broken.
+
+**Suite Issue Class:** `test_regression`
+**Suite Severity:** HIGH
+
+## dualfollower
+
+---
+
+### Suite: dualfollower (1 failures)
+
+**Suite TL;DR:** The single dualfollower failure is `Event based tests PTP Slave Clock Sync` (parallel), which timed out because the OS clock never reported a LOCKED state within the configured ~6-minute test window — the identical failure simultaneously hit all five parallel suites (bc, dualfollower, dualnicb</div></details>
+  </td>
+  <td class="col-date">2026-07-22</td>
+  <td class="col-date">2026-07-28</td>
+  <td class="col-tests"><ul><li>[It] [bc-parallel] Event based tests PTP Slave Clock Sync</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081258581503512576" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2081620970677735424" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-07-28)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081258581503512576" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2080171378220208128" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2079446590644293632" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-22)</span></li></ul></td>
 </tr>
 <tr id="c697aedd3d4ac847">
   <td class="col-rc">
@@ -593,448 +1035,6 @@ All five suites share the identical FREERUN cascade. The tgm suite is unique in 
   <td class="col-date">2026-07-27</td>
   <td class="col-tests"><ul><li>No meaningful output found in logs</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/82254/rehearse-82254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081455654517608448" target="_blank">rehearse-82254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/82254/rehearse-82254-periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-tls-scan/2081111160102326272" target="_blank">rehearse-82254-5.0-e2e-telco5g-ptp-tls-scan</a> <span class="date">(2026-07-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2075603700637765632" target="_blank">rehearse-81254-4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2075603700696485888" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2075603700738428928" target="_blank">rehearse-81254-5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2075603700780371968" target="_blank">rehearse-81254-5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-07-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/80182/rehearse-80182-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2069079496102776832" target="_blank">rehearse-80182-4.22-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-07-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81171/rehearse-81171-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2070692330741960704" target="_blank">rehearse-81171-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-26)</span></li><li class='more'>+42 more runs</li></ul></td>
-</tr>
-<tr id="ba8da3309a8a1d89">
-  <td class="col-rc">
-    <div class="rc-text">`testSyncState()` in `test/conformance/parallel/ptp.go` subscribes to `OsClockSyncStateChange` events via the `cloud-event-proxy` sidecar, calls `event.PushInitialEvent()` (which succeeded — otherwise line 378 would have fired), then waits up to 5 minutes for any event carrying `state == &quot;LOCKED&quot;`. The timer (`tcEndChan`) expired before `wasLocked` was set to `true`, meaning the initial event published a non-LOCKED state (FREERUN or HOLDOVER) and the clock did not transition to LOCKED within 5 minutes. The fact that all 6 parallel suites fail the same event-based clock sync test simultaneously while all bc serial tests pass is the defining signal: this is a cross-mode systemic PTP environment instability, not a bc-specific code regression. A relevant contextual factor is commit `4aa5310` (`ci: fix timeout onPushInitialEvent`, Aug 2025) which notes that OCPBUGS-60570 changed when `OsClockSyncStateChange` events can be pulled from the socket — this fix is on `main` (test code), but the `</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">**TL;DR:** A `main`-branch test key-naming regression breaks all 6 parallel event-sync tests; 4 tgm-serial failures stem from unported daemon features.
-
----
-
-**Root Cause Groups:**
-
-- **~6/16 failures — `createStoredEvent()` key-change regression breaks `testSyncState()` in all parallel suites** (`[bc-parallel]`, `[dualfollower-parallel]`, `[dualnicbc-parallel]`, `[dualnicbcha-parallel]`, `[oc-parallel]`, `[tbc-parallel]` — all: `Event based tests PTP Slave Clock Sync`)
-  Commit `d20ffcb` (2026-07-03) / PR #711 commit `5e9ecf0` (2026-07-15) changed `createStoredEvent()` in `test/pkg/event/event.go` to store values under `v.Resource` (e.g. `/cluster/node/…/CLOCK_REALTIME`) instead of `v.DataType` (`&quot;notification&quot;`). `testSyncState()` in `test/conformance/parallel/ptp.go` still reads `values[&quot;notification&quot;].(string)` — that key is now always absent. `state` is permanently `&quot;&quot;`, `wasLocked` never flips, and every parallel event suite exhausts its configured window (~6 min) and fails deterministically at `ptp.go:393`.
-
-- **1/16 failures — ts2phc `process_restart_count` reset on PtpConfig delete/re-apply** (`[tgm-serial] Verify ts2phc metrics are cleaned up after GM PtpConfig delete and re-apply`)
-  Commit `be1eb0d3` (2026-06-28) added a `main`-only CI test asserting the restart counter is monotonically non-decreasing across a delete/re-apply cycle. The linuxptp-daemon unconditionally deletes the `CounterVec` label set in `DeleteProcessStatusMetrics` (`cleanup.go:58`), resetting the counter to 1. The corresponding daemon fix does not exist in `release-4.22` or `main`, so the assertion fails every run.
-
-- **3/16 failures — T-GM ClockClass 7 holdover window too brief for detection** (`[tgm-serial]` &quot;Testing WPC T-GM holdover through connection loss&quot;, &quot;Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED&quot;, &quot;Testing T-GM Events on GNSS reboot and recovery&quot;)
-  After GNSS disable, the hardware transitions through ClockClass 7 (holdover) transiently before reaching 248 (FREERUN). The polling interval and event-window size in the `main`-branch test code are too coarse to catch this transition against `release-4.22` images, which may move through holdover more quickly than assumed. By the time the test polls, ptp4l is already at class 248.
-
-- **~6/16 failures — origin unclear from provided analyses** (may be additional serial failures or unanalyzed suite variants)
-
----
-
-**Cross-Suite Patterns:**
-
-| Pattern | Suites affected | Suite-specific? |
-|---|---|---|
-| `values[&quot;notification&quot;]` key mismatch | bc, dualfollower, dualnicbc, dualnicbcha, oc, tbc (all parallel) | No — cross-suite, same root cause |
-| ts2phc restart-count assertion | tgm only | Yes |
-| T-GM ClockClass 7 holdover window | tgm only | Yes |
-
-All 6 parallel suites share a single root cause (the key-change regression in `test/pkg/event/event.go`). Serial suites in bc, dualfollower, dualnicbc, oc passed their clock-sync tests — confirming PTP hardware sync was functional and only the event-reporting/test-parsing path was broken. The tgm failures are entirely independent and suite-specific.
-
----
-
-**Actionable Recommendations:**
-
-1. **Fix `testSyncState()` in `test/conformance/parallel/ptp.go` (highest impact — unblocks ~6 failures):** Update the `values[&quot;notification&quot;]` and `values[&quot;metric&quot;]` lookups to use the ResourceAddress key emitted by `cloud-event-proxy` (e.g. look up by iterating the map or by a named constant matching the resource path format), or add a `GetValueByDataType(dataType)` helper in `test/pkg/event/event.go` so all consumers are decoupled from the raw key format. This single change restores all 6 parallel event-based suites.
-
-2. **Gate the ts2phc restart-count test behind a daemon capability check or skip it on `release-4.22` (fixes 1 failure):** The test in `ptp.go:2628` was merged to `main` before the linuxptp-daemon fix exists. Either implement and cherry-pick the daemon-side counter-preservation fix to `release-4.22`, or add a version/feature guard so the assertion is skipped when running against images that do not support it.
-
-3. **Extend T-GM ClockClass 7 detection polling in tgm serial tests (fixes 3 failures):** Increase the poll interval tolerance or use event-based detection (subscribing to `ClockClassChange` events) rather than log-polling to observe the holdover transition. The current test assumes a minimum holdover window that `release-4.22` images do not guarantee.
-
----
-
-**Overall Issue Class:** `test_regression`
-
-**Overall Severity:** HIGH — 10+ of 16 failures are deterministic regressions introduced by `main`-branch test code changes that were not paired with matching updates to all call sites or with the required daemon fixes; every run will reproduce these failures until the test code is corrected.
-
-
----
-
-# Per-Suite Details
-
-
-## bc
-
----
-
-### Suite: bc (1 failures)
-
-**Suite TL;DR:** The single bc-parallel failure is the &quot;Event based tests PTP Slave Clock Sync&quot; test timing out because the BC slave OS clock was never observed in LOCKED state within the 5-minute test window.
-
-**Root Cause Groups:**
-
-- **Group 1: BC slave OS clock never reached LOCKED state within test window** (affects: `[bc-parallel] Event based tests PTP Slave Clock Sync`)
-
-  - **Evidence:**
-    - From `investigation-summary.txt`: `Source: ptp.go:393, run.go:84`
-    - From `junit-failures.txt`: `Test: [It] [bc-parallel] Event based tests PTP Slave Clock Sync — Message: result: error`
-    - From `test/conformance/parallel/ptp.go:393`: `Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)`
-    - From `test/conformance/parallel/ptp.go:386–392` (tcEndChan branch):
-      ```go
-      case &lt;-tcEndChan:
-          if !wasLocked {
-              Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)
-          }
-      ```
-    - From `test/conformance/config/ptptestconfig.yaml`: `slave_clock_sync.spec.duration: 5` (5-minute window), `slave_clock_sync.spec.failure_threshold: 10`
-    - From `ci-operator-build-log.txt`: `+ export PTP_UNDER_TEST_BRANCH=release-4.22` and `+ export TEST_BRANCH=main` — test scripts from `main`, production images from `release-4.22`
-    - From `junit-failures.txt`: The **identical test fails in all 6 parallel suites simultaneously** — `[bc-parallel]`, `[dualfollower-parallel]`, `[dualnicbc-parallel]`, `[dualnicbcha-parallel]`, `[oc-parallel]`, `[tbc-parallel]` — all with `result: error`. Serial bc suite had `failures=&quot;0&quot;` (78 tests passed).
-
-  - **Root Cause:** `testSyncState()` in `test/conformance/parallel/ptp.go` subscribes to `OsClockSyncStateChange` events via the `cloud-event-proxy` sidecar, calls `event.PushInitialEvent()` (which succeeded — otherwise line 378 would have fired), then waits up to 5 minutes for any event carrying `state == &quot;LOCKED&quot;`. The timer (`tcEndChan`) expired before `wasLocked` was set to `true`, meaning the initial event published a non-LOCKED state (FREERUN or HOLDOVER) and the clock did not transition to LOCKED within 5 minutes. The fact that all 6 parallel suites fail the same event-based clock sync test simultaneously while all bc serial tests pass is the defining signal: this is a cross-mode systemic PTP environment instability, not a bc-specific code regression. A relevant contextual factor is commit `4aa5310` (`ci: fix timeout onPushInitialEvent`, Aug 2025) which notes that OCPBUGS-60570 changed when `OsClockSyncStateChange` events can be pulled from the socket — this fix is on `main` (test code), but the `release-4.22` production images may have that bug fix applied, meaning the event socket behavior is correct; the issue is the underlying clock sync state at test time.
-
-  - **Breaking PR/Commit:** Unknown — no `check_backport.py` available and repos are shallow main-branch clones; the cross-suite pattern points to a transient PTP environment condition rather than a specific code commit. Related context: OCPBUGS-60570 (event socket behavior, fixed in `4aa5310` on main).
-
-  - **Is it a flake?** yes — The simultaneous failure of all 6 parallel `PTP Slave Clock Sync` tests while all serial bc tests pass is the hallmark of a transient PTP grandmaster or GPS-signal instability causing all downstream clocks to remain in FREERUN during the parallel test window. The `[tgm-serial]` test suite also shows failures for `WPC GM GNSS signal loss tests` and `ts2phc termination tests` (which intentionally disrupt the grandmaster), and the 5-minute test window is narrow enough that a temporary GPS/upstream disruption could prevent all parallel suites from observing a LOCKED transition.
-
-  - **Suggested Fix:** Re-run the periodic job to confirm this is a transient flake. If it recurs consistently, check the `cloud-event-proxy` sidecar logs on `release-4.22` images for FREERUN/HOLDOVER reasons, and verify whether the GNSS/TGM disruption tests in `[tgm-serial]` are sharing timing infrastructure with the BC test nodes.
-
-**Suite Issue Class:** test_flake
-**Suite Severity:** MEDIUM
-
-## dualfollower
-
----
-
-### Suite: dualfollower (1 failures)
-
-**Suite TL;DR:** The single &quot;Event based tests PTP Slave Clock Sync&quot; failure is a deterministic test regression introduced by commit `d20ffcb` on `main` (July 3, 2026), which broke how PTP sync-state events are looked up in the test&#x27;s key-value store, causing all parallel-mode suites to never detect a LOCKED clock state.
-
-**Root Cause Groups:**
-
-- **Group 1: `createStoredEvent` key-change regression breaks `values[&quot;notification&quot;]` lookup** (affects: `[dualfollower-parallel] Event based tests PTP Slave Clock Sync`)
-  - **Evidence:**
-    - JUnit result: `&quot;[It] [dualfollower-parallel] Event based tests PTP Slave Clock Sync&quot;: {&quot;time&quot;: 363.898387443, &quot;result&quot;: &quot;error&quot;}` — test ran its full ~6-minute configured duration before dying.
-    - `investigation-summary.txt`: `Source: ptp.go:393` → which is `Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)` in `test/conformance/parallel/ptp.go:393`.
-    - Same test fails in **all** parallel suites (bc, dualfollower, dualnicbc, dualnicbcha, oc, tbc) in `junit-failures.txt`, confirming a systematic rather than per-mode cause.
-    - From commit `d20ffcb` diff (`test/pkg/event/event.go`, lines 711–716 and 742–751 as shipped):
-      ```go
-      // Use ResourceAddress as key to avoid collisions…
-      key := v.Resource   // e.g. &quot;/cluster/node1/ptp/CLOCK_REALTIME&quot;
-      if key == &quot;&quot; {
-          key = string(v.DataType)
-      }
-      values[key] = v.Value
-      ```
-    - `cloud-event-proxy/plugins/ptp_operator/metrics/manager.go:319–324` always sets `Resource: eventSource` (non-empty path like `/cluster/node1/ptp/CLOCK_REALTIME`) and `DataType: NOTIFICATION` for the sync-state value.
-    - `test/conformance/parallel/ptp.go` `testSyncState()` reads: `state, _ := values[&quot;notification&quot;].(string)` — this key is now **never populated** because the storage key is the resource path, not `&quot;notification&quot;`. `wasLocked` stays false for the full test duration.
-    - CI build log confirms `TEST_BRANCH=main` — test scripts are from `main`, which includes `d20ffcb`.
-  - **Root Cause:** Commit `d20ffcb` (July 3, 2026) refactored `createStoredEvent` in `test/pkg/event/event.go` to use `v.Resource` as the map key (to handle BC-mode multi-instance collisions), but the cloud-event-proxy always emits a non-empty `Resource` field (a full cluster resource path). The existing `testSyncState` in `test/conformance/parallel/ptp.go` still reads `values[&quot;notification&quot;]` (the old `DataType`-based key), which is now empty for every event. Consequently, `state` is always `&quot;&quot;`, `wasLocked` never flips to `true`, and the test exhausts its 6-minute window before failing at `ptp.go:393`.
-  - **Breaking PR/Commit:** `d20ffcb` (`CNF-19588: CI test for clockClass recovery after cloud-event-proxy crash`) — merged `main` 2026-07-03. Not cherry-picked to `release-4.22`; this is purely a test-code regression on `main`.
-  - **Is it a flake?** No — deterministic. The storage key change is unconditional; the lookup mismatch will reproduce on every run with this test binary.
-  - **Suggested Fix:** In `testSyncState` (and any other consumer of `StoredEventValues`), replace `values[&quot;notification&quot;]` with a lookup that iterates over the map looking for a value whose key ends in `CLOCK_REALTIME` (or reconstruct the expected resource path), OR revert the `createStoredEvent` key strategy for notification values to keep `string(v.DataType)` as the key and use a qualified key only for `METRIC` values where collision is the actual concern.
-
-**Suite Issue Class:** test_regression
-
-**Suite Severity:** HIGH
-
-## dualnicbc
-
-Now I have enough to write the analysis.
-
----
-
-### Suite: dualnicbc (1 failures)
-
-**Suite TL;DR:** The single dualnicbc failure is the parallel &quot;Event based tests PTP Slave Clock Sync&quot; test timing out after ~364 seconds because the OS clock never reported a LOCKED state event during the test window, a pattern shared identically across all six parallel event-based suites in this run.
-
-**Root Cause Groups:**
-
-- **Group 1: OS Clock LOCKED event never received before test timeout** (affects: `[It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync`)
-  - **Evidence:**
-    - From `telco5g-ptp-tests__test_results.json`: `&quot;[It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync&quot;: {&quot;time&quot;: 363.898387443, &quot;result&quot;: &quot;error&quot;}` — ran for exactly one configured test duration (≈6 min) then errored.
-    - From `junit-failures.txt`: `Test: [It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync  /  Message: result: error`
-    - Same error appears for **all six** parallel event suites: `[bc-parallel]`, `[dualfollower-parallel]`, `[dualnicbc-parallel]`, `[dualnicbcha-parallel]`, `[oc-parallel]`, `[tbc-parallel]` — all show `result: error` for the identical test name.
-    - From `investigation-summary.txt`: `Source: ptp.go:393, run.go:84`
-    - From `test/conformance/parallel/ptp.go:390-393`: `case &lt;-tcEndChan: // The os clock never reach LOCKED status and the test has timed out / if !wasLocked { / Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)`
-    - From `ci-operator-build-log.txt` (serial tests passing): `[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]` — status `passed`, confirming hardware PTP sync was functional; only the event-reporting path failed.
-  - **Root Cause:** `testSyncState()` in `test/conformance/parallel/ptp.go` subscribes to `OsClockSyncStateChange` events via the consumer pod&#x27;s log stream and waits for a LOCKED state notification. The test&#x27;s `tcEndChan` fired at the configured 6-minute mark with `wasLocked == false`, triggering the `Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)` at line 393. Because serial clock-sync tests passed concurrently (hardware PTP sync was working), the failure is in the PTP events layer — either the cloud-event-proxy/consumer sidecar was not emitting LOCKED `OsClockSyncStateChange` events during this window, or the consumer pod log-scan in `PushInitialEvent` / `MonitorPodLogsRegex` did not observe them. Notably, commit `4aa5310` on `main` (not backported to `release-4.22`) was created specifically to extend the `PushInitialEvent` retry budget to 300 s (`maxPushInitialEventAttempts=30 × 10 s`) to cope with the behavioral change introduced by OCPBUGS-60570 in release-4.22 images, indicating the event infrastructure has known timing fragility in this configuration.
-  - **Breaking PR/Commit:** Unknown — no single `release-4.22` commit identified as the direct trigger; OCPBUGS-60570 (cloud-event-proxy behavior change) is the background factor, addressed on `main` by `4aa5310` (https://github.com/openshift/ptp-operator/commit/4aa531017e2f4b8e24f9ed75c9a88c55b4416907) but **not cherry-picked to `release-4.22`**.
-  - **Is it a flake?** yes — the simultaneous, identical failure across all six parallel event suites while all serial tests pass is characteristic of a transient environment/timing disruption in the events infrastructure (consumer pod not logging LOCKED events during that ~6-minute window), not a deterministic code regression.
-  - **Suggested Fix:** Cherry-pick `4aa5310` (`ci: fix timeout onPushInitialEvent`) to `release-4.22` to align the test retry budget with the changed OCPBUGS-60570 behavior; additionally, investigate whether the cloud-event-proxy consumer pod on `release-4.22` images reliably emits `OsClockSyncStateChange: LOCKED` log lines within 6 minutes of test start.
-
-**Suite Issue Class:** test_flake
-**Suite Severity:** MEDIUM
-
-## oc
-
----
-
-### Suite: oc (1 failures)
-
-**Suite TL;DR:** The `[oc-parallel] Event based tests PTP Slave Clock Sync` test always times out because a key-naming change in the event parsing library broke how the test reads clock state from received events.
-
-**Root Cause Groups:**
-
-- **Group 1: StoredEventValues map key change breaks `testSyncState()`** (affects: `[It] [oc-parallel] Event based tests PTP Slave Clock Sync`)
-  - **Evidence:**
-    ```
-    # From test_results_oc.xml (fetched from GCS):
-    &lt;failure message=&quot;OS Clock was never LOCKED and test timed out&quot; type=&quot;failed&quot;&gt;
-    [FAILED] OS Clock was never LOCKED and test timed out
-    In [It] at: /tmp/cnf-v6YRb/ptp-operator-conformance-test/test/conformance/parallel/ptp.go:393 @ 07/23/26 11:10:38.94
-
-    # Received event contained value=&quot;LOCKED&quot; in the raw CloudEvent data:
-    DEBUG [event.go: 730] Context Attributes, ... &quot;value&quot;:&quot;LOCKED&quot;
-
-    # But the test extracted an empty state:
-    DEBUG [ptp.go: 419] clockOffset=0.000000
-    # And the eventvalues map shows the ResourceAddress key (not &quot;notification&quot;):
-    DEBUG [ptp.go: 411] got map[...eventvalues:map[/cluster/node/cnfdf30.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME:-3]]
-    ```
-  - **Root Cause:** PR #711 (commit `5e9ecf0`, merged 2026-07-15) changed `createStoredEvent()` in `test/pkg/event/event.go` to use `v.Resource` (the ResourceAddress, e.g. `/cluster/node/cnfdf30.../CLOCK_REALTIME`) as the `StoredEventValues` map key instead of `v.DataType` (the string `&quot;notification&quot;` or `&quot;metric&quot;`). However, `testSyncState()` at `test/conformance/parallel/ptp.go:414-415` was **not updated** and still reads `values[&quot;notification&quot;].(string)` and `values[&quot;metric&quot;].(float64)`. Both type-assertions fail silently, `state` is always `&quot;&quot;`, the test never observes `state == &quot;LOCKED&quot;`, runs the full 5-minute duration (`Duration:5`), and then fails at `ptp.go:393` with `&quot;OS Clock was never LOCKED and test timed out&quot;`. The raw event DID carry `&quot;LOCKED&quot;` — the data is correct, but the key under which it is stored changed.
-  - **Breaking PR/Commit:** Commit `5e9ecf0` — PR #711 `jzding/upstream-sync-2026-07-08` merged into `main` on 2026-07-15. This is a change to the `main`-branch test code; the `release-4.22` production images are not implicated. (`test/conformance/serial/ptp.go` was also updated in the same commit with 397 lines changed, but `test/conformance/parallel/ptp.go` was missed.)
-  - **Is it a flake?** No — the key mismatch is deterministic; every run of this test will produce the same timeout.
-  - **Suggested Fix:** In `test/conformance/parallel/ptp.go:testSyncState()` (lines 413–415), update the event-value lookup to use the ResourceAddress key (e.g. the first key in the `StoredEventValues` map, or a named constant matching the address format), **or** revert the `createStoredEvent()` change for the `data_type`-keyed path. A less-invasive fix is to add a helper in `event.go` that looks up by `DataType` so both serial and parallel consumers can use it without hardcoding key strings.
-
-**Suite Issue Class:** test_regression
-**Suite Severity:** HIGH
-
-## tgm
-
----
-
-### Suite: tgm (4 failures)
-
-**Suite TL;DR:** All 4 tgm-serial tests fail because `main`-only tests test behaviors not yet present in `release-4.22` linuxptp-daemon images — specifically, ts2phc restart-counter preservation after PtpConfig delete/re-apply (Test 1), and a holdover clock-class transition window (Tests 2-4) so brief that polling and short event windows miss it.
-
-**Root</div></details>
-  </td>
-  <td class="col-date">2026-07-26</td>
-  <td class="col-date">2026-07-27</td>
-  <td class="col-tests"><ul><li>[It] [tbc-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [tgm-serial] PTP e2e tests WPC GM Verification Tests Verify ts2phc metrics are cleaned up after GM PtpConfig delete and re-apply [Serial]</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2080171378220208128" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-26)</span></li></ul></td>
-</tr>
-<tr id="6b718e8d55f2c993">
-  <td class="col-rc">
-    <div class="rc-text">Commit `d20ffcbf0c` on `k8snetworkplumbingwg/ptp-operator` (merged 2026-07-03, title: &quot;CNF-19588: CI test for clockClass recovery after cloud-event-proxy crash&quot;) changed `createStoredEvent` in `test/pkg/event/event.go` (v2 path, line 730) to use `v.Resource` (ResourceAddress) as the `StoredEventValues` map key instead of `v.DataType`. For `os-clock-sync-state-change` events, both DataValues — the `notification` (&quot;LOCKED&quot;) and the `metric` (-2) — share the **same** ResourceAddress (`/cluster/node/.../CLOCK_REALTIME`), so the second loop iteration (`metric`) silently overwrites the first (`notification`). The resulting map has no `&quot;notification&quot;` key, so `testSyncState` in `test/conformance/parallel/ptp.go:413–414` always reads `state = &quot;&quot;` and `wasLocked` never becomes `true`. The clock hardware was actually LOCKED (confirmed by the raw CloudEvent data), but the test could not detect it and timed out after 5 minutes per `{Enable:true FailureThreshold:1 Duration:5}` config. This is a **t</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** A test-code key collision in `createStoredEvent` (commit `d20ffcbf0c`, 2026-07-03) causes every &quot;PTP Slave Clock Sync&quot; event test to miss the LOCKED state and time out.
-
----
-
-**Root Cause Groups:**
-
-- **15/15 failures: Key collision in `createStoredEvent` silently drops LOCKED notification state, causing all PTP Slave Clock Sync tests to time out** — commit `d20ffcbf0c` on `k8snetworkplumbingwg/ptp-operator` main (merged 2026-07-03) changed the `StoredEventValues` map key from `v.DataType` to `v.Resource` (ResourceAddress). For `os-clock-sync-state-change` events, both the `notification` (&quot;LOCKED&quot;) and `metric` (-2) DataValues share the same ResourceAddress (`/cluster/node/.../CLOCK_REALTIME`), so the metric entry silently overwrites the notification entry. `ptp.go:414` then reads `values[&quot;notification&quot;]` as `&quot;&quot;` (key absent), `wasLocked` never becomes `true`, and the test times out after 5 minutes. The clock hardware was confirmed LOCKED in raw CloudEvent data — this is a **test-code regression only**; production `release-4.22` images are unaffected.
-
----
-
-**Cross-Suite Patterns:**
-
-- **All suites share the same root cause** (`bc`, `oc`, and per the oc analysis also `dualfollower`, `dualnicbc`, `dualnicbcha`). The failure is systematic and code-level: every suite running `Event based tests PTP Slave Clock Sync` hits the same bad key lookup path in `testSyncState`. No suite-specific variation is present — the `clockOffset=0.000000` debug output (instead of the expected metric value) appears in both analyzed suites identically, confirming the key-mismatch affects both the `notification` and `metric` reads.
-
----
-
-**Actionable Recommendations:**
-
-1. **Revert the map key change in `createStoredEvent`** (`test/pkg/event/event.go`, v2 path, ~line 730): restore `v.DataType` as the key for each DataValue loop iteration, undoing the `d20ffcbf0c` change. This directly fixes all 15 failures across every suite.
-
-2. **Add a regression test for `createStoredEvent`** that asserts the returned map contains both `&quot;notification&quot;` and `&quot;metric&quot;` keys when given a dual-DataValue `os-clock-sync-state-change` event — preventing future key changes from silently breaking event parsing.
-
-3. **Block the PR that introduced `d20ffcbf0c`** (or open a revert PR) against `k8snetworkplumbingwg/ptp-operator` main immediately, as every nightly run on this job will continue to fail 100% of the time until the fix lands.
-
----
-
-**Overall Issue Class:** `test_regression`
-
-**Overall Severity:** HIGH — all 15 test failures trace to a single deterministic code regression on main; no hardware or infra issues involved, but the entire nightly job is broken on every run until resolved.
-
-
----
-
-# Per-Suite Details
-
-
-## bc
-
----
-
-### Suite: bc (1 failures)
-
-**Suite TL;DR:** The single bc-parallel test &quot;PTP Slave Clock Sync&quot; timed out unable to detect a LOCKED OS clock because a test-code change in `k8snetworkplumbingwg/ptp-operator` commit `d20ffcbf0c` (July 3, 2026) introduced a key collision bug in `createStoredEvent` that silently drops the notification state from received CloudEvents.
-
-**Root Cause Groups:**
-
-- **Group 1: Key collision in `createStoredEvent` drops LOCKED notification state** (affects: `[It] [bc-parallel] Event based tests PTP Slave Clock Sync`)
-
-  - **Evidence:**
-    ```
-    [event.go: 730] Context Attributes,
-      type: event.sync.sync-status.os-clock-sync-state-change
-      source: /sync/sync-status/os-clock-sync-state
-    Data,
-      {&quot;version&quot;:&quot;1.0&quot;,&quot;values&quot;:[
-        {&quot;ResourceAddress&quot;:&quot;/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME&quot;,&quot;data_type&quot;:&quot;notification&quot;,&quot;value_type&quot;:&quot;enumeration&quot;,&quot;value&quot;:&quot;LOCKED&quot;},
-        {&quot;ResourceAddress&quot;:&quot;/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME&quot;,&quot;data_type&quot;:&quot;metric&quot;,&quot;value_type&quot;:&quot;decimal64.3&quot;,&quot;value&quot;:&quot;-2&quot;}
-      ]}
-    [event.go: 734] Latency for the event: 36942 ms
-    [ptp.go: 411] got map[eventsource:/sync/sync-status/os-clock-sync-state ... eventvalues:map[/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME:-2]]
-    [ptp.go: 419] clockOffset=0.000000
-    [ptp.go: 393] [FAILED] OS Clock was never LOCKED and test timed out
-    ```
-
-  - **Root Cause:** Commit `d20ffcbf0c` on `k8snetworkplumbingwg/ptp-operator` (merged 2026-07-03, title: &quot;CNF-19588: CI test for clockClass recovery after cloud-event-proxy crash&quot;) changed `createStoredEvent` in `test/pkg/event/event.go` (v2 path, line 730) to use `v.Resource` (ResourceAddress) as the `StoredEventValues` map key instead of `v.DataType`. For `os-clock-sync-state-change` events, both DataValues — the `notification` (&quot;LOCKED&quot;) and the `metric` (-2) — share the **same** ResourceAddress (`/cluster/node/.../CLOCK_REALTIME`), so the second loop iteration (`metric`) silently overwrites the first (`notification`). The resulting map has no `&quot;notification&quot;` key, so `testSyncState` in `test/conformance/parallel/ptp.go:413–414` always reads `state = &quot;&quot;` and `wasLocked` never becomes `true`. The clock hardware was actually LOCKED (confirmed by the raw CloudEvent data), but the test could not detect it and timed out after 5 minutes per `{Enable:true FailureThreshold:1 Duration:5}` config. This is a **test-code regression on main** — the production `release-4.22` images are unaffected.
-
-  - **Breaking PR/Commit:** `d20ffcbf0c` on `k8snetworkplumbingwg/ptp-operator` main (2026-07-03) — https://github.com/k8snetworkplumbingwg/ptp-operator/commit/d20ffcbf0c
-
-  - **Is it a flake?** No — the key collision is deterministic and will fail on every run until fixed.
-
-  - **Suggested Fix:** In `test/pkg/event/event.go` `createStoredEvent` v2 path, restore `v.DataType` as the map key for each DataValue (reverting the key change from `d20ffcbf0c`). To also support the multiple-`metric` BC clock-class use case that motivated the change, either accumulate values into a slice or use a composite key like `&quot;&lt;ResourceAddress&gt;/&lt;DataType&gt;&quot;` and update all callers that read `values[&quot;notification&quot;]` and `values[&quot;metric&quot;]` accordingly.
-
-**Suite Issue Class:** test_regression  
-**Suite Severity:** HIGH
-
-## oc
-
----
-
-### Suite: oc (1 failures)
-
-**Suite TL;DR:** The single `[oc-parallel] Event based tests PTP Slave Clock Sync` test timed out because the OS clock LOCKED state event was received but its values were keyed by `ResourceAddress` (e.g. `/cluster/node/cnfdf30.../CLOCK_REALTIME:15`) instead of by `DataType` (`&quot;notification&quot;`), so `ptp.go:414` never resolved `state == &quot;LOCKED&quot;` and `wasLocked` remained `false` until the 5-minute timeout fired.
-
-**Root Cause Groups:**
-
-- **Group 1: Event value key mismatch — OS clock LOCKED state never recognized** (affects: `[It] [oc-parallel] Event based tests PTP Slave Clock Sync`)
-  - **Evidence:**
-    ```
-    [FAILED] OS Clock was never LOCKED and test timed out
-    In [It] at: /tmp/cnf-s7FwM/ptp-operator-conformance-test/test/conformance/parallel/ptp.go:393 @ 07/12/26 11:01:22.395
-    ```
-    ```
-    DEBUG  [ptp.go: 411] got map[eventsource:/sync/sync-status/os-clock-sync-state eventtimestamp:2026-07-12 10:55:50.49315292 +0000 UTC eventtype:event.sync.sync-status.os-clock-sync-state-change eventvalues:map[/cluster/node/cnfdf30.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME:15]]
-    DEBUG  [ptp.go: 419] clockOffset=0.000000
-    ```
-    ```
-    INFO   [event.go: 734] Latency for the event: 36928 ms
-    INFO   [event.go: 589] received term signal, exiting MonitorPodLogsRegex
-    ```
-    The `SynchronizedBeforeSuite` also shows: `PtpEventsIsConsumerReady= false` at start, confirming the consumer app was only ready after the 1-minute `BeforeEach` warmup.
-
-  - **Root Cause:** `testSyncState` in `test/conformance/parallel/ptp.go` subscribes to `OsClockSyncStateChange` events and calls `event.PushInitialEvent` to get the current clock state. The initial event IS received (a stale LOCKED event timestamped 37 seconds earlier), but its `StoredEventValues` map uses the `ResourceAddress` path (`/cluster/node/cnfdf30.../CLOCK_REA</div></details>
-  </td>
-  <td class="col-date">2026-07-15</td>
-  <td class="col-date">2026-07-27</td>
-  <td class="col-tests"><ul><li>[It] [dualfollower-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails [Serial]</li><li>[It] [dualnicbcha-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [oc-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [tbc-serial] PTP e2e tests PTP ClockSync PTP daemon apply match rule based on nodeLabel [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [tbc-serial] PTP e2e tests Running with event enabled Should recover clockClass via event API after cloud-event-proxy crash [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP Outage recovery Should restart phc2sys with no socket errors after SIGTERM [Serial]</li><li class='more'>+4 more</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081258581503512576" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2080171378220208128" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2079446590644293632" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-22)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2078721882944704512" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-21)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2075097842350821376" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-20)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2076185031734202368" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-15)</span></li></ul></td>
-</tr>
-<tr id="fb71a446d7825ee8">
-  <td class="col-rc">
-    <div class="rc-text">Commit `d20ffcb` (CNF-19588, Jul 3 2026) changed `createStoredEvent` in `test/pkg/event/event.go` to key the values map by `v.Resource` (ResourceAddress, e.g., `/cluster/node/cnfdf32.../CLOCK_REALTIME`) instead of `v.DataType` (e.g., `&quot;notification&quot;`). Because the two event values both share the same `ResourceAddress`, the metric value also overwrites the notification value. The test consumer at `ptp.go:413-414` still looks up `values[&quot;notification&quot;]`, which is now always nil, so `state` is always `&quot;&quot;`. `wasLocked` never becomes `true`, and when the 5-minute test window expires the test fails at `ptp.go:393` with `Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)`.</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-## Cross-Suite Summary — `periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp`
-
----
-
-**TL;DR:** linuxptp-daemon PR #618 broke T-GM holdover and T-BC sync (9 failures); a test-code key regression in `d20ffcb` broke all 5 parallel event tests (5 failures).
-
----
-
-### Root Cause Groups
-
-| # | Failures | Suites | Root Cause |
-|---|----------|--------|------------|
-| 1 | **9 / 15** | tbc (×6), tgm (×3) | `openshift/linuxptp-daemon` **PR #618** (`d2ff2d154d`, merged `release-4.22` 2026-06-30): T-GM holdover state machine bypassed — class 7 never emitted, jumps LOCKED (6) → FREERUN (248) directly; T-BC on `cnfdf32` consequently stuck in FREERUN (class 248) with phc2sys never starting, cascading to all 6 tbc serial tests. |
-| 2 | **5 / 15** | bc, dualfollower, dualnicbc, dualnicbcha, oc (all `-parallel`) | Test-code regression **commit `d20ffcb`** (Jul 3, 2026, `main`): `createStoredEvent` in `test/pkg/event/event.go` changed the values-map key from `DataType` (`&quot;notification&quot;`) to `ResourceAddress`; `testSyncState()` still looks up `values[&quot;notification&quot;]`, always gets nil, `wasLocked` never becomes `true`. All 5 parallel suites ran concurrently, all timed out at ≈363 s (`ptp.go:393`). Secondary contributor: `cloud-event-proxy:release-4.22` sidecar and/or the shared `consumer` pod in `ptp-event-framework-test` may not have been serving `OsClockSyncStateChange` events during the parallel window (`PushInitialEvent` exhausted all 30 × 10 s retries). |
-| 3 | **1 / 15** | dualnicbcha (serial) | phc2sys HA failover — phc2sys did not switch to secondary ptp4l after the primary interface was downed, or failed to emit the expected log line. Likely a cascade of the T-BC FREERUN state from Group 1. |
-
----
-
-### Cross-Suite Patterns
-
-- **tbc + tgm share one root cause** (PR #618): T-GM FREERUN propagates upstream — T-BC has no grandmaster to lock to, leaving cnfdf32 in class 248 and making all T-BC serial tests deterministically fail. Fixing PR #618 unblocks both suites.
-- **All 5 parallel suites share one root cause** (commit `d20ffcb`): bc, dualfollower, dualnicbc, dualnicbcha, and oc fail with identical timing (≈363 s) and identical failure message, confirming a single shared code path broken by the same commit.
-- **dualnicbcha is the only suite with failures from two separate groups** (1 parallel event + 1 serial HA), making it appear to have the most diverse failure set.
-- **No suite-specific flakes** — every failure traces to one of the two breaking changes above.
-
----
-
-### Actionable Recommendations
-
-1. **Revert or patch `openshift/linuxptp-daemon` PR #618 on `release-4.22`** — restore the T-GM holdover servo-state path so ts2phc emits clock class 7 before transitioning to 248, and re-add the FREERUN `ptp-state-change` CloudEvent dispatch in the restarted-ts2phc code path. This is the highest-leverage fix: **9/15 failures resolved**.
-
-2. **Fix the `createStoredEvent` key regression from commit `d20ffcb`** in `test/pkg/event/event.go` (runs from `main`) — update the consumer in `ptp.go:413–414` to use the new `ResourceAddress`-keyed lookup (e.g., `values[resourceAddress].(string)`) instead of `values[&quot;notification&quot;]`, or revert the key to `DataType`. Also pin `CONSUMER_IMG` to a versioned tag instead of `:latest` to prevent silent consumer regressions. **5/15 failures resolved**.
-
-3. **Add a guard in tbc test AfterEach** to restore the original `ptpConfig` even on failure — this prevents the cascade from Group 1 (nil `ptpConfig`) from adding spurious secondary failures when the primary T-BC issue recurs.
-
----
-
-**Overall Issue Class:** `test_failure` (production image regression in `release-4.22` + test-code regression on `main`)
-
-**Overall Severity:** **CRITICAL** — 15/15 failures, every suite affected, PTP synchronization infrastructure completely non-functional for both T-GM and T-BC hardware paths.
-
-
----
-
-# Per-Suite Details
-
-
-## bc
-
----
-
-### Suite: bc (1 failures)
-
-**Suite TL;DR:** The single `[bc-parallel] Event based tests PTP Slave Clock Sync` failure is caused by a test code regression in `main` that changed the event-value map key from `DataType` to `ResourceAddress`, making the state lookup for `&quot;notification&quot;` permanently return nil so the clock is never seen as LOCKED.
-
-**Root Cause Groups:**
-
-- **Group 1: createStoredEvent key change breaks state lookup in testSyncState** (affects: `[It] [bc-parallel] Event based tests PTP Slave Clock Sync`)
-
-  - **Evidence:**
-
-    Failure message from artifact XML at `ptp.go:393` at `07/21/26 11:03:31.053`:
-    ```
-    &lt;failure message=&quot;OS Clock was never LOCKED and test timed out&quot; type=&quot;failed&quot;&gt;
-    [FAILED] OS Clock was never LOCKED and test timed out
-    In [It] at: .../test/conformance/parallel/ptp.go:393 @ 07/21/26 11:03:31.053
-    ```
-
-    The PushInitialEvents goroutine DID find and parse a LOCKED event (at `event.go:730`, 10:58:36):
-    ```
-    [Jul 21 10:58:36.093][event.go: 730] Context Attributes,
-      type: event.sync.sync-status.os-clock-sync-state-change
-    Data, {&quot;values&quot;:[{&quot;ResourceAddress&quot;:&quot;/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/CLOCK_REALTIME&quot;,
-      &quot;data_type&quot;:&quot;notification&quot;,&quot;value&quot;:&quot;LOCKED&quot;},
-      {&quot;ResourceAddress&quot;:&quot;/cluster/node/cnfdf32.../CLOCK_REALTIME&quot;,&quot;data_type&quot;:&quot;metric&quot;,&quot;value&quot;:&quot;-...&quot;}]}
-    ```
-
-    Git diff from commit `d20ffcb` (Jul 3, 2026) in `test/pkg/event/event.go`:
-    ```diff
-    -  dataType := string(v.DataType)
-    -  values[dataType] = v.Value
-    +  // Use ResourceAddress as key to avoid collisions…
-    +  key := v.Resource
-    +  if key == &quot;&quot; {
-    +      key = string(v.DataType)
-    +  }
-    +  values[key] = v.Value
-    ```
-
-    Consumer in `testSyncState` (`test/conformance/parallel/ptp.go:413-414`):
-    ```go
-    values, _ := singleEvent[exports.EventValues].(exports.StoredEventValues)
-    state, _ := values[&quot;notification&quot;].(string)   // always nil now
-    ```
-
-  - **Root Cause:** Commit `d20ffcb` (CNF-19588, Jul 3 2026) changed `createStoredEvent` in `test/pkg/event/event.go` to key the values map by `v.Resource` (ResourceAddress, e.g., `/cluster/node/cnfdf32.../CLOCK_REALTIME`) instead of `v.DataType` (e.g., `&quot;notification&quot;`). Because the two event values both share the same `ResourceAddress`, the metric value also overwrites the notification value. The test consumer at `ptp.go:413-414` still looks up `values[&quot;notification&quot;]`, which is now always nil, so `state` is always `&quot;&quot;`. `wasLocked` never becomes `true`, and when the 5-minute test window expires the test fails at `ptp.go:393` with `Fail(&quot;OS Clock was never LOCKED and test timed out&quot;)`.
-
-  - **Breaking PR/Commit:** `d20ffcb` — CNF-19588: CI test for clockClass recovery after cloud-event-proxy crash — merged Jul 3, 2026 on `main`. This commit is in the test code (which runs from `main`), so no backport to `release-4.22` is required for this fix; the `scripts/check_backport.py` script was not present to run.
-
-  - **Is it a flake?** No — this is a deterministic regression. The same failure pattern appears across all parallel event suites (`bc`, `dualfollower`, `dualnicbc`, `oc`) confirming systematic breakage, not timing-related flakiness.
-
-  - **Suggested Fix:** In `test/pkg/event/event.go` `createStoredEvent`, additionally store events using `DataType` as a secondary key (or switch `testSyncState` / `testSyncState` consumer to look up by `ResourceAddress` suffix `CLOCK_REALTIME` instead of `&quot;notification&quot;`). Alternatively, store both keys: `values[string(v.DataType)] = v.Value` alongside the ResourceAddress key so existing consumers are not broken.
-
-**Suite Issue Class:** `test_regression`
-**Suite Severity:** HIGH
-
-## dualfollower
-
----
-
-### Suite: dualfollower (1 failures)
-
-**Suite TL;DR:** The single dualfollower failure is `Event based tests PTP Slave Clock Sync` (parallel), which timed out because the OS clock never reported a LOCKED state within the configured ~6-minute test window — the identical failure simultaneously hit all five parallel suites (bc, dualfollower, dualnicb</div></details>
-  </td>
-  <td class="col-date">2026-07-22</td>
-  <td class="col-date">2026-07-27</td>
-  <td class="col-tests"><ul><li>[It] [bc-parallel] Event based tests PTP Slave Clock Sync</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081258581503512576" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2081530601805975552" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2080171378220208128" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-26)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2079446590644293632" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-22)</span></li></ul></td>
 </tr>
 <tr id="90fa80510b24227a">
   <td class="col-rc">

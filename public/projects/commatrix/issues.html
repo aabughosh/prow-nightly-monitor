@@ -45,9 +45,9 @@
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">74</div>Active</div>
-    <div class="stat"><div class="stat-num" style="color:#c9d1d9">74</div>Fingerprints</div>
-    <div class="stat"><div class="stat-num" style="color:#a371f7">50</div>Issues</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">70</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">70</div>Fingerprints</div>
+    <div class="stat"><div class="stat-num" style="color:#a371f7">48</div>Issues</div>
   </div>
   <table>
     <thead><tr>
@@ -2271,88 +2271,6 @@
   <td class="col-date">2026-06-27</td>
   <td class="col-tests"><ul><li>Matrix mismatch: 6 port(s) in matrix but not in use; 11 port(s) open but missing endpointslice</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2070854873502453760" target="_blank">5.0-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-06-27)</span></li></ul></td>
-</tr>
-<tr id="b13d83daafaad5ff">
-  <td class="col-rc">
-    <div class="rc-text">The `telco5g-sno-setup` pre-phase step ran `upstream_cluster_all.py --get-cluster` (via `get-cluster-name.yml:6`) against the `upstreambil` lab and received `&quot;Failed to find a free cluster!&quot;` — all SNO/1b1v topology clusters in the lab were busy or unavailable. No OCP cluster was ever provisioned, so commatrix tests never ran. The downstream `telco5g-log-gather` and `telco5g-release-cluster` post-steps both immediately exited with &quot;Cluster doesn&#x27;t exist, job failed&quot; — pure cascades. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** CI lab had no free SNO cluster; setup failed before commatrix tests ran.
-
-**Root Cause Groups:**
-
-- **Group 1: CI lab cluster unavailability** (affects: telco5g-sno-setup, telco5g-log-gather, telco5g-release-cluster)
-  - **Evidence:**
-    ```
-    &quot;stderr&quot;: &quot;Failed to find a free cluster!&quot;
-    fatal: [XXXXXXXXXXXX]: FAILED! =&gt; { &quot;cmd&quot;: [&quot;python3&quot;, &quot;~/telco5g-lab-deployment/scripts/upstream_cluster_all.py&quot;, &quot;--get-cluster&quot;, &quot;-e&quot;, &quot;upstreambil&quot;, ...], &quot;rc&quot;: 1 }
-    Cluster doesn&#x27;t exist, job failed, no need to run gather
-    Cluster doesn&#x27;t exist, job failed
-    ```
-  - **Root Cause:** The `telco5g-sno-setup` pre-phase step ran `upstream_cluster_all.py --get-cluster` (via `get-cluster-name.yml:6`) against the `upstreambil` lab and received `&quot;Failed to find a free cluster!&quot;` — all SNO/1b1v topology clusters in the lab were busy or unavailable. No OCP cluster was ever provisioned, so commatrix tests never ran. The downstream `telco5g-log-gather` and `telco5g-release-cluster` post-steps both immediately exited with &quot;Cluster doesn&#x27;t exist, job failed&quot; — pure cascades.
-  - **Breaking PR/Commit:** Unknown — external lab resource contention, no code change involved.
-  - **Is it a flake?** Yes — this is an infra quota flake; the lab pool was exhausted at job start time.
-  - **Suggested Fix:** Re-run the job when lab capacity is available. No commatrix code change is needed.
-  - **Affected tests:** telco5g-sno-setup, telco5g-log-gather, telco5g-release-cluster
-
----
-
-**Relation Between Groups:** Single root cause — all three failures are a linear cascade from the one lab quota miss in the pre-phase setup step.
-
-**Per-Version Notes:** OCP 5.0 nightly (5.0.0-0.nightly-2026-06-22-235733) — image import succeeded; failure is infra-only.
-
-**Affected Images:** None — no image pull or build failure; `registry.ci.openshift.org/ocp/release-5:5.0.0-0.nightly-2026-06-22-235733` imported cleanly (192 images).
-
-**Overall Issue Class:** infra_quota
-
-**Overall Severity:** MEDIUM</div></details>
-  </td>
-  <td class="col-date">2026-06-25</td>
-  <td class="col-date">2026-06-25</td>
-  <td class="col-tests"><ul><li>telco5g-sno-setup</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2070131433128595456" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-25)</span></li></ul></td>
-</tr>
-<tr id="2292fd7c7af55650">
-  <td class="col-rc">
-    <div class="rc-text">The `telco5g-cluster-setup` pre-phase step invoked `upstream_cluster_all.py --get-cluster -e upstreambil --exclude cnfdu1 --exclude cnfdu3` on the bastion host. The script returned `&quot;Failed to find a free cluster!&quot;` with rc=1, meaning the telco bare-metal cluster pool (upstreambil environment) had no available slot. The commatrix tests never started. The `telco5g-log-gather` and `telco5g-release-cluster` failures are direct cascades — their scripts explicitly check for cluster existence and exit immediately when none was allocated. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** CI infra failure — no free telco bare-metal cluster available; commatrix tests never ran.
-
-**Root Cause Groups:**
-
-- **Group 1: CI infrastructure — no free cluster lease** (affects Tests: telco5g-cluster-setup, telco5g-log-gather, telco5g-release-cluster)
-  - **Evidence:**
-    ```
-    &quot;stderr&quot;: &quot;Failed to find a free cluster!&quot;,
-    &quot;stderr_lines&quot;: [&quot;Failed to find a free cluster!&quot;]
-    fatal: [XXXXXXXXXXXX]: FAILED! =&gt; { &quot;cmd&quot;: [&quot;python3&quot;, &quot;~/telco5g-lab-deployment/scripts/upstream_cluster_all.py&quot;, &quot;--get-cluster&quot;, &quot;-e&quot;, &quot;upstreambil&quot;, &quot;--exclude&quot;, &quot;cnfdu1&quot;, &quot;--exclude&quot;, &quot;cnfdu3&quot;], &quot;rc&quot;: 1 }
-    Step telco5g-network-flow-matrix-bm-telco5g-cluster-setup failed after 22s.
-    Cluster doesn&#x27;t exist, job failed, no need to run gather
-    Cluster doesn&#x27;t exist, job failed
-    ```
-  - **Root Cause:** The `telco5g-cluster-setup` pre-phase step invoked `upstream_cluster_all.py --get-cluster -e upstreambil --exclude cnfdu1 --exclude cnfdu3` on the bastion host. The script returned `&quot;Failed to find a free cluster!&quot;` with rc=1, meaning the telco bare-metal cluster pool (upstreambil environment) had no available slot. The commatrix tests never started. The `telco5g-log-gather` and `telco5g-release-cluster` failures are direct cascades — their scripts explicitly check for cluster existence and exit immediately when none was allocated.
-  - **Breaking PR/Commit:** Unknown — this is a CI resource contention issue, not a code change.
-  - **Is it a flake?** Yes — cluster pool exhaustion is transient and resolves when other jobs finish and return their leases.
-  - **Suggested Fix:** Retry the job. If it recurs frequently, investigate whether the `upstreambil` pool size is sufficient for the current job load or whether other long-running jobs are holding clusters.
-  - **Affected tests:** telco5g-cluster-setup, telco5g-log-gather, telco5g-release-cluster
-
----
-
-**Relation Between Groups:** Single root cause — all three failures are one cascade chain: cluster not provisioned → log-gather and release-cluster both exit immediately with &quot;Cluster doesn&#x27;t exist.&quot;
-
-**Per-Version Notes:** OCP 5.0 nightly (5.0.0-0.nightly-2026-06-22-235733) — no OCP-version-specific issue; the cluster was never provisioned so OCP version is irrelevant.
-
-**Affected Images:** None — no image pull failures. `ci/telco-runner:latest` and `release:latest` (192 images) imported successfully before failure.
-
-**Overall Issue Class:** infra_quota
-
-**Overall Severity:** MEDIUM</div></details>
-  </td>
-  <td class="col-date">2026-06-25</td>
-  <td class="col-date">2026-06-25</td>
-  <td class="col-tests"><ul><li>telco5g-cluster-setup</li><li>telco5g-log-gather</li><li>telco5g-release-cluster</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2070129971950522368" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-25)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2070131433128595456" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-25)</span></li></ul></td>
 </tr>
 </tbody>
   </table>
