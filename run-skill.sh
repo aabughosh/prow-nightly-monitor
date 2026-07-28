@@ -141,8 +141,8 @@ PYEOF
         if "$CURSOR_CLI" agent status >> "$LOG_FILE" 2>&1; then
             log "  Running AI analysis for $PROJECT_NAME..."
             cd "$REPO_DIR"
-            # Timeout: max 90 minutes for AI analysis per project
-            if ! gtimeout 5400 python3 "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
+            # Timeout: max 90 minutes for AI analysis per project (kill entire process group)
+            if ! gtimeout --kill-after=30 --signal=KILL 5400 python3 -u "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
                 log "  WARNING: inject_claude.py had errors or timed out for $PROJECT_NAME"
             fi
 
