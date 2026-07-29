@@ -1016,11 +1016,9 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
         if _ver_m:
             _ver = _ver_m.group(1)
 
-        # If test_name is a generic fallback (no real test identified), use
-        # version-specific fingerprint so each version gets its own AI analysis
-        is_generic = issue["test_name"].startswith("Job failure:") or \
-                     issue["test_name"].startswith("Last log lines:")
-        fp_version = _ver if is_generic else ""
+        # Always use version-specific fingerprints so each OCP version gets
+        # its own analysis (different versions have different root causes)
+        fp_version = _ver
         fp = compute_issue_fingerprint(
             issue["test_name"], issue["error_msg"], issue["category"],
             version=fp_version, job_filter=os.environ.get("JOB_FILTER", "")
