@@ -602,8 +602,8 @@ def process_project(project_name: str) -> int:
                 for job in run_data.get("jobs", []):
                     bid = _extract_build_id(job)
                     if bid and bid not in seen_builds:
-                        # If current results has analysis for this job name, use it
-                        if job["name"] in current_ai and not job.get("analysis", {}).get("ai_summary"):
+                        # Always use current analysis for this job name if available
+                        if job["name"] in current_ai:
                             job.setdefault("analysis", {})["ai_summary"] = current_ai[job["name"]]
                         all_jobs.append(job)
                         seen_builds.add(bid)
