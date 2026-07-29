@@ -227,13 +227,6 @@ def generate_job_page(job: dict, project_name: str, generated_at: str) -> str:
     sev_color = SEV_COLORS.get(severity.lower(), "#484f58") if severity else ""
 
     ai_summary = analysis.get("ai_summary", "")
-    # Version mismatch check: discard analysis that mentions a wrong version
-    wrong_versions = [f"release-{v}" for v in ["4.17","4.18","4.19","4.20","4.21","4.22","4.23","5.0"] if v != version] if version else []
-    if ai_summary and version and wrong_versions:
-        for wv in wrong_versions:
-            if wv in ai_summary[:500] and f"release-{version}" not in ai_summary[:500]:
-                ai_summary = ""
-                break
     if not ai_summary and analysis.get("issues"):
         # No main summary — pick the single longest per-issue analysis
         best = ""
@@ -241,12 +234,6 @@ def generate_job_page(job: dict, project_name: str, generated_at: str) -> str:
             iss_ai = iss.get("ai_summary", "")
             if len(iss_ai) > len(best):
                 best = iss_ai
-        # Validate version match
-        if best and version and wrong_versions:
-            for wv in wrong_versions:
-                if wv in best[:500] and f"release-{version}" not in best[:500]:
-                    best = ""
-                    break
         if not best:
             # Fall back to root_cause fields
             for iss in analysis["issues"]:
