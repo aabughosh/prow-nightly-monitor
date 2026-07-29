@@ -217,7 +217,7 @@ def generate_job_page(job: dict, project_name: str, generated_at: str) -> str:
     duration = _compute_duration(job)
     state = job.get("state", "failure")
     url = job.get("url", "")
-    started = (job.get("start_time", "") or "")[:16]
+    started = (job.get("start_time", "") or "")[:10]
     analysis = job.get("analysis", {})
     category = analysis.get("category", "unknown")
     inv = analysis.get("investigation", {})
@@ -365,7 +365,7 @@ def generate_job_page(job: dict, project_name: str, generated_at: str) -> str:
     <div class="info-value"><span class="badge" style="background:{sev_color}">{html_mod.escape(severity)}</span></div>
   </div>'''}
   <div class="info-card">
-    <div class="info-label">Started</div>
+    <div class="info-label">Run Date</div>
     <div class="info-value" style="font-size:12px">{html_mod.escape(started)}</div>
   </div>
 </div>

@@ -3099,6 +3099,15 @@ def _render_only():
     (OUTPUT_DIR / "index.html").write_text(html)
     log.info("Dashboard re-rendered with AI analysis")
 
+    import re as _re
+    _pages_base = "https://prow-ai-analysis-a0411b.pages.redhat.com"
+    _project_slug = OUTPUT_DIR.name
+    for _j in data["jobs"]:
+        _bid_m = _re.search(r"/(\d{15,})$", _j.get("url", ""))
+        if _bid_m:
+            _safe = _re.sub(r"[^a-zA-Z0-9._-]", "-", _j["name"])
+            _j["analysis_url"] = f"{_pages_base}/projects/{_project_slug}/jobs/{_safe}-{_bid_m.group(1)}.html"
+
     data_out = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "job_filter": data.get("job_filter", JOB_FILTER),
