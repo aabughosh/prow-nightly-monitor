@@ -278,7 +278,9 @@ if [ -n "$GITLAB_REPO" ]; then
     log "Pushing to GitLab Pages..."
     rm -rf "$GITLAB_DIR" 2>/dev/null
     if git clone --depth=1 "$GITLAB_REPO" "$GITLAB_DIR" >> "$LOG_FILE" 2>&1; then
-        rsync -a --delete --exclude='.git' --exclude='projects/commatrix' --exclude='cursor' "$REPO_DIR/public/" "$GITLAB_DIR/public/"
+        rsync -a --delete --exclude='.git' --exclude='projects/commatrix' --exclude='cursor' --exclude='runs/runs' "$REPO_DIR/public/" "$GITLAB_DIR/public/"
+        # Trim historical runs older than 7 days to keep artifact under GitLab limit
+        find "$GITLAB_DIR/public" -path "*/runs/2*" -maxdepth 4 -type d | sort | head -n -7 | xargs rm -rf 2>/dev/null || true
         cp "$REPO_DIR/.gitlab-ci.yml" "$GITLAB_DIR/.gitlab-ci.yml" 2>/dev/null || true
         # Sync skills, scripts, and corrections for team collaboration
         mkdir -p "$GITLAB_DIR/.cursor/rules" "$GITLAB_DIR/scripts"
