@@ -600,10 +600,9 @@ def process_project(project_name: str) -> int:
             except (json.JSONDecodeError, OSError):
                 pass
 
-    # Auto-backfill missing AI analysis from fingerprint DB
-    backfilled = _backfill_ai_from_fingerprints(all_jobs)
-    if backfilled:
-        print(f"  Backfilled AI analysis for {backfilled} jobs from fingerprint DB")
+    # Backfill disabled — causes cross-version contamination with old fingerprints.
+    # Per-version fingerprints from tonight's run will populate correctly.
+    # backfilled = _backfill_ai_from_fingerprints(all_jobs)
 
     job_pages = _generate_job_files(all_jobs, project_name, generated_at, jobs_dir)
 
