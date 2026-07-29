@@ -553,14 +553,22 @@ def _backfill_ai_from_fingerprints(jobs: list[dict]) -> int:
             if matched:
                 break
         # Fallback: match by reason/category for jobs with no failed tests (infra failures)
+        # Also check that the fingerprint's affected jobs match the same version
         if not matched and not failed_tests:
             reason = analysis.get("reason", "")
+            job_version = job.get("version", "")
             if reason:
                 for iss in fp_issues.values():
-                    if iss.get("title", "") == reason and iss.get("ai_summary_short"):
-                        analysis["ai_summary"] = iss["ai_summary_short"][:16000]
-                        filled += 1
-                        break
+                    if iss.get("title", "") != reason or not iss.get("ai_summary_short"):
+                        continue
+                    # Verify version match: check affected_jobs have the same version
+                    affected = iss.get("affected_jobs", [])
+                    if affected and job_version:
+                        if not any(job_version in j.get("name", "") for j in affected):
+                            continue
+                    analysis["ai_summary"] = iss["ai_summary_short"][:16000]
+                    filled += 1
+                    break
     return filled
 
 
