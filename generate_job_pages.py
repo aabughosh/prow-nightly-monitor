@@ -539,6 +539,7 @@ def _backfill_ai_from_fingerprints(jobs: list[dict]) -> int:
         failed_tests = analysis.get("investigation", {}).get("failed_tests", [])
         if not failed_tests:
             failed_tests = analysis.get("junit_failures", [])
+        matched = False
         for t in failed_tests:
             tname = t.get("name", "")
             if not tname:
@@ -547,9 +548,19 @@ def _backfill_ai_from_fingerprints(jobs: list[dict]) -> int:
                 if iss.get("title", "") == tname and iss.get("ai_summary_short"):
                     analysis["ai_summary"] = iss["ai_summary_short"][:16000]
                     filled += 1
+                    matched = True
                     break
-            if analysis.get("ai_summary"):
+            if matched:
                 break
+        # Fallback: match by reason/category for jobs with no failed tests (infra failures)
+        if not matched and not failed_tests:
+            reason = analysis.get("reason", "")
+            if reason:
+                for iss in fp_issues.values():
+                    if iss.get("title", "") == reason and iss.get("ai_summary_short"):
+                        analysis["ai_summary"] = iss["ai_summary_short"][:16000]
+                        filled += 1
+                        break
     return filled
 
 
