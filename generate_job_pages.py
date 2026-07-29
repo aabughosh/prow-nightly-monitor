@@ -227,23 +227,23 @@ def generate_job_page(job: dict, project_name: str, generated_at: str) -> str:
     sev_color = SEV_COLORS.get(severity.lower(), "#484f58") if severity else ""
 
     ai_summary = analysis.get("ai_summary", "")
-    if not ai_summary and analysis.get("issues"):
-        # No main summary — pick the single longest per-issue analysis
-        best = ""
+    if analysis.get("issues"):
+        # Always check per-issue analyses and prefer the longest one overall
+        best_issue = ""
         for iss in analysis["issues"]:
             iss_ai = iss.get("ai_summary", "")
-            if len(iss_ai) > len(best):
-                best = iss_ai
-        if not best:
-            # Fall back to root_cause fields
+            if len(iss_ai) > len(best_issue):
+                best_issue = iss_ai
+        if not best_issue:
             for iss in analysis["issues"]:
                 if iss.get("root_cause"):
-                    best = (
+                    best_issue = (
                         f"**Issue Class:** {iss.get('classification', 'unknown')}\n"
                         f"**Root Cause:** {iss['root_cause']}\n"
                     )
                     break
-        ai_summary = best
+        if len(best_issue) > len(ai_summary):
+            ai_summary = best_issue
 
     if state == "success":
         analysis_rendered = (
@@ -585,14 +585,8 @@ def process_project(project_name: str) -> int:
 
     all_jobs = list(data.get("jobs", []))
 
-    # Build a lookup of correct ai_summary from current results.json (by job name)
-    current_ai = {}
-    for j in all_jobs:
-        ai = j.get("analysis", {}).get("ai_summary", "")
-        if ai:
-            current_ai[j["name"]] = ai
-
     # Also pull in jobs from historical runs (past 7 days)
+    # Each historical build keeps its OWN analysis — don't override with current
     runs_dir = PUBLIC_DIR / "projects" / project_name / "runs"
     if runs_dir.exists():
         seen_builds = {_extract_build_id(j) for j in all_jobs if _extract_build_id(j)}
@@ -602,9 +596,6 @@ def process_project(project_name: str) -> int:
                 for job in run_data.get("jobs", []):
                     bid = _extract_build_id(job)
                     if bid and bid not in seen_builds:
-                        # Always use current analysis for this job name if available
-                        if job["name"] in current_ai:
-                            job.setdefault("analysis", {})["ai_summary"] = current_ai[job["name"]]
                         all_jobs.append(job)
                         seen_builds.add(bid)
             except (json.JSONDecodeError, OSError):
