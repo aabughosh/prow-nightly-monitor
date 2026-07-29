@@ -228,24 +228,22 @@ def generate_job_page(job: dict, project_name: str, generated_at: str) -> str:
 
     ai_summary = analysis.get("ai_summary", "")
     if not ai_summary and analysis.get("issues"):
-        # Collect unique AI summaries from per-issue data (avoid repetition)
-        seen: set = set()
-        parts = []
+        # No main summary — pick the single longest per-issue analysis
+        best = ""
         for iss in analysis["issues"]:
             iss_ai = iss.get("ai_summary", "")
-            if iss_ai and iss_ai not in seen:
-                seen.add(iss_ai)
-                parts.append(iss_ai)
-            elif not iss_ai and iss.get("root_cause"):
-                rc_text = (
-                    f"**Issue Class:** {iss.get('classification', 'unknown')}\n"
-                    f"**Root Cause:** {iss['root_cause']}\n"
-                )
-                if rc_text not in seen:
-                    seen.add(rc_text)
-                    parts.append(rc_text)
-        if parts:
-            ai_summary = "\n\n---\n\n".join(parts)
+            if len(iss_ai) > len(best):
+                best = iss_ai
+        if not best:
+            # Fall back to root_cause fields
+            for iss in analysis["issues"]:
+                if iss.get("root_cause"):
+                    best = (
+                        f"**Issue Class:** {iss.get('classification', 'unknown')}\n"
+                        f"**Root Cause:** {iss['root_cause']}\n"
+                    )
+                    break
+        ai_summary = best
 
     if state == "success":
         analysis_rendered = (
