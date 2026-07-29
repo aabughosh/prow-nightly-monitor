@@ -202,7 +202,7 @@ def _dedup_output(text: str) -> str:
     while "\n\n\n" in text:
         text = text.replace("\n\n\n", "\n\n")
 
-    return text[:16000]
+    return text[:50000]
 
 
 MAX_EVIDENCE_FILES = 12
@@ -933,7 +933,7 @@ def _analyze_per_job(data: dict, failed: list[dict], fp_db: dict) -> None:
         print(f"  [{i}/{len(new_failures)}] {short_name}...")
         ai = analyze_job(job)
         if ai:
-            job.setdefault("analysis", {})["ai_summary"] = ai[:16000]
+            job.setdefault("analysis", {})["ai_summary"] = ai[:50000]
             fp = job["analysis"].get("fingerprint", compute_fingerprint(job))
             record_fingerprint(fp_db, fp, job, ai)
             success_count += 1
@@ -1118,7 +1118,7 @@ def _analyze_per_issue(data: dict, failed: list[dict], fp_db: dict) -> None:
                                 "is_recurring": False,
                                 "classification": classification,
                                 "root_cause": root_cause,
-                                "ai_summary": ai[:16000],
+                                "ai_summary": ai[:50000],
                                 "is_flake": is_flake,
                             })
 
