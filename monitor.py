@@ -2647,21 +2647,19 @@ def generate_html(jobs: list[dict], analyses: dict[str, dict],
         inv = analysis.get("investigation", {})
         ai_summary = analysis.get("ai_summary", "")
 
-        # If no job-level ai_summary, build one from per-issue ai_summaries
+        # If no job-level ai_summary, pick the single longest per-issue analysis
         if not ai_summary and analysis.get("issues"):
-            _issue_parts = []
+            best = ""
             for _iss in analysis["issues"]:
                 _iss_ai = _iss.get("ai_summary", "")
-                if _iss_ai:
-                    _issue_parts.append(_iss_ai)
-                elif _iss.get("root_cause"):
-                    _cls = _iss.get("classification", "unknown")
-                    _issue_parts.append(
-                        f"**Issue Class:** {_cls}\n"
-                        f"**Root Cause:** {_iss['root_cause']}\n"
-                    )
-            if _issue_parts:
-                ai_summary = "\n\n---\n\n".join(_issue_parts)
+                if len(_iss_ai) > len(best):
+                    best = _iss_ai
+            if not best:
+                for _iss in analysis["issues"]:
+                    if _iss.get("root_cause"):
+                        best = f"**Issue Class:** {_iss.get('classification', 'unknown')}\n**Root Cause:** {_iss['root_cause']}\n"
+                        break
+            ai_summary = best
 
         # Determine issue class for grouping
         _current_class = "success" if state == "success" else "unknown"
