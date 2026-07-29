@@ -141,9 +141,26 @@ PYEOF
         if "$CURSOR_CLI" agent status >> "$LOG_FILE" 2>&1; then
             log "  Running AI analysis for $PROJECT_NAME..."
             cd "$REPO_DIR"
-            # Timeout: max 90 minutes for AI analysis per project (kill entire process group)
-            if ! gtimeout --kill-after=30 --signal=KILL 5400 python3 -u "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1; then
-                log "  WARNING: inject_claude.py had errors or timed out for $PROJECT_NAME"
+            # Timeout: max 60 minutes for AI analysis per project
+            # Run in a new session so we can kill the entire process tree
+            _ai_start=$(date +%s)
+            setsid python3 -u "$REPO_DIR/inject_claude.py" >> "$LOG_FILE" 2>&1 &
+            _ai_pid=$!
+            _ai_timeout=3600  # 60 minutes
+            while kill -0 "$_ai_pid" 2>/dev/null; do
+                _elapsed=$(( $(date +%s) - _ai_start ))
+                if [ "$_elapsed" -ge "$_ai_timeout" ]; then
+                    log "  TIMEOUT: AI analysis exceeded ${_ai_timeout}s — killing process tree"
+                    kill -9 -"$_ai_pid" 2>/dev/null  # kill entire process group
+                    wait "$_ai_pid" 2>/dev/null
+                    break
+                fi
+                sleep 10
+            done
+            wait "$_ai_pid" 2>/dev/null
+            _ai_exit=$?
+            if [ "$_ai_exit" -ne 0 ]; then
+                log "  WARNING: inject_claude.py exited with code $_ai_exit for $PROJECT_NAME"
             fi
 
             log "  Regenerating dashboard with AI analysis..."
