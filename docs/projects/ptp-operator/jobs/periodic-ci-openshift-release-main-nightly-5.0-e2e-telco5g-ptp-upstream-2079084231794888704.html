@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-e2e-telco5g-ptp-upstream</code></h1>
-  <div class="meta">Generated: 2026-07-29T17:31:43.542796+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-07-29T17:56:35.134173+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -84,39 +84,49 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> PROJECT TESTS PASSED — CI framework MonitorTest failed due to intentional node reboot during nftables test.</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: MonitorTest failure triggered by intentional node reboot</strong> (affects: single-node-e2e-test CI step)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Suite run returned error: failed due to a MonitorTest failure</p>
-<p style="margin:4px 0">error: error running a test suite: failed due to a MonitorTest failure</p>
-<p style="margin:4px 0">Step aws-ovn-network-flow-matrix-single-node-single-node-e2e-test failed after 1h53m54s.</p>
-<p style="margin:4px 0">2026/06/25 13:56:11 Waiting for node ip-10-0-69-209.ec2.internal to be in NotReady state</p>
-<p style="margin:4px 0">2026/06/25 13:56:27 Node ip-10-0-69-209.ec2.internal is NotReady</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">And from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests__finished.json</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true,"result":"SUCCESS"</code></p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The commatrix nftables e2e test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">nftables_test.go:85</code>) intentionally applies a MachineConfig that reboots the node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ip-10-0-69-209.ec2.internal</code>) at ~13:56 UTC to validate nftables rules after reboot. The commatrix test step completed successfully at 14:01:38 UTC. The subsequent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> CI step runs OpenShift's generic e2e suite with built-in MonitorTests that observe the cluster throughout the entire job — these monitors recorded the node-not-ready event from the commatrix-triggered reboot and flagged it as a MonitorTest failure. The first domino is the reboot event recorded by the CI monitor, not a commatrix bug.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a known interaction between the commatrix nftables reboot and the openshift-tests MonitorTest framework.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — the commatrix tests always perform this intentional reboot; whether it triggers a MonitorTest failure depends on monitor timing and thresholds.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> step's MonitorTest should be configured to tolerate or exclude node-not-ready events that occur during the commatrix nftables test window. Alternatively, the job config should suppress MonitorTest node-reboot alerts for this specific job.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> (CI framework MonitorTest); commatrix's own 3 e2e specs all PASSED.</div>
+  <p style="margin:4px 0">Now I have everything I need.</p>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group. The only failure is from the CI framework's MonitorTest, caused by a node reboot that is a deliberate part of the commatrix nftables validation test.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> CI builder image <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code> was missing, preventing ptp-operator image build and deployment.</p>
 <br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 (nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.21.0-0.nightly-2026-06-25-024321</code>): commatrix tests pass; MonitorTest collision with intentional reboot is the sole failure.</p>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (release image, 190 components imported); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (test runner)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: CI builder image unavailable (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">manifest unknown</code>)</strong> (affects: deployment setup / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet wait timeout)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">[1/2] STEP 1/6: FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17 AS builder</p>
+<p style="margin:4px 0">Trying to pull registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17...</p>
+<p style="margin:4px 0">Error: creating build container: initializing source docker://registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17: reading manifest rhel-9-golang-1.22-openshift-4.17 in registry.ci.openshift.org/ocp/builder: manifest unknown</p>
+<p style="margin:4px 0">make: *** [Makefile:122: docker-build] Error 125</p>
+<p style="margin:4px 0">+ podman push image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17 --tls-verify=false</p>
+<p style="margin:4px 0">Error: image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17: image not known</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">Then operator is deployed with the unpushed image → DaemonSet never created:</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">Error from server (NotFound): daemonsets.apps "linuxptp-daemon" not found</p>
+<p style="margin:4px 0">+ '[' 1781942433 -gt 1781942431 ']'</p>
+<p style="margin:4px 0">+ return 1</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator</code> Dockerfile (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code>) references a CI builder image that no longer exists at registry.ci.openshift.org (manifest unknown). The build pod's script uses <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set +xe</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set -x</code> (without restoring <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">-e</code>), so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">make docker-build</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman push</code> both fail silently and the pod exits 0. The outer deploy script then runs <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">make deploy</code> pointing at an image that was never pushed; the ptp-operator pod cannot start, so it never reconciles the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpOperatorConfig</code> and the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet is never created. The 400-second wait times out and the step exits 1.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — the builder image <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rhel-9-golang-1.22-openshift-4.17</code> was likely pruned or never promoted to registry.ci for this nightly; no source code change is responsible.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — the builder image tag is deterministically absent; every run on 4.17 (and likely 4.18 with its equivalent tag) will reproduce this until the image is re-published or the Dockerfile is updated.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-publish or pin to an available builder image in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator</code> Dockerfile (e.g. a quay.io mirror or a tag that is known to be retained). Additionally, restore <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set -e</code> after the credential-hiding <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set +e</code> block so that image build failures are not silently swallowed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">e2e-telco5g-ptp-telco5g-ptp-tests</code> (the sole test step; no individual test names extracted because deployment never completed)</div>
 <br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — the missing CI builder image cascades: build fails → image not pushed → operator pod cannot start → DaemonSet not created → timeout.</p>
+<br>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.17: confirmed — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code> returns <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">manifest unknown</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.18: same root cause expected — the equivalent tag <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rhel-9-golang-1.22-openshift-4.18</code> is likely also absent; no direct evidence in this run but the failure pattern is identical</div>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.22-openshift-4.17</code> (missing); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">image-registry.openshift-image-registry.svc:5000/openshift-ptp/ptp-operator:4.17</code> (never built/pushed)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code></p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH — the entire ptp-operator deployment is blocked on every nightly run until the builder image is restored or the Dockerfile is fixed.</p>
 </div>
 
 <div class="footer">
