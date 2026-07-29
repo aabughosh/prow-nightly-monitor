@@ -554,35 +554,54 @@ If the failure is from the CI framework (not the project's tests), state "PROJEC
 
 CRITICAL OUTPUT RULES:
 1. Write your analysis ONCE. Do NOT restart or repeat. Output each section exactly once.
-2. GROUPING: First scan ALL failed tests. Group them by root cause. If N tests share the same error (e.g. all hit "i/o timeout"), write ONE deep analysis for the group, not N separate analyses.
-3. Keep it concise — max 6 lines per field.
+2. GROUPING: First scan ALL failed tests. Group them by root cause (Group A, B, C...). If N tests share the same error, write ONE group for them.
+3. Do NOT start with filler like "I now have all the data" or "Here is the analysis". Jump directly into the output.
+4. For each group, assign a classification (operator_bug, test_regression, infra_issue, test_flake) and confidence (high/medium/low).
 
 Respond with EXACTLY this format (write it ONCE, do not repeat):
 
 ---
 
-**TL;DR:** One sentence (max 15 words) summarizing all failures
+## Test Failures Found: N
 
-**Root Cause Groups:**
-For each distinct root cause, list:
-- **Group N: [root cause name]** (affects Tests: list them)
-  - **Evidence:** verbatim log lines proving this root cause
-  - **Root Cause:** 2-3 sentences. Reference function/file/line. Explain the FIRST domino.
-  - **Breaking PR/Commit:** link or "Unknown"
-  - **Is it a flake?** yes/no — one sentence
-  - **Suggested Fix:** 1-2 sentences
-  - **Affected tests:** list each test name in this group
+| # | Test Name | Error Type | Group |
+|---|-----------|-----------|-------|
+| 1 | [test name] | [timeout/assertion/crash] | A — [group label] |
+| 2 | ... | ... | ... |
 
-If ALL tests share ONE root cause, write ONE group. Do NOT write separate sections per test.
-If tests have DIFFERENT root causes, write one group per distinct cause.
+## Group A — [Group Label]
+
+**Classification:** [operator_bug | test_regression | infra_issue | test_flake]
+**Confidence:** [high | medium | low]
+**Failed Tests:** [list test names and source file:line]
+**Root Cause:** [2-3 sentences explaining the FIRST domino. Reference function/file/line.]
+
+**Evidence:**
+```
+[verbatim log lines proving this root cause]
+```
+
+**State/Event Correlation:** [timestamp-level explanation of what happened when]
+**Breaking PR/Commit:** [link or "Unknown"]
+**Is it a flake?** [yes/no — one sentence]
+**Suggested Fix:** [1-2 actionable sentences]
+**Potential JIRA Match:** [bug ID if known, or "None found"]
+
+## Group B — [Group Label]
+[same structure as Group A]
 
 ---
 
-**Relation Between Groups:** How do the root cause groups relate? Common upstream cause?
-**Per-Version Notes:** one line per version
-**Affected Images:** container images list
-**Overall Issue Class:** infra_timeout | infra_quota | infra_other | test_regression | test_flake | test_failure | matrix_mismatch | build_error | unknown
-**Overall Severity:** CRITICAL / HIGH / MEDIUM / LOW
+## Analysis Summary
+
+| # | Test | Group | Classification | Confidence | Root Cause | Action |
+|---|------|-------|---------------|------------|-----------|--------|
+| 1 | [short test name] | A | operator_bug | high | [one-line root cause] | [action] |
+| 2 | ... | ... | ... | ... | ... | ... |
+
+**Overall Issue Class:** [infra_timeout | infra_other | test_regression | test_flake | build_error | unknown]
+**Overall Severity:** [CRITICAL / HIGH / MEDIUM / LOW]
+**Relation Between Groups:** [one sentence on how groups relate]
 """
 
     return prompt
@@ -728,7 +747,7 @@ def build_summary_prompt(
         suite_sections += f"\n\n--- {suite_name} ---\n{analysis[:3000]}"
 
     return f"""You are given per-suite AI analyses of a CI job with {total_failures} total test failures.
-Your task is to produce a CROSS-SUITE SUMMARY that identifies common patterns.
+Your task is to produce a CROSS-SUITE SUMMARY that identifies common patterns and provides a clean structured report.
 
 **Job:** {job['name']}
 **Version:** {version}
@@ -738,16 +757,40 @@ Your task is to produce a CROSS-SUITE SUMMARY that identifies common patterns.
 INDIVIDUAL SUITE ANALYSES:
 {suite_sections}
 
-Based on the above, produce this summary:
+Based on the above, produce this structured summary. Do NOT repeat per-suite details — only the cross-suite view:
+
+---
+
+## Cross-Suite Summary — {job['name']}
+
+**Version:** {version} | **Total failures:** {total_failures} | **Suites:** {', '.join(suite_analyses.keys())}
 
 **TL;DR:** One sentence (max 20 words) covering the whole job
-**Root Cause Groups:** Group the {total_failures} failures by root cause. Example:
-  - "18/25 failures: GM in FREERUN (clock class 248), cascading to all BC/slave sync tests"
-  - "7/25 failures: pmc argument bug in commit 3b93c9f4"
-**Cross-Suite Patterns:** Which suites share root causes? Are any suite-specific?
-**Actionable Recommendations:** 1-3 concrete steps to fix the most failures
-**Overall Issue Class:** infra_timeout | infra_other | test_regression | test_flake | test_failure | build_error | unknown
-**Overall Severity:** CRITICAL / HIGH / MEDIUM / LOW
+
+## Root Cause Groups
+
+For each distinct root cause across all suites:
+- **N/M failures — [root cause name]** (suites: [list])
+  [2-3 sentence explanation with file/function references]
+
+## Cross-Suite Patterns
+
+| Root Cause | {' | '.join(suite_analyses.keys())} | Suite-specific? |
+[fill in which suites are affected by each root cause]
+
+## Actionable Recommendations
+1. [most impactful fix]
+2. [second fix]
+3. [third fix if applicable]
+
+## Analysis Summary
+
+| # | Test | Group | Classification | Confidence | Root Cause | Action |
+|---|------|-------|---------------|------------|-----------|--------|
+[one row per failed test]
+
+**Overall Issue Class:** [infra_timeout | infra_other | test_regression | test_flake | build_error | unknown]
+**Overall Severity:** [CRITICAL / HIGH / MEDIUM / LOW]
 """
 
 
