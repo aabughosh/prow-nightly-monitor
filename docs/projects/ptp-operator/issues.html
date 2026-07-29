@@ -45,15 +45,237 @@
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">282</div>Active</div>
-    <div class="stat"><div class="stat-num" style="color:#c9d1d9">282</div>Fingerprints</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">394</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">394</div>Fingerprints</div>
     <div class="stat"><div class="stat-num" style="color:#a371f7">41</div>Issues</div>
   </div>
   <table>
     <thead><tr>
       <th>Root Cause</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
-    <tbody><tr id="6df619e4854447e2">
+    <tbody><tr id="57a20a68744acdc1">
+  <td class="col-rc">
+    <div class="rc-text">Groups</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+## Cross-Suite Summary — periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp
+
+**Version:** 4.20 | **Total failures:** 26 | **Suites:** bc, dualfollower, dualnicbc, dualnicbcha, tbc, tgm
+
+**TL;DR:** The T-GM on `cnfdf32` never achieved GNSS lock (ClockClass 248 FREERUN), cascading all 26 test failures across every suite.
+
+---
+
+## Root Cause Groups
+
+- **23/26 failures — T-GM GNSS lock failure → downstream sync cascade** (suites: bc, dualfollower, dualnicbc, dualnicbcha, tbc, tgm)
+  The grandmaster node `cnfdf32` remained at ClockClass 248 (FREERUN) for the entire run, confirmed by the TGM suite&#x27;s metric assertion `expected [7.000000] but got map[.../ens7fx/master:248]` at 02:07:08 — before any other suite started. Without a locked GM, no downstream BC/TBC/follower node could enter SLAVE state, so `GetProfileLogID()` / `GetForeignClockID()` in `ptphelper.go` exhausted their 1-minute stream-read context deadline on every sync-dependent test; event-based tests manifested the same root cause as &quot;OS Clock was never LOCKED and test timed out&quot; (`testconfig.go:940`). The anomalously long cluster-setup phase (1h49m vs. ~30m typical) is a corroborating signal of cluster-wide infrastructure stress.
+
+- **3/26 failures — ts2phc `NoSourceTSCount` logic bypasses CC7 holdover path** (suites: tgm)
+  When GNSS is disrupted during holdover tests, `ts2phc_parser.go:211–212` caps `NoSourceTSCount` at 2 on two consecutive &quot;source ts not valid&quot; lines; `event.go:412` then immediately forces `ts2phcState = PTP_FREERUN`, blocking the `dpllState=LOCKED + gnssState=FREERUN + ts2phcState=HOLDOVER → CC7` path in `updateGMState()`. This logic arrived in the large upstream-sync commit `14eb788` (merged 2026-07-22, 6 days before the run) and is a code-regression candidate that likely explains why the T-GM could not sustain CC7 for the rest of the run, amplifying the lab-wide cascade.
+
+- **1/26 failures — FIFO scheduling config/test mismatch (release-4.20 vs. main)** (suites: tbc)
+  One TBC test independently fails due to a divergence between the FIFO scheduling profile shipped in `release-4.20` and the assertion the `main`-branch test makes. This failure is independent of GNSS health and will persist on retry without a targeted fix.
+
+---
+
+## Cross-Suite Patterns
+
+| Root Cause | bc | dualfollower | dualnicbc | dualnicbcha | tbc | tgm | Suite-specific? |
+|---|---|---|---|---|---|---|---|
+| T-GM GNSS lock failure (CC248 FREERUN) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | No |
+| Log stream timeout (`context deadline exceeded` / `timedout waiting for matches`) | ✓ | ✓ | ✓ | ✓ | ✓ | — | No |
+| OS Clock never LOCKED (event-based tests) | ✓ | ✓ | — | ✓ | ✓ | — | No |
+| ts2phc `NoSourceTSCount==2` CC7 holdover bypass | — | — | — | — | — | ✓ | Yes (tgm) |
+| FIFO scheduling config mismatch | — | — | — | — | ✓ | — | Yes (tbc) |
+
+---
+
+## Actionable Recommendations
+
+1. **Investigate and fix the ts2phc holdover state machine (commit `14eb788`)** — audit `linuxptp-daemon/pkg/event/event.go:412` and `pkg/parser/ts2phc_parser.go:211–212`: the `NoSourceTSCount==2` override must not unconditionally force `ts2phcState=PTP_FREERUN` before the DPLL hardware has had time to report holdover; `updateGMState()` must be able to reach CC7 when `dpllState=LOCKED`, `gnssState=FREERUN`, and ts2phc is in the holdover window. Revert or patch on `release-4.20` if this change broke the holdover race condition.
+2. **Retry the full job** once the ts2phc fix is merged (or to confirm GNSS hardware health after manual inspection). Verify GNSS antenna/receiver and ts2phc lock status on `cnfdf32.telco5gran.eng.rdu2.redhat.com` before retry; all 23 cascade failures resolve if the T-GM achieves ClockClass 7. Check `must-gather` artifacts for ptp4l logs showing whether `LISTENING` ever advanced to `SLAVE` on the GM during this run.
+3. **Fix the FIFO scheduling config mismatch in tbc** — identify the divergence between the `release-4.20` FIFO scheduling profile and the `main`-branch test expectation; backport the config or align the test assertion so the tbc suite passes independent of GM health.
+
+---
+
+## Analysis Summary
+
+| # | Test | Group | Classification | Confidence | Root Cause | Action |
+|---|------|-------|---------------|------------|-----------|--------|
+| 1 | bc / Slave can sync to master | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 2 | bc / Downstream slave can sync to BC master | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 3 | bc / Can provide a profile with higher priority | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 4 | bc / PTP Slave Clock Sync (OS Clock never LOCKED) | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 5 | dualfollower / Slave can sync to master | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 6 | dualfollower / Dual follower can sync when one follower port goes down | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 7 | dualfollower / Can provide a profile with higher priority | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 8 | dualfollower / Event based PTP Slave Clock Sync | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 9 | dualnicbc / Slave can sync to master | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 10 | dualnicbc / Downstream slave can sync to BC master | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 11 | dualnicbc / Can provide a profile with higher priority | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 12 | dualnicbc / (4th test — name truncated in evidence) | 1 | infra_flake | MEDIUM | T-GM GNSS not locked | Retry after GM fix |
+| 13 | dualnicbcha / Slave can sync to master | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 14 | dualnicbcha / Downstream slave can sync to BC master | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 15 | dualnicbcha / phc2sys switches to secondary ptp4l when primary interface fails | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 16 | dualnicbcha / PTP Slave Clock Sync (OS Clock never LOCKED) | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 17 | tbc / PTP daemon apply match rule based on nodeLabel | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 18 | tbc / Slave can sync to master | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 19 | tbc / Downstream slave can sync to BC master | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 20 | tbc / Can provide a profile with higher priority | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 21 | tbc / Check GM announcements in locked mode and holdover transitions | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 22 | tbc / Event based PTP Slave Clock Sync | 1 | infra_flake | HIGH | T-GM GNSS not locked | Retry after GM fix |
+| 23 | tbc / FIFO scheduling config test | 2 | test_regression | MEDIUM | FIFO config mismatch release-4.20 vs main | Backport config fix |
+| 24 | tgm / Testing WPC T-GM holdover through connection loss | 3 | test_regression | HIGH | ts2phc CC7 bypass — commit `14eb788` | Fix `NoSourceTSCount` logic |
+| 25 | tgm / Testing WPC T-GM holdover (2nd holdover test) | 3 | test_regression | HIGH | ts2phc CC7 bypass — commit `14eb788` | Fix `NoSourceTSCount` logic |
+| 26 | tgm / Testing T-GM Events on GNSS reboot and recovery | 3 | test_regression | HIGH | ts2phc CC7 bypass — commit `14eb788` | Fix `NoSourceTSCount` logic |
+
+**Overall Issue Class:** infra_other (dominant: GNSS hardware failure amplified by a candidate code regression in `14eb788`)
+**Overall Severity:** HIGH
+
+
+---
+
+# Per-Suite Details
+
+
+## bc
+
+---
+
+### Suite: bc (4 failures)
+
+**Suite TL;DR:** All 4 bc tests failed because the linuxptp-daemon pods never achieved PTP clock synchronization — tracing back to the T-GM GNSS signal not locking during this run, which cascaded to prevent all downstream BC sync.
+
+**Root Cause Groups:**
+
+- **Group 1: linuxptp-daemon log stream yields no sync lines / context deadline exceeded** (affects: &quot;Slave can sync to master&quot;, &quot;Downstream slave can sync to BC master&quot;, &quot;Can provide a profile with higher priority&quot;)
+  - **Evidence:**
+    ```
+    could not get any profile line, err=could not find regex in log stream for
+    openshift-ptp/linuxptp-daemon-4stqt container=linuxptp-daemon-container,
+    err=error reading from stream: context deadline exceeded
+    ```
+    ```
+    could not get any profile line, err=could not find regex in log stream for
+    openshift-ptp/linuxptp-daemon-4stqt container=linuxptp-daemon-container,
+    err=timedout waiting for matches
+    ```
+    From the tgm suite (which ran first, at `02:07:08`, before bc at `04:57:37`):
+    ```
+    Timed out waiting for clock class 7
+    Timed out waiting for state FREERUN and ClockClass 248
+    expected a metric [7.000000] but got map[.../ens7fx/master:248]
+    ```
+  - **Root Cause:** The T-GM grandmaster on node `cnfdf32` was stuck at ClockClass 248 (FREERUN) and never transitioned to ClockClass 7 (GNSS LOCKED/PRTC), as confirmed by the tgm suite&#x27;s failures which ran before bc. Without a locked GM, the BC master (`test-bc-master1`) had no upstream time source to sync to; ptp4l on the daemon nodes therefore never emitted the &quot;selected best master clock&quot; / profile-active log lines that the test helper (`ptphelper.go`) streams from `linuxptp-daemon-container`. The `context deadline exceeded` errors on the Kubernetes log stream API are a secondary effect of long-running tests hammering the API server across all suites concurrently for 3h45m until the Prow job timeout.
+  - **Breaking PR/Commit:** Unknown — the GNSS hardware signal loss is a lab infrastructure condition, not a code change. The tgm failures show the GM was in ClockClass 248 across the entire run. No relevant code changes on `release-4.20` are identified in evidence; `USE_UPSTREAM=false` so `linuxptp-daemon:4.20` and `cloud-event-proxy:4.20` were used as-built from that branch.
+  - **Is it a flake?** Yes — this is a transient hardware/infra failure specific to this cluster run (GNSS signal loss on the telco5gran lab node `cnfdf32`).
+  - **Suggested Fix:** Retry the job; if the pattern recurs, check GNSS antenna/receiver health and clock-class status on `cnfdf32.telco5gran.eng.rdu2.redhat.com`. No code change is needed.
+
+- **Group 2: OS Clock LOCKED state never reached (event-based test)** (affects: &quot;PTP Slave Clock Sync: OS Clock was never LOCKED and test timed out&quot;)
+  - **Evidence:**
+    ```
+    OS Clock was never LOCKED and test timed out
+    ```
+    ```
+    PtpEventsIsConsumerReady= false
+    ```
+    (from `testconfig.go:940` in the parallel suite&#x27;s `SynchronizedBeforeSuite`)
+  - **Root Cause:** The parallel event-based test polls for the OS clock to reach LOCKED state via PTP events. Because the entire timing chain (GM → BC master → BC slave) was not syncing (same root cause as Group 1 — GNSS not locked on T-GM), the OS clock never locked. Additionally, `PtpEventsIsConsumerReady= false` shows the cloud-event-proxy consumer sidecar was not ready, meaning events were not flowing even if they had been generated.
+  - **Breaking PR/Commit:** Unknown (infra condition, not a code regression).
+  - **Is it a flake?** Yes — same GNSS signal loss condition as Group 1.
+  - **Suggested Fix:** Same as Group 1 — retry the job and verify T-GM GNSS health.
+
+**Suite Issue Class:** infra_other  
+**Suite Severity:** MEDIUM (all failures trace to a single transient lab hardware condition; no code regression identified)
+
+## dualfollower
+
+---
+
+### Suite: dualfollower (4 failures)
+
+**Suite TL;DR:** All 4 dualfollower failures stem from the linuxptp-daemon never achieving PTP clock sync during this run, causing every log-stream probe to time out — a lab-wide infrastructure failure shared identically across all six test suites in this job.
+
+**Root Cause Groups:**
+
+- **Group 1: linuxptp-daemon log stream returns no PTP sync lines** (affects: &quot;Slave can sync to master&quot;, &quot;Dual follower can sync when one follower port goes down&quot;, &quot;Can provide a profile with higher priority&quot;)
+  - **Evidence:**
+    ```
+    could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-6xl5p container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded
+    ```
+    ```
+    could not get any profile line, err=could not find regex in log stream for openshift-ptp/linuxptp-daemon-6xl5p container=linuxptp-daemon-container, err=timedout waiting for matches
+    ```
+    (junit-failures.txt, dualfollower-serial entries)
+  - **Root Cause:** The test framework streams `linuxptp-daemon-container` logs looking for a &quot;foreign clock ID&quot; regex (emitted by ptp4l when it discovers a GM master). That pattern is never produced because ptp4l never reaches the `SLAVE` state — meaning the PTP grandmaster signal is not reaching the device under test. Two distinct stream errors appear: `context deadline exceeded` (Kubernetes API server cut the watch stream before the regex appeared) and `timedout waiting for matches` (stream was readable but the regex never arrived in ~200 s). The same symptom is present in every other suite (bc, dualnicbc, dualnicbcha, tbc, tgm) against different daemon pods, confirming the failure is not code-specific but lab-wide.
+  - **Breaking PR/Commit:** Unknown — this is not a code regression. The ptp-operator operator image is built from `release-4.20`; linuxptp-daemon and cloud-event-proxy are embedded release-payload images that are unchanged. No log-format change or daemon regression is indicated.
+  - **Is it a flake?** Yes — identical clock-sync timeout failures across all six suites simultaneously, combined with an anomalously long cluster-setup step (1 h 49 m vs. typical ~30 min), indicate the PTP grandmaster / GNSS hardware was not providing a timing signal for this run of the test lab.
+  - **Suggested Fix:** Retry the job; if the pattern recurs, check the grandmaster node (`cnfdf32` / TGM suite showed `ClockClass 248` = FREERUN) for GPS/GNSS lock status and verify the PTP multicast path between GM and workers on the `rdu2` lab network.
+
+- **Group 2: OS clock never LOCKED (events-based sync test)** (affects: &quot;[dualfollower-parallel] Event based tests PTP Slave Clock Sync&quot;)
+  - **Evidence:**
+    ```
+    OS Clock was never LOCKED and test timed out
+    ```
+    (junit-failures.txt, dualfollower-parallel entry)
+    ```
+    PtpEventsIsConsumerReady= false
+    ```
+    (ci-operator-build-log.txt, testconfig discovery at 05:40:45)
+  - **Root Cause:** The cloud-event-proxy sidecar (events consumer) never reported `Ready`, so no PTP LOCKED event was delivered. This is a direct consequence of the same infrastructure problem in Group 1: because ptp4l never achieved sync, the daemon never published a `LOCKED` cloud-event, and the test&#x27;s polling loop timed out. `PtpEventsIsConsumerReady= false` confirms the sidecar pod never transitioned to healthy.
+  - **Breaking PR/Commit:** Unknown — same infra root cause as Group 1; not a code regression.
+  - **Is it a flake?** Yes — same root cause as Group 1 (transient lab-wide PTP signal loss).
+  - **Suggested Fix:** Same as Group 1; ensuring grandmaster locks its clock will also unblock the events pipeline and allow the sidecar to become ready.
+
+**Suite Issue Class:** infra_other  
+**Suite Severity:** HIGH (all four tests failed, but the root cause is transient lab infrastructure, not a product regression)
+
+## dualnicbc
+
+---
+
+### Suite: dualnicbc (4 failures)
+
+**Suite TL;DR:** All 4 dualnicbc tests fail because `GetProfileLogID()` — the first step in every clock-sync assertion — cannot find the regex `(?m).*?Ptp4lConf: #profile: &lt;name&gt;(.|\n)*?message_tag \[` in the `linuxptp-daemon-container` log stream before the context deadline fires; this same failure pattern is reproduced identically in bc, dualfollower, dualnicbcha, and tbc suites, marking it as a systemic infra-level log-streaming timeout rather than a dualnicbc-specific regression.
+
+**Root Cause Groups:**
+
+- **Group 1: Log-stream read timeout while fetching profile log ID** (affects: &quot;Slave can sync to master&quot;, &quot;Downstream slave can sync to BC master&quot;, &quot;Can provide a profile with higher priority&quot;)
+  - **Evidence:**
+    ```
+    could not get any profile line, err=could not find regex in log stream for
+    openshift-ptp/linuxptp-daemon-vfnqw container=linuxptp-daemon-container,
+    err=error reading from stream: context deadline exceeded
+
+    could not get any profile line, err=could not find regex in log stream for
+    openshift-ptp/linuxptp-daemon-5lj7k container=linuxptp-daemon-container,
+    err=error reading from stream: context deadline exceeded
+
+    could not get any profile line, err=could not find regex in log stream for
+    openshift-ptp/linuxptp-daemon-vfnqw container=linuxptp-daemon-container,
+    err=timedout waiting for matches
+    ```
+    And from `ci-operator-build-log.txt`, the `pre` phase took **1h49m20s** before tests even started, indicating the cluster was under significant load.
+  - **Root Cause:** `GetProfileLogID()` in `test/pkg/ptphelper/ptphelper.go:88–125` calls `pods.GetPodLogsRegex()` (`test/pkg/pods/pods.go:202`) with a 1-minute timeout, searching for the multiline regex `(?m).*?Ptp4lConf: #profile: &lt;name&gt;(.|\n)*?message_tag \[(.*)\]` in the `linuxptp-daemon-container` stream. `GetPodLogsRegex` first does a non-follow snapshot read (Pass 1, line 219–233), then opens a follow stream with a context deadline (Pass 2, lines 237–254). Both passes fail: Pass 1 either doesn&#x27;t return the pattern (daemon not yet logged startup config or log content too large), and Pass 2&#x27;s `stream.Read()` in `findRegexInStream` (line 134) returns `context.DeadlineExceeded` when the 1-minute context fires, bubbling up as &quot;error reading from stream: context deadline exceeded&quot;. The identical failure across **all 5 clock-sync suites** (bc, dualfollower, dualnicbc, dualnicbcha, tbc) spanning different pods on different nodes rules out a per-suite config issue; this is the Kubernetes API-server log-streaming infrastructure timing out under cluster load.
+  - **Breaking PR/Commit:** Unknown — no `release-4.20` image change is traceable from the available evidence. The `main`-branch commit `0f98a60` (&quot;fixed ci blocker: added context timeout to GetLogsPodRegex&quot;) introduced the context-deadline approach to `pods.go` but runs from `main` so applies to all suites equally; it is a contributing factor if the daemon is slow to emit startup logs, but is not backportable to `release-4.20` production images.
+  - **Is it a flake?** Possibly — `investigation-summary.txt` records &quot;Infrastructure issue — likely transient. Retry the job.&quot; The cluster setup taking 1h49m (well beyond normal) and all suites failing identically is consistent with API-server log-streaming degradation under load.
+  - **Suggested Fix:** Retry the job on a fresh cluster; if this recurs, increase `pkg.TimeoutIn1Minute` passed to `GetPodLogsRegex` in `GetProfileLogID` (ptphelper.go:98) to give the log-stream reader more headroom, or add a small startup-wait before calling `GetProfileLogID` when the daemon was just reconfigured.
+
+- **Group 2: OS Clock never reaches LOCKED state** (affects: &quot;Event based tests PTP Slave Clock Sync&quot;)
+  - **Evidence:**
+    ```
+    OS Clock was never LOCKED and test timed out
+    ```
+    This same message appears in bc-parallel, dualfollower-parallel, dualnicbcha-parallel, and tbc-parallel suites, confirming it is not dualnicbc-specific.
+  - **Root Cause:** The parallel event-based test polls for `LOCKED` PTP clock state but the daemon never achieves synchronization. Because Group 1 failures mean the BC master and slave ptpconfigs never get clock IDs verified, the PTP grandmaste</div></details>
+  </td>
+  <td class="col-date">2026-07-10</td>
+  <td class="col-date">2026-07-29</td>
+  <td class="col-tests"><ul><li>[It] [dualfollower-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [dualnicbc-serial] PTP e2e tests Running with event enabled Should recover clockClass via event API after cloud-event-proxy crash [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests Running with event enabled Should receive events after linuxptp-daemon pod restart [Serial]</li><li>[It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [dualnicbcha-serial] PTP e2e tests Running with event enabled Should recover clockClass via event API after cloud-event-proxy crash [Serial]</li><li>[It] [dualnicbcha-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [tbc-serial] PTP e2e tests PTP Reboot discovery The slave node is rebooted and discovered and in sync [Serial]</li><li>[SynchronizedBeforeSuite]</li><li>[It] [tgm-serial] PTP e2e tests Running with event enabled Should check for ptp events  [Serial]</li><li>[It] [tgm-serial] PTP e2e tests Running with event enabled Should recover clockClass via event API after cloud-event-proxy crash [Serial]</li><li class='more'>+41 more</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2081892951830564864" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081983402927460352" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2082255374982844416" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2082345674891857920" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-07-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2081168288116641792" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2080081020643708928" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-24)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2075007460522856448" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-20)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2075460276647366656" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-07-20)</span></li><li class='more'>+8 more runs</li></ul></td>
+</tr>
+<tr id="6df619e4854447e2">
   <td class="col-rc">
     <div class="rc-text">The linuxptp-daemon pods (`linuxptp-daemon-4stqt`, `linuxptp-daemon-2gr6s`) either restarted mid-test — cutting the log stream — or ptp4l never completed Best-Master-Clock-Algorithm selection because the upstream GNSS/GM clock was not providing a valid signal during this run. The test helper (`GetForeignClockID`, called from `ptp.go`) streams container logs via the Kubernetes API with a ~200 s deadline and fails when the expected regex never appears. This failure is cross-suite (identical errors in dualfollower, dualnicbc, dualnicbcha, tbc suites against different daemon pods), ruling out a single-pod crash as the cause and pointing to a cluster-wide sync problem. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
@@ -1207,117 +1429,6 @@ The 11-failure group is fully cross-suite: all four PTP topology suites hit iden
   <td class="col-date">2026-07-29</td>
   <td class="col-tests"><ul><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li class='more'>+3 more</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2081892951830564864" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2081168288116641792" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2080081020643708928" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-24)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2075007460522856448" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-20)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2077544277679804416" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-17)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2075007460522856448" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2073995618539278336" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-07)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2073995618539278336" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-06)</span></li><li class='more'>+2 more runs</li></ul></td>
-</tr>
-<tr id="57a20a68744acdc1">
-  <td class="col-rc">
-    <div class="rc-text">Groups</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">Based on the suite analyses in the prompt, here is the cross-suite summary:
-
----
-
-**Job:** `periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream`
-**Version:** 5.0 | **Total failures:** 38
-
----
-
-## TL;DR
-Two code regressions merged in late June broke metric label lookups and T-BC topology discovery, cascading to 38 failures.
-
----
-
-## Root Cause Groups
-
-- **~36/38 failures — Interface alias mismatch in `openshift_ptp_clock_state` metric labels** (primary driver across dualfollower and likely all remaining suites)
-  Upstream PR #617 (`k8snetworkplumbingwg/linuxptp-daemon`, commit `fd6ff1e`, merged 2026-06-30) introduced `pkg/alias/manager.go`, causing `updateClockStateMetrics()` to emit `iface=&quot;ens2fx&quot;` (NIC alias) instead of `iface=&quot;ens2f0np0&quot;` (raw interface name). All conformance tests that look up `openshift_ptp_clock_state` by raw interface name now find nothing, producing deterministic `&lt;iface&gt; not found` failures.
-
-- **2/38 failures — T-BC topology solver finds no valid WPC NIC configuration** (tbc + all suites)
-  PR #205 (`openshift/ptp-operator`, commit `84723c8`/`aede1e9`, merged 2026-06-23) added `PtpConfigTelcoBC()` with strict solver constraints requiring WPC NICs (Intel E810 with GNSS/PPS) as both T-BC receiver and local grandmaster. The `cnfdf30/31/32` lab hardware satisfies none of these constraints, so `[SynchronizedBeforeSuite]` aborts before any test body runs.
-
----
-
-## Cross-Suite Patterns
-
-| Root cause | dualfollower | tbc | all | Notes |
-|---|---|---|---|---|
-| Interface alias mismatch (`fd6ff1e`) | Yes (4 explicit) | Likely | Likely | Pervasive — any test querying `openshift_ptp_clock_state` by raw `iface` label fails |
-| T-BC topology absent | No | Yes (1) | Yes (1) | Suite-specific to TBC tests; `SynchronizedBeforeSuite` abort means no TBC test can pass regardless |
-
-The interface alias regression is cross-suite because `openshift_ptp_clock_state` metric lookups by raw interface name are used throughout ptp-operator conformance tests. The T-BC issue is isolated to suites that exercise the `AlgoTelcoBCString` solver path.
-
----
-
-## Actionable Recommendations
-
-1. **Fix metric label lookup in ptp-operator tests (unblocks ~36 failures).**
-   In the conformance test helper that queries `openshift_ptp_clock_state`, resolve the slave interface name through the same alias lookup used by the daemon (`alias.GetAliasValue(ifname)`) before comparing metric labels. Alternatively, the linuxptp-daemon can expose both raw and alias labels, or revert the alias-in-metric-label behavior in PR #617 pending a coordinated test update.
-
-2. **Skip T-BC suite gracefully when hardware is absent (unblocks 2 failures).**
-   Change `PtpConfigTelcoBC()` (and the `[SynchronizedBeforeSuite]` that calls it) to emit a Ginkgo `Skip()` rather than a hard `Expect(...).To(BeNil())` error when `solutions[&quot;TBC&quot;]` is empty. This prevents a missing hardware topology from failing the entire suite and turning an expected &quot;not applicable&quot; into a false failure.
-
-3. **Gate the T-BC test job on lab hardware capabilities.**
-   Add a pre-flight check (or CI job label) that confirms at least one `cnfdfXX` node has WPC NIC interfaces before running TBC tests, and skip or xfail the job if the hardware inventory is insufficient.
-
----
-
-## Overall Issue Class
-`test_regression`
-
-## Overall Severity
-**HIGH** — Two deterministic regressions introduced within one week of each other account for all 38 failures; no flakes involved. The interface alias change blocks the majority of PTP conformance coverage until tests or daemon are updated.
-
-
----
-
-# Per-Suite Details
-
-
-## dualfollower
-
----
-
-### Suite: dualfollower (4 failures)
-
-**Suite TL;DR:** All 4 dualfollower tests fail because a June 30 upstream sync PR introduced interface aliasing in linuxptp-daemon that changes `openshift_ptp_clock_state` metric labels from raw interface names (e.g., `ens2f0np0`) to NIC-level aliases (e.g., `ens2fx`), while the test code still queries raw names.
-
-**Root Cause Groups:**
-
-- **Group 1: Interface alias mismatch in `openshift_ptp_clock_state` metric** (affects: &quot;Slave can sync to master&quot;, &quot;Dual follower can sync when one follower port goes down&quot;, &quot;Can provide a profile with higher priority&quot;)
-  - **Evidence:**
-    ```
-    no Follower port in expected LOCKED state for ptpconfig test-slave1
-    (node=cnfdf31.telco5gran.eng.rdu2.redhat.com, label=&quot;ptp/clock-under-test&quot;,
-    slaveIfs=[ens2f0np0 ens2f3np3]). Per-interface results:
-      ens2f0np0: clock state metric error: metric: openshift_ptp_clock_state,
-      nodeName: cnfdf31.telco5gran.eng.rdu2.redhat.com, aIf: ens2f0np0 not found,
-      available openshift_ptp_clock_state metrics: ...
-    ```
-    And from the sync PR commit stats:
-    ```
-    pkg/alias/alias.go      |  47 +   (NEW FILE)
-    pkg/alias/manager.go    | 141 +   (NEW FILE)
-    pkg/utils/utils.go      |  51 +   (NEW FILE)
-    pkg/daemon/metrics.go   | 839 +   (NEW FILE)
-    ```
-    (All introduced by commit `fd6ff1e`, merged June 30, 2026.)
-  - **Root Cause:** PR #617 (`k8snetworkplumbingwg/linuxptp-daemon`, commit `fd6ff1e`, &quot;upstream-sync-2026-06-30&quot;) introduced a new interface alias system (`pkg/alias/manager.go`, `pkg/utils/utils.go`). `GetAliasValue(&quot;ens2f0np0&quot;)` → `&quot;ens2fx&quot;` and `GetAliasValue(&quot;ens2f3np3&quot;)` → `&quot;ens2fx&quot;` (both dual-follower slave ports on the same NIC resolve to the same alias). `masterOffsetInterface.set()` in `pkg/daemon/metrics.go:801-808` now stores `alias.GetAlias(ifname)` instead of the raw name, so `updateClockStateMetrics()` (line 527-538) emits `openshift_ptp_clock_state{iface=&quot;ens2fx&quot;}` instead of `{iface=&quot;ens2f0np0&quot;}`. The conformance tests in `openshift/ptp-operator@main` still look up metrics by raw interface name, finding nothing.
-  - **Breaking PR/Commit:** https://github.com/k8snetworkplumbingwg/linuxptp-daemon/commit/fd6ff1e2dc9c651a96a85a976da01498fa0b3417 (PR #617, merged 2026-06-30). This is on the upstream `main` branch that the CI job builds directly (`git clone --single-branch --branch main https://github.com/k8snetworkplumbingwg/linuxptp-daemon.git`); the `release-5.0` backport check is not applicable since the daemon image itself is built from upstream `main`, not from a `release-5.0` branch.
-  - **Is it a flake?** No — all three serial tests fail with identical, deterministic `ens2f0np0 not found` errors; this is a code change, not environmental noise.
-  - **Suggested Fix:** Update the ptp-operator conformance test helper that looks up `openshift_ptp_clock_state` metrics to resolve the slave interface name through `GetAliasValue()` (or the same alias lookup the daemon uses) before querying Prometheus, so tests use `ens2fx` instead of `ens2f0np0`. Alternatively, add a NIC-alias-aware lookup path in `ptptesthelper.go`.
-
-- **Group 2: OS Clock never reached LOCKED (event-based parallel test)** (affects: &quot;PTP Slave Clock Sync&quot; [dualfollower-parallel])
-  - **Evidence:**
-    ```
-    OS Clock was never LOCKED and test timed out
-    ```
-  - **Root Cause:** The parallel event-based test monitors OS clock LOCKED state via the cloud-event-proxy event stream. Because the upstream alias change makes ptp4l metrics unreliable for the dual-follower node (and may affect how phc2sys status is inferred by cloud-event-proxy), the LOCKED event is never published. This is a cascade from Group 1&#x27;s alias mismatch, combined with the fact that the parallel test ran concurrently with the serial tests that were also perturbing the dual-follower configuration on the same node.
-  - **Breaking PR/Commit:** Same as Group 1 — `fd6ff1e` in `k8snetworkplumbingwg/linuxptp-daemon`.
-  - **Is it a flake?** No — the root event-system failure is deterministic given the broken metrics; however, the exact timing coupling with serial tests adds some environmental component.
-  - **Suggested Fix:** Fix Group 1 first (alias-aware metric lookup); if the OS clock lock event still doesn&#x27;t fire, check whether cloud-event-proxy also reads `openshift_ptp_clock_state` by raw inte</div></details>
-  </td>
-  <td class="col-date">2026-07-10</td>
-  <td class="col-date">2026-07-29</td>
-  <td class="col-tests"><ul><li>[It] [dualfollower-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [dualnicbc-serial] PTP e2e tests Running with event enabled Should recover clockClass via event API after cloud-event-proxy crash [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests Running with event enabled Should receive events after linuxptp-daemon pod restart [Serial]</li><li>[It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [dualnicbcha-serial] PTP e2e tests Running with event enabled Should recover clockClass via event API after cloud-event-proxy crash [Serial]</li><li>[It] [dualnicbcha-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [tbc-serial] PTP e2e tests PTP Reboot discovery The slave node is rebooted and discovered and in sync [Serial]</li><li>[SynchronizedBeforeSuite]</li><li>[It] [tgm-serial] PTP e2e tests Running with event enabled Should check for ptp events  [Serial]</li><li>[It] [tgm-serial] PTP e2e tests Running with event enabled Should recover clockClass via event API after cloud-event-proxy crash [Serial]</li><li class='more'>+1 more</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2081892951830564864" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2081168288116641792" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-27)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2080081020643708928" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-24)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2075007460522856448" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-20)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2075460276647366656" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-07-20)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2077996874194751488" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-07-19)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2077544277679804416" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-17)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2077182004515835904" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-07-17)</span></li><li class='more'>+5 more runs</li></ul></td>
 </tr>
 <tr id="c697aedd3d4ac847">
   <td class="col-rc">

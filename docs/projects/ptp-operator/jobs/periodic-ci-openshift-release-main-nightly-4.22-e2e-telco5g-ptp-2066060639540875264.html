@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.22-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-07-29T13:15:19.218388+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-07-29T17:31:43.542796+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -119,36 +119,6 @@
 <br>
 <p style="margin:4px 0"><strong>Affected Images:</strong></p>
 <div style="padding-left:16px;margin:2px 0">&bull; `image-registry.openshift-image-registry.svc:5000/openshift-p</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0">Now I have enough evidence. Let me write the final analysis:</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 1: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[telco5g-ptp-tests] Run multi-stage test e2e-telco5g-ptp - e2e-telco5g-ptp-telco5g-ptp-tests container test</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> ~676s (11m16s total container lifetime)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">daemonsets.apps "linuxptp-daemon" not found</code> — DaemonSet polling loop timed out after ~72s of retries</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet was never created in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace. The test script (ref: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-ptp-tests</code>) first calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build_images</code> to build and push the ptp-operator image from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code>, then deploys the operator and polls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kubectl rollout status daemonset linuxptp-daemon -nopenshift-ptp</code>. The operator either failed to deploy or failed to reconcile and create the DaemonSet — the ptp-operator controller in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> is responsible for creating this DaemonSet via <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpOperatorConfig</code>. The build log is truncated before the actual operator deployment output, so the exact deployment failure is not visible, but the DaemonSet never materialised.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — could be a regression in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift/ptp-operator:release-4.22</code> or a transient infra/image-build issue. Most recent visible linuxptp-daemon commit: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3b01872 Merge pull request #604 from openshift-bot/art-consistency-openshift-5.0-linuxptp-daemon</code> (art-consistency bump, likely not causal). No direct ptp-operator commit visible in evidence.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> [https://github.com/openshift/release/tree/main/ci-operator/step-registry/telco5g/ptp/tests](https://github.com/openshift/release/tree/main/ci-operator/step-registry/telco5g/ptp/tests) (step script); ptp-operator DaemonSet reconciliation in [https://github.com/openshift/ptp-operator/blob/release-4.22/controllers/ptpoperatorconfig_controller.go](https://github.com/openshift/ptp-operator/blob/release-4.22/controllers/ptpoperatorconfig_controller.go)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Possibly — operator deployment failures on fresh namespaces can be transient image-pull or timing issues; but the DaemonSet never appearing at all (rather than being slow) suggests a real failure.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Check the full operator deployment pod logs from the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace (available in must-gather artifacts) to determine whether the ptp-operator pod itself crashed or the DaemonSet controller failed to reconcile. If it is a regression in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code>, bisect recent commits to the ptp-operator controller reconciliation loop.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Test 2: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[unknown] "e2e-telco5g-ptp" pod "e2e-telco5g-ptp-telco5g-ptp-tests" failed</code></h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Duration:</strong> 11m16s (pod lifetime)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Error:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">could not watch pod: the pod ci-op-gsgb8h0l/e2e-telco5g-ptp-telco5g-ptp-tests failed after 11m16s (failed containers: test): ContainerFailed one or more containers exited</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> This is the CI framework (ci-operator) reporting the same failure as Test 1 at the step-watcher level. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test</code> container within the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">e2e-telco5g-ptp-telco5g-ptp-tests</code> pod exited with code 1 (because the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> DaemonSet was not found), and ci-operator's pod-watcher surfaced this as a top-level step failure via <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">sigs.k8s.io/prow/pkg/entrypoint/run.go:84</code>. No independent failure.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Same as Test 1 — this is a secondary signal of the same event.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Source File:</strong> [https://github.com/kubernetes-sigs/prow/blob/main/pkg/entrypoint/run.go#L84](https://github.com/kubernetes-sigs/prow/blob/main/pkg/entrypoint/run.go#L84) (CI framework entrypoint)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — this is a deterministic CI framework propagation of Test 1's exit code 1; it will always fire when the test container fails.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Fixing Test 1's root cause (the missing DaemonSet) will resolve this failure automatically.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Relation Between Failures:</strong> Both failures are the same event reported at two levels. Test 1 is the inner shell script failure (DaemonSet not found, exit 1) and Test 2 is ci-operator's pod-watcher surfacing that exit code as</p>
 </div>
 
 <div class="footer">
