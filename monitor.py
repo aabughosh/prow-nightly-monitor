@@ -3354,39 +3354,53 @@ def main():
     html_path.write_text(html)
     log.info("Latest dashboard written to %s", html_path)
 
-    # Carry forward analysis from previous results if same issues (matched by failed test names)
+    # Per-issue carry-forward from fingerprint DB when inject_claude didn't run
     results_path = OUTPUT_DIR / "results.json"
-    _prev_by_name: dict[str, dict] = {}
-    if results_path.exists():
+    from fingerprint import compute_issue_fingerprint, extract_issues_from_job
+    _fp_path = OUTPUT_DIR / "fingerprints.json"
+    if not _fp_path.exists():
+        _fp_path = Path(__file__).parent / "public" / "fingerprints.json"
+    _fp_db: dict = {}
+    if _fp_path.exists():
         try:
-            _prev_data = json.loads(results_path.read_text())
-            for _pj in _prev_data.get("jobs", []):
-                _pa = _pj.get("analysis", {})
-                if _pa.get("ai_summary") or _pa.get("issues"):
-                    _prev_by_name[_pj["name"]] = _pj
+            _fp_db = json.loads(_fp_path.read_text()).get("fingerprints", {})
         except (json.JSONDecodeError, OSError):
             pass
-
-    def _get_failure_signature(analysis: dict) -> set:
-        """Extract set of failed test names as a fingerprint for matching."""
-        tests = set()
-        for t in analysis.get("junit_failures", []):
-            if t.get("name"):
-                tests.add(t["name"])
-        return tests
 
     all_job_entries = []
     for j in jobs:
         current_analysis = analyses.get(j["name"], {})
         if not current_analysis.get("ai_summary") and not current_analysis.get("issues"):
-            # Check if previous build of same job had same failures
-            prev_job = _prev_by_name.get(j["name"])
-            if prev_job:
-                prev_analysis = prev_job.get("analysis", {})
-                prev_sig = _get_failure_signature(prev_analysis)
-                cur_sig = _get_failure_signature(current_analysis)
-                if prev_sig and cur_sig and prev_sig == cur_sig:
-                    current_analysis = prev_analysis
+            if j.get("state") in ("failure", "error") and _fp_db:
+                _version = extract_version(j["name"])
+                _job_filter = data.get("job_filter", JOB_FILTER)
+                _tmp_job = {"name": j["name"], "url": j.get("url", ""), "analysis": current_analysis}
+                _issues_extracted = extract_issues_from_job(_tmp_job)
+                _matched_issues = []
+                for _iss in _issues_extracted:
+                    _fp = compute_issue_fingerprint(
+                        _iss["test_name"], _iss["error_msg"], _iss["category"],
+                        version=_version, job_filter=_job_filter
+                    )
+                    _fp_entry = _fp_db.get(_fp, {})
+                    _saved_ai = _fp_entry.get("ai_summary_short", "")
+                    if _saved_ai:
+                        _matched_issues.append({
+                            "fingerprint": _fp,
+                            "title": _iss["test_name"],
+                            "ai_summary": _saved_ai,
+                            "classification": _fp_entry.get("classification", ""),
+                            "root_cause": _fp_entry.get("root_cause", ""),
+                            "is_flake": _fp_entry.get("is_flake", False),
+                            "is_recurring": True,
+                            "first_seen": _fp_entry.get("first_seen", ""),
+                            "occurrences": _fp_entry.get("occurrences", 1),
+                        })
+                if _matched_issues:
+                    current_analysis = dict(current_analysis)
+                    current_analysis["issues"] = _matched_issues
+                    _best = max(_matched_issues, key=lambda x: len(x.get("ai_summary", "")))
+                    current_analysis["ai_summary"] = _best["ai_summary"]
         all_job_entries.append({
             "name": j["name"],
             "version": extract_version(j["name"]),
