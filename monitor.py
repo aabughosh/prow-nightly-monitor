@@ -3354,24 +3354,39 @@ def main():
     html_path.write_text(html)
     log.info("Latest dashboard written to %s", html_path)
 
-    # Carry forward existing analysis from previous results.json when current is empty
+    # Carry forward analysis from previous results if same issues (matched by failed test names)
     results_path = OUTPUT_DIR / "results.json"
-    _prev_analyses: dict[str, dict] = {}
+    _prev_by_name: dict[str, dict] = {}
     if results_path.exists():
         try:
             _prev_data = json.loads(results_path.read_text())
             for _pj in _prev_data.get("jobs", []):
                 _pa = _pj.get("analysis", {})
                 if _pa.get("ai_summary") or _pa.get("issues"):
-                    _prev_analyses[_pj["name"]] = _pa
+                    _prev_by_name[_pj["name"]] = _pj
         except (json.JSONDecodeError, OSError):
             pass
+
+    def _get_failure_signature(analysis: dict) -> set:
+        """Extract set of failed test names as a fingerprint for matching."""
+        tests = set()
+        for t in analysis.get("junit_failures", []):
+            if t.get("name"):
+                tests.add(t["name"])
+        return tests
 
     all_job_entries = []
     for j in jobs:
         current_analysis = analyses.get(j["name"], {})
         if not current_analysis.get("ai_summary") and not current_analysis.get("issues"):
-            current_analysis = _prev_analyses.get(j["name"], current_analysis)
+            # Check if previous build of same job had same failures
+            prev_job = _prev_by_name.get(j["name"])
+            if prev_job:
+                prev_analysis = prev_job.get("analysis", {})
+                prev_sig = _get_failure_signature(prev_analysis)
+                cur_sig = _get_failure_signature(current_analysis)
+                if prev_sig and cur_sig and prev_sig == cur_sig:
+                    current_analysis = prev_analysis
         all_job_entries.append({
             "name": j["name"],
             "version": extract_version(j["name"]),
