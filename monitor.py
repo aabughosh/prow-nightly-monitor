@@ -3332,11 +3332,17 @@ def main():
     log.info("Trend history updated (%d runs)", len(history.get("runs", [])))
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from datetime import timedelta
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
 
-    # Main dashboard only shows TODAY's jobs (each day's run is self-contained)
-    today_jobs = [j for j in jobs if j.get("start_time", "")[:10] == today]
+    # Dashboard shows today's jobs + any unanalyzed jobs from yesterday
+    # (catches jobs that finished after the previous 10 PM run)
+    today_jobs = [j for j in jobs
+                  if j.get("start_time", "")[:10] == today
+                  or (j.get("start_time", "")[:10] == yesterday
+                      and not analyses.get(j["name"], {}).get("ai_summary")
+                      and not analyses.get(j["name"], {}).get("issues"))]
     if not today_jobs:
-        # If no jobs today yet, show most recent day's jobs
         latest_date = max((j.get("start_time", "")[:10] for j in jobs), default=today)
         today_jobs = [j for j in jobs if j.get("start_time", "")[:10] == latest_date]
 
