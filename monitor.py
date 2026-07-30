@@ -3346,8 +3346,25 @@ def main():
     html_path.write_text(html)
     log.info("Latest dashboard written to %s", html_path)
 
-    all_job_entries = [
-        {
+    # Carry forward existing analysis from previous results.json when current is empty
+    results_path = OUTPUT_DIR / "results.json"
+    _prev_analyses: dict[str, dict] = {}
+    if results_path.exists():
+        try:
+            _prev_data = json.loads(results_path.read_text())
+            for _pj in _prev_data.get("jobs", []):
+                _pa = _pj.get("analysis", {})
+                if _pa.get("ai_summary") or _pa.get("issues"):
+                    _prev_analyses[_pj["name"]] = _pa
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    all_job_entries = []
+    for j in jobs:
+        current_analysis = analyses.get(j["name"], {})
+        if not current_analysis.get("ai_summary") and not current_analysis.get("issues"):
+            current_analysis = _prev_analyses.get(j["name"], current_analysis)
+        all_job_entries.append({
             "name": j["name"],
             "version": extract_version(j["name"]),
             "state": j["state"],
@@ -3355,10 +3372,9 @@ def main():
             "completion_time": j.get("completion_time", ""),
             "duration": compute_duration(j),
             "url": j["url"],
-            "analysis": analyses.get(j["name"], {}),
-        }
-        for j in jobs
-    ]
+            "analysis": current_analysis,
+        })
+
     results = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "job_filter": JOB_FILTER,
@@ -3367,7 +3383,6 @@ def main():
         "failed": sum(1 for j in jobs if j["state"] in ("failure", "error")),
         "jobs": all_job_entries,
     }
-    results_path = OUTPUT_DIR / "results.json"
     results_path.write_text(json.dumps(results, indent=2))
     # Per-run results: only include jobs that completed on this date
     run_jobs = [j for j in all_job_entries
