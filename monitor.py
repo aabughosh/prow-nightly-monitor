@@ -3427,15 +3427,24 @@ def main():
         "jobs": all_job_entries,
     }
     results_path.write_text(json.dumps(results, indent=2))
-    # Per-run results: only include jobs that completed on this date
-    run_jobs = [j for j in all_job_entries
-                if j.get("start_time", "")[:10] == today
-                and j.get("state") in ("failure", "success", "error")]
-    run_results = dict(results, jobs=run_jobs,
-                       total_jobs=len(run_jobs),
-                       passed=sum(1 for j in run_jobs if j.get("state") == "success"),
-                       failed=sum(1 for j in run_jobs if j.get("state") in ("failure", "error")))
-    (run_dir / "results.json").write_text(json.dumps(run_results, indent=2))
+
+    # Per-run results: group jobs by their start date and write each day's run dir
+    from collections import defaultdict
+    _jobs_by_date: dict[str, list] = defaultdict(list)
+    for j in all_job_entries:
+        _d = j.get("start_time", "")[:10]
+        if _d and j.get("state") in ("failure", "success", "error"):
+            _jobs_by_date[_d].append(j)
+
+    for _date, _date_jobs in _jobs_by_date.items():
+        _date_run_dir = OUTPUT_DIR / "runs" / _date
+        _date_run_dir.mkdir(parents=True, exist_ok=True)
+        _date_results = dict(results, jobs=_date_jobs,
+                             total_jobs=len(_date_jobs),
+                             passed=sum(1 for j in _date_jobs if j.get("state") == "success"),
+                             failed=sum(1 for j in _date_jobs if j.get("state") in ("failure", "error")))
+        (_date_run_dir / "results.json").write_text(json.dumps(_date_results, indent=2))
+
     log.info("Results JSON written to %s", results_path)
 
     usage = get_token_usage()
