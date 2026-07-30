@@ -3331,9 +3331,17 @@ def main():
     trend_html = generate_trend_html(history)
     log.info("Trend history updated (%d runs)", len(history.get("runs", [])))
 
-    html = generate_html(jobs, analyses, trend_html)
-
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Main dashboard only shows TODAY's jobs (each day's run is self-contained)
+    today_jobs = [j for j in jobs if j.get("start_time", "")[:10] == today]
+    if not today_jobs:
+        # If no jobs today yet, show most recent day's jobs
+        latest_date = max((j.get("start_time", "")[:10] for j in jobs), default=today)
+        today_jobs = [j for j in jobs if j.get("start_time", "")[:10] == latest_date]
+
+    html = generate_html(today_jobs, analyses, trend_html)
+
     run_dir = OUTPUT_DIR / "runs" / today
     run_dir.mkdir(parents=True, exist_ok=True)
     # Per-run copy: fix relative links to point back to project root
