@@ -38,6 +38,25 @@ python scripts/check_backport.py /tmp/ci-investigate <commit_sha> release-X.Y
 
 If the script returns "NOT_PRESENT", that commit is NOT on the release branch and cannot be the root cause.
 
+## MANDATORY VERIFICATION — Never Claim Without Evidence
+
+**RULE: Do NOT state that a PR/commit changed a specific file unless you have VERIFIED it.**
+
+Before writing "PR #X changed file Y" or "commit Z introduced function F", you MUST:
+1. Check the PR's actual diff (files changed list)
+2. OR run `git log --oneline -- <file>` to see when it was last modified
+3. OR check `git show <commit> -- <file>` to confirm the file is in that commit's diff
+
+If you cannot verify, write "suspected" or "requires verification" instead of stating it as fact.
+
+**RULE: Do NOT invent code paths, line numbers, or function names.**
+
+Only cite specific line numbers (e.g., "event.go:742") if you found them in the actual evidence files. If you're reasoning about what the code MIGHT do, use phrasing like "likely" or "based on the error pattern, the code path appears to be..." — never state unverified line numbers as facts.
+
+**RULE: Do NOT blame upstream-sync PRs for logic changes.**
+
+PRs titled "Sync from upstream" or "upstream-sync" typically only touch `vendor/`, `go.mod`, `go.sum`, or CI config files. They do NOT modify `pkg/`, `addons/`, `cmd/`, or test code. Never claim an upstream-sync PR introduced a logic regression without verifying the actual files changed.
+
 ## Common False Positives — AVOID THESE
 
 1. **Main-only PR blamed for release-X.Y failure**: A PR merged on `main` is cited as root cause for an older release job. Always verify backport status.
@@ -47,6 +66,8 @@ If the script returns "NOT_PRESENT", that commit is NOT on the release branch an
 3. **MonitorTest failures attributed to project code**: `openshift-tests` MonitorTests (apiserver-availability, static-pod-lifecycle, etc.) detect cluster-level disruption. If the project's own `finished.json` reports SUCCESS, the project tests passed — the failure is CI framework infrastructure.
 
 4. **Test/code version mismatch misidentified as regression**: When `main` adds a test that requires features only in newer releases, older release jobs will fail that test. This is expected skew, not a regression in the production code.
+
+5. **Upstream-sync PR blamed for file it didn't touch**: An upstream-sync PR that only updates vendor dependencies is blamed for changing production code in `pkg/`, `addons/`, or `cmd/`. Always verify the PR's actual file list.
 
 ## Project-Specific Context
 
@@ -68,6 +89,12 @@ If the script returns "NOT_PRESENT", that commit is NOT on the release branch an
 - Runs on AWS and bare-metal (OFCIR-acquired hosts)
 - nftables test intentionally reboots SNO nodes — this triggers MonitorTest failures (expected, not a bug)
 - Related repo: `openshift-kni/commatrix`
+
+## Known CI Bugs (Jira Integration)
+
+The file `known_bugs.json` in the repo root contains a cached list of open CI bugs from Jira filter [112734](https://redhat.atlassian.net/issues?filter=112734). The AI prompt includes these bugs so it can tag failures as "Known Issue: CNF-XXXXX" or flag "Potential New Issue".
+
+To refresh the bug list, ask Cursor: "refresh known_bugs.json from Jira filter 112734". This uses the Atlassian MCP to query the filter and overwrite the file.
 
 ## Corrections Database
 
