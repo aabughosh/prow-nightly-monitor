@@ -28,3 +28,21 @@
     before blaming them. Use: python scripts/check_backport.py <repo> <sha> release-X.Y.
     A commit on main that is absent from release-X.Y CANNOT cause a failure
     on that version's nightly job.
+
+- date: 2026-07-30
+  job: periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp
+  version: "5.0"
+  mistake: >
+    Claimed that linuxptp-daemon PR #629 (commit 14eb788, "Sync from upstream
+    22-Jul-2026") introduced or changed addons/intel/e825.go, specifically
+    setupGnss() at line 262.
+  correct: >
+    PR #629 is an upstream-sync that does NOT touch addons/intel/e825.go.
+    That file has not been modified for over 3 weeks. The GNSS failure on
+    cnfdf32 is likely a hardware/antenna issue or a pre-existing configuration
+    problem unrelated to PR #629.
+  rule: >
+    Never claim a PR changed a specific file without verifying. Use
+    `git diff <merge-base>..<pr-head> -- <file>` or check the PR's
+    "Files changed" tab. An upstream-sync PR that only touches vendor/
+    or go.mod files cannot introduce regressions in addons/ code.
