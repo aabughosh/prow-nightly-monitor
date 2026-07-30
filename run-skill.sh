@@ -10,7 +10,7 @@ LOG_FILE="$REPO_DIR/skill-run.log"
 LOCK_FILE="/tmp/prow-nightly-monitor.lock"
 MAX_LOG_SIZE=$((5 * 1024 * 1024))  # 5 MB
 
-export PATH="/opt/homebrew/bin:/Applications/Cursor.app/Contents/Resources/app/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/Applications/Cursor.app/Contents/Resources/app/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 # Debug: log startup to a fixed file (helps diagnose launchd issues)
 echo "$(date): run-skill.sh starting (PID $$, PATH=$PATH)" >> /tmp/prow-nightly-debug.log

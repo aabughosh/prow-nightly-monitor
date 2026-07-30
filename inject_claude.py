@@ -28,7 +28,11 @@ from fingerprint import (
     _extract_root_cause, _extract_classification, _extract_is_flake,
 )
 
-CURSOR_CLI = "/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
+CURSOR_CLI = os.environ.get("CURSOR_CLI",
+    os.path.expanduser("~/.local/bin/cursor")
+    if os.path.exists(os.path.expanduser("~/.local/bin/cursor"))
+    else "/Applications/Cursor.app/Contents/Resources/app/bin/cursor"
+)
 REPO_DIR = os.path.expanduser("~/Documents/GitHub/prow-nightly-monitor")
 TARGET_REPO = os.environ.get("TARGET_REPO", "")
 UPSTREAM_REPO = os.environ.get("UPSTREAM_REPO", "openshift-kni/commatrix")
