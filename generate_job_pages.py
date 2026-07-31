@@ -119,11 +119,20 @@ def _md_to_html(md: str) -> str:
                 f"{_inline_md(stripped[4:])}</h4>"
             )
         elif stripped.startswith("## "):
-            out.append(
-                f'<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;'
-                f'border-bottom:1px solid #21262d;padding-bottom:4px">'
-                f"{_inline_md(stripped[3:])}</h3>"
-            )
+            heading_text = stripped[3:]
+            if "Summary Table" in heading_text:
+                out.append(
+                    f'<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;'
+                    f'background:linear-gradient(90deg,#1f6feb33,transparent);'
+                    f'padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">'
+                    f"{_inline_md(heading_text)}</h3>"
+                )
+            else:
+                out.append(
+                    f'<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;'
+                    f'border-bottom:1px solid #21262d;padding-bottom:4px">'
+                    f"{_inline_md(heading_text)}</h3>"
+                )
         elif stripped.startswith("# "):
             out.append(
                 f'<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">'
@@ -254,7 +263,86 @@ def generate_job_page(job: dict, project_name: str, generated_at: str) -> str:
             '</div>'
         )
     elif ai_summary:
-        analysis_rendered = _md_to_html(ai_summary)
+        # Split into executive summary + per-suite detail cards
+        if "<!-- SUITE_DETAILS_START -->" in ai_summary:
+            parts = ai_summary.split("<!-- SUITE_DETAILS_START -->", 1)
+            summary_part = parts[0].rstrip()
+            detail_part = parts[1].replace("<!-- SUITE_DETAILS_END -->", "").strip()
+
+            # Extract suite names: match "### suitename" headers but not "### Suite:"
+            # or other non-suite headers like "## Per-Suite Details"
+            suite_names = [
+                s for s in re.findall(r"^###\s+(\S+)", detail_part, re.MULTILINE)
+                if s not in ("Suite:", "Per-Suite")
+            ]
+            # Deduplicate while preserving order
+            seen = set()
+            suite_names = [s for s in suite_names if not (s in seen or seen.add(s))]
+
+            # Build suite nav bar
+            suite_nav = ""
+            if suite_names:
+                suite_links = " ".join(
+                    f'<a href="#suite-{html_mod.escape(s)}" style="display:inline-block;'
+                    f'padding:4px 12px;background:#1f6feb33;border:1px solid #1f6feb;'
+                    f'border-radius:16px;font-size:12px;font-weight:600;color:#58a6ff;'
+                    f'text-decoration:none;margin:3px 2px">{html_mod.escape(s)}</a>'
+                    for s in suite_names
+                )
+                suite_nav = (
+                    '<div style="margin-top:16px;padding:12px 16px;background:#161b22;'
+                    'border:1px solid #30363d;border-radius:8px">'
+                    '<div style="font-size:11px;color:#8b949e;text-transform:uppercase;'
+                    'letter-spacing:1px;margin-bottom:6px">Per-Suite Analysis</div>'
+                    f'{suite_links}</div>'
+                )
+
+            # Split on top-level suite headers (### suitename but not ### Suite:)
+            # Each section: "### bc\n\n---\n### Suite: bc — 5 failures\n...content..."
+            suite_header_re = re.compile(
+                r"(?=^###\s+(?!Suite:|Per-Suite)\S+)", re.MULTILINE
+            )
+            suite_sections = suite_header_re.split(detail_part)
+            suite_cards = []
+            for section in suite_sections:
+                section = section.strip()
+                if not section:
+                    continue
+                m = re.match(r"^###\s+(\S+)(.*)", section, re.DOTALL)
+                if not m:
+                    continue
+                sname = m.group(1)
+                sbody = m.group(2).strip()
+                # Extract failure count from "### Suite: sname — N failures" if present
+                count_m = re.search(
+                    r"###\s+Suite:\s+\S+\s*—\s*(\d+)\s+failure", sbody
+                )
+                count_label = f" ({count_m.group(1)} failures)" if count_m else ""
+                suite_cards.append(
+                    f'<div id="suite-{html_mod.escape(sname)}" '
+                    f'style="margin-top:12px;scroll-margin-top:20px">'
+                    f'<details style="background:#0d1117;border:1px solid #30363d;'
+                    f'border-radius:8px;overflow:hidden">'
+                    f'<summary style="cursor:pointer;padding:10px 16px;background:#161b22;'
+                    f'font-size:14px;font-weight:600;color:#58a6ff;'
+                    f'border-bottom:1px solid #30363d">'
+                    f'&#9654; {html_mod.escape(sname)}{html_mod.escape(count_label)}'
+                    f'</summary>'
+                    f'<div style="padding:12px 16px">'
+                    f'{_md_to_html(sbody)}</div></details></div>'
+                )
+
+            analysis_rendered = (
+                _md_to_html(summary_part)
+                + suite_nav
+                + '<div style="margin-top:16px;border-top:1px solid #30363d;padding-top:12px">'
+                '<h3 style="color:#f0f6fc;font-size:15px;margin-bottom:8px">'
+                'Per-Suite Details</h3>'
+                + "\n".join(suite_cards)
+                + '</div>'
+            )
+        else:
+            analysis_rendered = _md_to_html(ai_summary)
     else:
         analysis_rendered = (
             '<div style="text-align:center;padding:40px 20px">'
