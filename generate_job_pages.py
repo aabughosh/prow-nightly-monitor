@@ -713,46 +713,6 @@ def process_project(project_name: str) -> int:
 
     job_pages = _generate_job_files(all_jobs, project_name, generated_at, jobs_dir)
 
-    # Fix orphaned pages: existing HTML files for builds no longer in any results.json
-    # Use the latest analyzed build for the same job name as a fallback
-    generated_builds = {jp["build_id"] for jp in job_pages if jp["build_id"]}
-    latest_analyzed: dict[str, dict] = {}
-    for job in all_jobs:
-        analysis = job.get("analysis", {})
-        has_ai = bool(analysis.get("ai_summary") or
-                      any(iss.get("ai_summary") for iss in analysis.get("issues", [])))
-        if has_ai:
-            latest_analyzed[job["name"]] = job
-
-    orphan_fixed = 0
-    for html_file in jobs_dir.glob("*.html"):
-        if html_file.name == "index.html":
-            continue
-        # Check if this file was already generated in this run
-        m = re.search(r"-(\d{15,})\.html$", html_file.name)
-        if not m:
-            continue
-        build_id = m.group(1)
-        if build_id in generated_builds:
-            continue
-        # Orphaned page -- check if it has "Not Yet Analyzed"
-        content = html_file.read_text()
-        if "Not Yet Analyzed" not in content:
-            continue
-        # Find the job name from the filename
-        job_prefix = html_file.name.replace(f"-{build_id}.html", "").replace("-", "/", 1)
-        # Match against latest analyzed jobs
-        for jname, job in latest_analyzed.items():
-            safe_jname = re.sub(r"[^a-zA-Z0-9._-]", "-", jname)
-            if html_file.name.startswith(safe_jname):
-                page_html = generate_job_page(job, project_name, generated_at)
-                html_file.write_text(page_html)
-                orphan_fixed += 1
-                break
-
-    if orphan_fixed:
-        print(f"  Fixed {orphan_fixed} orphaned page(s) with latest analysis")
-
     index_html = generate_index_page(project_name, job_pages, generated_at)
     (jobs_dir / "index.html").write_text(index_html)
 
