@@ -601,7 +601,11 @@ def _generate_job_files(
 
 
 def _backfill_ai_from_fingerprints(jobs: list[dict]) -> int:
-    """Fill missing ai_summary from fingerprint DB for known recurring issues."""
+    """Fill missing ai_summary from fingerprint DB for known recurring issues.
+
+    Version-aware: only backfills from fingerprints whose affected_jobs include
+    the same OCP version to prevent cross-version contamination.
+    """
     fp_path = PUBLIC_DIR / "fingerprints.json"
     if not fp_path.exists():
         return 0
@@ -621,7 +625,14 @@ def _backfill_ai_from_fingerprints(jobs: list[dict]) -> int:
         analysis = job.get("analysis", {})
         if analysis.get("ai_summary"):
             continue
-        # Match by failed test names against fingerprint titles
+        # Also skip if per-issue analyses already have AI
+        if analysis.get("issues") and any(
+            iss.get("ai_summary") for iss in analysis["issues"]
+        ):
+            continue
+
+        job_version = _extract_version(job.get("name", ""))
+
         failed_tests = analysis.get("investigation", {}).get("failed_tests", [])
         if not failed_tests:
             failed_tests = analysis.get("junit_failures", [])
@@ -631,26 +642,32 @@ def _backfill_ai_from_fingerprints(jobs: list[dict]) -> int:
             if not tname:
                 continue
             for iss in fp_issues.values():
-                if iss.get("title", "") == tname and iss.get("ai_summary_short"):
-                    analysis["ai_summary"] = iss["ai_summary_short"][:16000]
-                    filled += 1
-                    matched = True
-                    break
+                if iss.get("title", "") != tname or not iss.get("ai_summary_short"):
+                    continue
+                # Require version match via affected_jobs
+                if job_version:
+                    affected = iss.get("affected_jobs", [])
+                    if affected and not any(
+                        job_version in j.get("name", "") for j in affected
+                    ):
+                        continue
+                analysis["ai_summary"] = iss["ai_summary_short"][:16000]
+                filled += 1
+                matched = True
+                break
             if matched:
                 break
-        # Fallback: match by reason/category for jobs with no failed tests (infra failures)
-        # Also check that the fingerprint's affected jobs match the same version
         if not matched and not failed_tests:
             reason = analysis.get("reason", "")
-            job_version = job.get("version", "")
             if reason:
                 for iss in fp_issues.values():
                     if iss.get("title", "") != reason or not iss.get("ai_summary_short"):
                         continue
-                    # Verify version match: check affected_jobs have the same version
-                    affected = iss.get("affected_jobs", [])
-                    if affected and job_version:
-                        if not any(job_version in j.get("name", "") for j in affected):
+                    if job_version:
+                        affected = iss.get("affected_jobs", [])
+                        if affected and not any(
+                            job_version in j.get("name", "") for j in affected
+                        ):
                             continue
                     analysis["ai_summary"] = iss["ai_summary_short"][:16000]
                     filled += 1
@@ -689,11 +706,52 @@ def process_project(project_name: str) -> int:
             except (json.JSONDecodeError, OSError):
                 pass
 
-    # Backfill disabled — causes cross-version contamination with old fingerprints.
-    # Per-version fingerprints from tonight's run will populate correctly.
-    # backfilled = _backfill_ai_from_fingerprints(all_jobs)
+    # Backfill orphaned pages from fingerprint DB (version-aware to prevent contamination)
+    backfilled = _backfill_ai_from_fingerprints(all_jobs)
+    if backfilled:
+        print(f"  Backfilled {backfilled} job(s) from fingerprint DB")
 
     job_pages = _generate_job_files(all_jobs, project_name, generated_at, jobs_dir)
+
+    # Fix orphaned pages: existing HTML files for builds no longer in any results.json
+    # Use the latest analyzed build for the same job name as a fallback
+    generated_builds = {jp["build_id"] for jp in job_pages if jp["build_id"]}
+    latest_analyzed: dict[str, dict] = {}
+    for job in all_jobs:
+        analysis = job.get("analysis", {})
+        has_ai = bool(analysis.get("ai_summary") or
+                      any(iss.get("ai_summary") for iss in analysis.get("issues", [])))
+        if has_ai:
+            latest_analyzed[job["name"]] = job
+
+    orphan_fixed = 0
+    for html_file in jobs_dir.glob("*.html"):
+        if html_file.name == "index.html":
+            continue
+        # Check if this file was already generated in this run
+        m = re.search(r"-(\d{15,})\.html$", html_file.name)
+        if not m:
+            continue
+        build_id = m.group(1)
+        if build_id in generated_builds:
+            continue
+        # Orphaned page -- check if it has "Not Yet Analyzed"
+        content = html_file.read_text()
+        if "Not Yet Analyzed" not in content:
+            continue
+        # Find the job name from the filename
+        job_prefix = html_file.name.replace(f"-{build_id}.html", "").replace("-", "/", 1)
+        # Match against latest analyzed jobs
+        for jname, job in latest_analyzed.items():
+            safe_jname = re.sub(r"[^a-zA-Z0-9._-]", "-", jname)
+            if html_file.name.startswith(safe_jname):
+                page_html = generate_job_page(job, project_name, generated_at)
+                html_file.write_text(page_html)
+                orphan_fixed += 1
+                break
+
+    if orphan_fixed:
+        print(f"  Fixed {orphan_fixed} orphaned page(s) with latest analysis")
 
     index_html = generate_index_page(project_name, job_pages, generated_at)
     (jobs_dir / "index.html").write_text(index_html)
