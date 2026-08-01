@@ -45,9 +45,9 @@
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">68</div>Active</div>
-    <div class="stat"><div class="stat-num" style="color:#c9d1d9">68</div>Fingerprints</div>
-    <div class="stat"><div class="stat-num" style="color:#a371f7">48</div>Issues</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">64</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">64</div>Fingerprints</div>
+    <div class="stat"><div class="stat-num" style="color:#a371f7">45</div>Issues</div>
   </div>
   <table>
     <thead><tr>
@@ -2078,7 +2078,7 @@
   <td class="col-tests"><ul><li>install should succeed: infrastructure</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix/2072314412965826560" target="_blank">4.22-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li></ul></td>
 </tr>
-<tr id="99b09d3533887365">
+<tr id="e0609a5abecfb2ee">
   <td class="col-rc">
     <div class="rc-text">The `baremetalds-devscripts-setup` step timed out after 1h12m41s because bare-metal masters never came up during IPI bootstrap on Equinix Metal hardware (ofcir-112.cipool-ibmcloud.ofcir). The debug message `No masters found!` from the dev-scripts log bundle confirms the control plane never formed. All cluster operators reported `&lt;missing&gt;`, meaning the API server never reached a healthy state. Every downstream failure (gather-must-gather, gather-extra, gather-audit-logs — all hitting &quot;Service Unavailable&quot; on port 6443) is a cascade of this single bootstrap failure. The commatrix project tests never ran. -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
@@ -2116,128 +2116,8 @@
   </td>
   <td class="col-date">2026-06-29</td>
   <td class="col-date">2026-07-01</td>
-  <td class="col-tests"><ul><li>install should succeed: cluster bootstrap</li><li>install should succeed: overall</li></ul></td>
+  <td class="col-tests"><ul><li>install should succeed: overall</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix/2072314412965826560" target="_blank">4.22-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix/2072307135093411840" target="_blank">4.23-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2071307843482423296" target="_blank">4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a> <span class="date">(2026-06-29)</span></li></ul></td>
-</tr>
-<tr id="e0b0bc52aab7cdaf">
-  <td class="col-rc">
-    <div class="rc-text">The ci-operator attempted to schedule Pod `release-images-latest-cli` on `build10.ci.devcluster.openshift.com` to import `registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-06-25-210812`. The pod never scheduled in 1 hour because the build cluster had no nodes satisfying all constraints simultaneously: ~47 nodes were tainted for other workloads, ~13 didn&#x27;t match node affinity/selectors, and 1 blocked by anti-affinity. Preemption was also exhausted. This is the first and only domino — the commatrix test step was never reached. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** CI build cluster couldn&#x27;t schedule the release-import pod; project tests never ran.
-
-**Root Cause Groups:**
-
-- **Group 1: CI build cluster pod scheduling failure** (affects Tests: `Import the release payload &quot;latest&quot; from an external source`)
-  - **Evidence:**
-    ```
-    pod pending for more than 1h0m0s: pod has not been scheduled in 1h0m0.000741863s
-    0/61 nodes are available: 1 node(s) didn&#x27;t match pod anti-affinity rules,
-      13 node(s) didn&#x27;t match Pod&#x27;s node affinity/selector, 47 node(s) had untolerated taint(s).
-      preemption: 0/61 nodes are available: ... 60 Preemption is not helpful for scheduling.
-    Reporting job state &#x27;failed&#x27; with reason &#x27;executing_graph:step_failed:importing_release:pod_pending&#x27;
-    ```
-  - **Root Cause:** The ci-operator attempted to schedule Pod `release-images-latest-cli` on `build10.ci.devcluster.openshift.com` to import `registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-06-25-210812`. The pod never scheduled in 1 hour because the build cluster had no nodes satisfying all constraints simultaneously: ~47 nodes were tainted for other workloads, ~13 didn&#x27;t match node affinity/selectors, and 1 blocked by anti-affinity. Preemption was also exhausted. This is the first and only domino — the commatrix test step was never reached.
-  - **Breaking PR/Commit:** Unknown — not a code regression; pure CI infrastructure capacity issue.
-  - **Is it a flake?** Yes — transient CI build cluster node-pool saturation; no nodes available for the release-import pod at that moment.
-  - **Suggested Fix:** Retry the job; if it fails again, investigate build cluster capacity or check if the node affinity/selector constraints on `release-images-latest-cli` are overly restrictive for this pool.
-  - **Affected tests:** `Import the release payload &quot;latest&quot; from an external source`
-
----
-
-**Relation Between Groups:** Single group; one upstream cause (no schedulable nodes on CI build cluster) blocked everything.
-
-**Per-Version Notes:** OCP 4.22 — release nightly `4.22.0-0.nightly-2026-06-25-210812` was resolved successfully but import pod could not be scheduled; commatrix tests on release-4.22 were never exercised.
-
-**Affected Images:** `registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-06-25-210812` (release payload, import pod `release-images-latest-cli`)
-
-**Overall Issue Class:** infra_other
-
-**Overall Severity:** MEDIUM</div></details>
-  </td>
-  <td class="col-date">2026-06-29</td>
-  <td class="col-date">2026-06-29</td>
-  <td class="col-tests"><ul><li>Import the release payload &quot;latest&quot; from an external source</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm/2071579701196886016" target="_blank">4.22-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li></ul></td>
-</tr>
-<tr id="9741b728eec1364e">
-  <td class="col-rc">
-    <div class="rc-text">The ci-operator resolved the `initial` release to `4.22.0-0.nightly-2026-06-25-210812` and attempted to populate the `stable-initial` image stream with its tags. The `cli` tag was absent from that payload&#x27;s spec — likely because this 3-day-old 4.22 nightly was pruned or was built incompletely. The `latest` (5.0 nightly) imported successfully with 192 images; the `initial` import never completed. All downstream test steps, including every commatrix e2e test, were never scheduled. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** CI infra failed to import the 4.22 initial release payload; project tests never ran.
-
-**Root Cause Groups:**
-
-- **Group 1: Missing `cli` tag in 4.22 nightly release payload spec** (affects Tests: &quot;Import the release payload &#x27;initial&#x27; from an external source&quot;)
-  - **Evidence:**
-    ```
-    [2026-06-28T19:01:03Z] Importing release image initial.
-    [2026-06-28T19:01:03Z] Resolved release initial to registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-06-25-210812
-    ...
-    ERRO could not run steps: step [release:initial] failed: failed to get CLI image: unable to wait for the &#x27;cli&#x27; image in the stable stream to populate: failed to import tag(s) [cli] on image stream ci-op-7s53dk4k/stable-initial because of missing definition in the spec
-    INFO Reporting job state &#x27;failed&#x27; with reason &#x27;executing_graph:step_failed:importing_release&#x27;
-    ```
-  - **Root Cause:** The ci-operator resolved the `initial` release to `4.22.0-0.nightly-2026-06-25-210812` and attempted to populate the `stable-initial` image stream with its tags. The `cli` tag was absent from that payload&#x27;s spec — likely because this 3-day-old 4.22 nightly was pruned or was built incompletely. The `latest` (5.0 nightly) imported successfully with 192 images; the `initial` import never completed. All downstream test steps, including every commatrix e2e test, were never scheduled.
-  - **Breaking PR/Commit:** Unknown — this is a CI infrastructure / nightly payload issue, not a commatrix code change.
-  - **Is it a flake?** Yes — stale or pruned 4.22 nightly payloads are transient; a re-run once a newer 4.22 nightly is promoted would likely succeed.
-  - **Suggested Fix:** Retry the job after a fresh 4.22 nightly is available. If this recurs, configure the job to pin to a stable 4.22 release rather than the latest nightly, or add a pre-flight check that the resolved payload contains the `cli` tag before proceeding.
-  - **Affected tests:** Import the release payload &quot;initial&quot; from an external source
-
----
-
-**Relation Between Groups:** Single root cause; all failures trace to one missing tag in the 4.22 nightly payload — no commatrix code involved.
-
-**Per-Version Notes:** OCP 5.0 — 5.0 nightly (`5.0.0-0.nightly-2026-06-27-125119`) imported fine (192 images); the 4.22 `initial` payload (`4.22.0-0.nightly-2026-06-25-210812`) is missing the `cli` tag.
-
-**Affected Images:** `registry.ci.openshift.org/ocp/release:4.22.0-0.nightly-2026-06-25-210812` (specifically its `cli` component tag)
-
-**Overall Issue Class:** infra_other
-
-**Overall Severity:** MEDIUM</div></details>
-  </td>
-  <td class="col-date">2026-06-28</td>
-  <td class="col-date">2026-06-29</td>
-  <td class="col-tests"><ul><li>Import the release payload &quot;initial&quot; from an external source</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2071307856061140992" target="_blank">5.0-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix/2071307856061140992" target="_blank">5.0-upgrade-from-stable-4.22-e2e-aws-upgrade-ovn-single-node-network-flow-matrix</a> <span class="date">(2026-06-28)</span></li></ul></td>
-</tr>
-<tr id="c54247ab6cbfeae9">
-  <td class="col-rc">
-    <div class="rc-text">ci-operator resolved the nightly release to `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-091937` and attempted to import it into the namespace&#x27;s `stable` image stream. The `cli` component tag was absent from the release payload&#x27;s image stream spec, causing the import to fail. The job exited after just 12 seconds — the commatrix project tests never ran. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** CI infra failed at release import; the `cli` image tag was missing from the nightly release spec, so no tests ran.
-
-**Root Cause Groups:**
-
-- **Group 1: Release payload missing `cli` tag in image stream spec** (affects Tests: &quot;Import the release payload &#x27;latest&#x27; from an external source&quot;)
-  - **Evidence:**
-    ```
-    step [release:latest] failed: failed to get CLI image: unable to wait for the &#x27;cli&#x27; image in the stable stream to populate: failed to import tag(s) [cli] on image stream ci-op-4pdsbyg2/stable because of missing definition in the spec
-    Reporting job state &#x27;failed&#x27; with reason &#x27;executing_graph:step_failed:importing_release&#x27;
-    ```
-  - **Root Cause:** ci-operator resolved the nightly release to `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-091937` and attempted to import it into the namespace&#x27;s `stable` image stream. The `cli` component tag was absent from the release payload&#x27;s image stream spec, causing the import to fail. The job exited after just 12 seconds — the commatrix project tests never ran.
-  - **Breaking PR/Commit:** Unknown — this is an OCP nightly release payload issue (missing `cli` tag in `4.21.0-0.nightly-2026-06-25-091937`), not a commatrix source change.
-  - **Is it a flake?** Yes — nightly release payloads occasionally ship with incomplete image stream specs; this is a transient CI infra issue.
-  - **Suggested Fix:** No commatrix code change needed. Re-trigger the job against a newer nightly (e.g. a build after 2026-06-25-091937) that includes the `cli` tag; alternatively, file a TRT/ci-infra ticket about the malformed 4.21 nightly payload.
-  - **Affected tests:** &quot;Import the release payload &#x27;latest&#x27; from an external source&quot;
-
----
-
-**Relation Between Groups:** Single group — one upstream cause (malformed nightly payload) blocks everything.
-
-**Per-Version Notes:** OCP 4.21 — nightly `2026-06-25-091937` payload missing `cli` tag; no other versions tested in this run.
-
-**Affected Images:** `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-091937` (stable/cli tag absent)
-
-**Overall Issue Class:** infra_other
-
-**Overall Severity:** MEDIUM</div></details>
-  </td>
-  <td class="col-date">2026-06-28</td>
-  <td class="col-date">2026-06-28</td>
-  <td class="col-tests"><ul><li>Import the release payload &quot;latest&quot; from an external source</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix/2071217229650726912" target="_blank">4.21-aws-ovn-network-flow-matrix</a> <span class="date">(2026-06-28)</span></li></ul></td>
 </tr>
 </tbody>
   </table>
