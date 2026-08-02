@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.21-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-08-01T22:10:48.946614+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-02T10:21:56.016314+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -86,37 +86,37 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> PROJECT TESTS PASSED — CI framework MonitorTest failed due to intentional node reboot during nftables test.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> PROJECT TESTS PASSED — CI MonitorTest failed detecting the intentional single-node reboot as a cluster invariant violation.</p>
 <br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
 <br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: MonitorTest failure triggered by intentional node reboot</strong> (affects: single-node-e2e-test CI step)</div>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — MonitorTest detected intentional node reboot (1 step)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> (OpenShift e2e MonitorTest suite)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
 <p style="margin:4px 0">Suite run returned error: failed due to a MonitorTest failure</p>
-<p style="margin:4px 0">error: error running a test suite: failed due to a MonitorTest failure</p>
-<p style="margin:4px 0">Step aws-ovn-network-flow-matrix-single-node-single-node-e2e-test failed after 1h53m54s.</p>
-<p style="margin:4px 0">2026/06/25 13:56:11 Waiting for node ip-10-0-69-209.ec2.internal to be in NotReady state</p>
-<p style="margin:4px 0">2026/06/25 13:56:27 Node ip-10-0-69-209.ec2.internal is NotReady</p>
+<p style="margin:4px 0">Step aws-ovn-network-flow-matrix-single-node-single-node-e2e-test failed after 2h7m58s.</p>
+<p style="margin:4px 0">2026/08/01 13:53:43  Node ip-10-0-37-121.us-west-2.compute.internal is NotReady</p>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">And from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests__finished.json</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true,"result":"SUCCESS"</code></p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The commatrix nftables e2e test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">nftables_test.go:85</code>) intentionally applies a MachineConfig that reboots the node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ip-10-0-69-209.ec2.internal</code>) at ~13:56 UTC to validate nftables rules after reboot. The commatrix test step completed successfully at 14:01:38 UTC. The subsequent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> CI step runs OpenShift's generic e2e suite with built-in MonitorTests that observe the cluster throughout the entire job — these monitors recorded the node-not-ready event from the commatrix-triggered reboot and flagged it as a MonitorTest failure. The first domino is the reboot event recorded by the CI monitor, not a commatrix bug.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a known interaction between the commatrix nftables reboot and the openshift-tests MonitorTest framework.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — the commatrix tests always perform this intentional reboot; whether it triggers a MonitorTest failure depends on monitor timing and thresholds.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> step's MonitorTest should be configured to tolerate or exclude node-not-ready events that occur during the commatrix nftables test window. Alternatively, the job config should suppress MonitorTest node-reboot alerts for this specific job.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> (CI framework MonitorTest); commatrix's own 3 e2e specs all PASSED.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The commatrix nftables test intentionally rebooted node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ip-10-0-37-121.us-west-2.compute.internal</code> at 13:53:26 to verify nftables rules persist across reboots. The subsequent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> step runs the OCP MonitorTest suite (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">legacy-node-invariants</code>), which flagged the "node not ready" interval as a cluster invariant violation — even though it was an expected, controlled reboot. All 3 commatrix e2e specs passed (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">finished.json: "passed":true,"result":"SUCCESS"</code>).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is not a code regression; it is a structural gap in the CI job definition.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — this pattern recurs whenever the nftables reboot test runs before the MonitorTest-based e2e step on a single-node cluster; the reboot window is finite and deterministic.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a MonitorTest exception/allowance for the expected node-not-ready interval caused by the nftables reboot, or run the commatrix test step after the e2e suite so the reboot doesn't land within the MonitorTest observation window.</div>
 <br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
-<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group. The only failure is from the CI framework's MonitorTest, caused by a node reboot that is a deliberate part of the commatrix nftables validation test.</p>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">single-node-e2e-test (MonitorTest)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Intentional nftables reboot flagged by legacy-node-invariants MonitorTest</td><td style="border:1px solid #30363d;padding:6px 8px">Exempt expected reboot window or reorder steps</td></tr>
+</table>
 <br>
-<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 (nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.21.0-0.nightly-2026-06-25-024321</code>): commatrix tests pass; MonitorTest collision with intentional reboot is the sole failure.</p>
-<br>
-<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (release image, 190 components imported); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (test runner)</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. File a job-config issue against <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift/release</code> to exempt the expected node-not-ready reboot window (13:53:43 UTC) from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">legacy-node-invariants</code> MonitorTest assertions — either via a known-disruption annotation or by using <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">--allowed-not-ready-seconds</code> for the reboot step.</div>
+<div style="padding-left:16px;margin:2px 0">2. Retry the job; the commatrix project code is healthy on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.21</code> — no source changes are needed.</div>
 </div>
 
 <div class="footer">

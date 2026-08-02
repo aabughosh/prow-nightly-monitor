@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.22-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-08-02T00:10:01.087682+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-02T09:58:35.699320+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2082708180000837632" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2083795073723535360" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">failure</div>
+    <div class="info-value" style="color:#f85149">pending</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,19 +62,16 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">275m</div>
+    <div class="info-value">running...</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#f85149">TEST</span></div>
+    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
   </div>
-  <div class="info-card">
-    <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#d29922">MEDIUM</span></div>
-  </div>
+  
   <div class="info-card">
     <div class="info-label">Run Date</div>
-    <div class="info-value" style="font-size:12px">2026-07-30</div>
+    <div class="info-value" style="font-size:12px">2026-08-02</div>
   </div>
 </div>
 
@@ -84,164 +81,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> T-GM lock failure and ptp-operator reconciliation regression drove all 31 errors across 7 suites.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other (primary); test_failure (secondary)</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> CRITICAL</p>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Causes (31 failures across 7 suites)</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">6/31 failures — T-GM "no solution found in Local GM mode" + systemic parallel Slave Clock Sync</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc, oc (direct); dualnicbc parallel (2 tests) | <strong>Evidence:</strong> PROVEN (bc, oc); HYPOTHESIS (cascade to dualnicbc parallel)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testconfig.PtpConfigBC()</code> returned <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"no solution found for BC configuration in Local GM mode"</code> in bc-serial BeforeAll (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testconfig.go:1458–1483</code>) and oc-serial BeforeEach; no PtpConfig CR was created, so downstream parallel "PTP Slave Clock Sync" timed out waiting for LOCKED (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">parallel/ptp.go:393</code>). oc classifies as <strong>infra_other</strong> (GNSS signal loss on WPC T-GM hardware); bc classifies as <strong>test_regression</strong> (L2 discovery image v17 imposing stricter <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">StepSameNic</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">StepSameLan2</code> constraints).</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> oc: Unknown (infra). bc candidate (unverified): <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">70cecc0</code> (L2_DISCOVERY_IMAGE→v17, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testconfig.go:674</code>)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — same topology-solver error across 7 suites in one run is infrastructure, not transient.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Confirm T-GM WPC node has GNSS lock (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ts2phc</code> reports LOCKED), then re-run; separately verify L2 image v17 resolves BC interface matching for this lab's wiring.</div>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">12/31 failures — DualFollower slave PtpConfig not reconciled by ptp-operator</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> dualfollower | <strong>Evidence:</strong> PROVEN</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test-slave1</code> PtpConfig existed but no ptp4l ran on cnfdf30; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpModeDiscovered=TGM</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DiscoveredSlave1PtpConfig=nil</code>. GraphSolver confirmed physical DualFollower wiring (cnfdf32→cnfdf30→cnfdf32), so ptp-operator failed to reconcile DaemonSet onto the follower node. Daemon deletion during cleanup (09:18) triggered <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">discoveryFailure</code>, cascading nil-pointer panics at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp.go:2333,3544</code> in 9 subsequent tests.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Candidate (unverified): ptp-operator <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> HEAD at 2026-07-30</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — deterministic reconciliation failure confirmed across the suite.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Investigate ptp-operator <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> reconciliation of multi-slave PtpConfigs; confirm <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test-slave1</code> is accepted and applied, not silently rejected.</div>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">7/31 failures — T-BC multi-profile pmc cascade + missing downstream OC slave</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> tbc | <strong>Evidence:</strong> PROVEN</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> 1 test failed because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DiscoveredSlave1PtpConfig=nil</code> (no downstream OC slave in TBC lab topology). 6 tests failed via chain: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test-wpc-tbc</code> multi-profile warning triggered log-stream timeout (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">183s</code>); pmc returned <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bad command: GET</code> on wrong socket path (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pmc.go:17</code>); cloud-event-proxy crash test deleted all PtpConfigs, leaving <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DiscoveredClockUnderTestPtpConfig=nil</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testconfig.go:2093</code>) and panicking the final 4 tests.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown (topology gap = lab provisioning; pmc path bug pre-existing in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon/pkg/pmc/pmc.go:17</code>)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — deterministic given multi-profile TBC config and absent downstream slave.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Fix pmc socket path resolution for multi-profile T-BC configs; add downstream OC slave PtpConfig to TBC lab topology.</div>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">6/31 failures — linuxptp-daemon/operator restarts during active tests</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> dualnicbc (1), dualnicbcha (2), tgm (3) | <strong>Evidence:</strong> PROVEN (dualnicbcha); POSSIBLY FLAKE (tgm)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> dualnicbc: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dialSocket()</code> logs ERROR on first reconnect after phc2sys SIGTERM (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">daemon.go:136</code>), failing new <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">verifyProcessRestartNoSocketErrors</code> assertion. dualnicbcha: ptp-operator pod deleted 57s after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ens2f1</code> taken down, cycling all 4 linuxptp-daemon pods mid-test, leaving <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpModeDiscovered=DualNICBC</code> (not DualNICBCHA) for parallel test. tgm: 3 WPC GNSS disruption tests failed in <0.4s in both dualfollower-serial and tgm-serial — BeforeEach LOCKED-state guard failure, consistent with residual GNSS transient state.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> dualnicbc candidate (unverified): linuxptp-daemon PR #618 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cf3c0f3</code>, Jun 30). dualnicbcha + tgm: Unknown.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> dualnicbc: possibly (timing-dependent race). dualnicbcha: possibly (infra event). tgm: <strong>yes</strong> (transient GNSS state, retry recommended).</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Demote <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dialSocket()</code> first-attempt error to DEBUG in linuxptp-daemon; investigate why ptp-operator reconciles full DaemonSet rollout when HA primary interface goes down.</div>
-<br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
-<br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">Reboot discovery (serial)</td><td style="border:1px solid #30363d;padding:6px 8px">bc</td><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other / test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">MEDIUM</td><td style="border:1px solid #30363d;padding:6px 8px">No solution found in Local GM mode — T-GM not LOCKED</td><td style="border:1px solid #30363d;padding:6px 8px">Confirm GNSS lock; verify L2 image v17</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">PTP Slave Clock Sync (parallel)</td><td style="border:1px solid #30363d;padding:6px 8px">bc</td><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">MEDIUM</td><td style="border:1px solid #30363d;padding:6px 8px">No ptpconfig deployed → clock never LOCKED</td><td style="border:1px solid #30363d;padding:6px 8px">Same as above</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">3–13</td><td style="border:1px solid #30363d;padding:6px 8px">DualFollower sync + WPC/Events tests</td><td style="border:1px solid #30363d;padding:6px 8px">dualfollower</td><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">test-slave1 PtpConfig not reconciled onto cnfdf30</td><td style="border:1px solid #30363d;padding:6px 8px">Investigate ptp-operator release-4.22 reconcile</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">14</td><td style="border:1px solid #30363d;padding:6px 8px">PTP Slave Clock Sync (parallel)</td><td style="border:1px solid #30363d;padding:6px 8px">dualfollower</td><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">Cascade nil config after daemon deletion</td><td style="border:1px solid #30363d;padding:6px 8px">Same</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">15</td><td style="border:1px solid #30363d;padding:6px 8px">phc2sys SIGTERM no socket errors</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbc</td><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">MEDIUM</td><td style="border:1px solid #30363d;padding:6px 8px">dialSocket() logs ERROR on first reconnect attempt</td><td style="border:1px solid #30363d;padding:6px 8px">Demote dialSocket error to DEBUG</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">16–17</td><td style="border:1px solid #30363d;padding:6px 8px">Slave Clock Sync + CPU (parallel)</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbc</td><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">MEDIUM</td><td style="border:1px solid #30363d;padding:6px 8px">T-GM FREERUN — no upstream sync available</td><td style="border:1px solid #30363d;padding:6px 8px">Confirm GNSS lock</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">18–19</td><td style="border:1px solid #30363d;padding:6px 8px">HA failover serial + parallel</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha</td><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">MEDIUM</td><td style="border:1px solid #30363d;padding:6px 8px">Operator cycled all daemon pods on ens2f1 down</td><td style="border:1px solid #30363d;padding:6px 8px">Investigate HA reconcile loop</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">20–21</td><td style="border:1px solid #30363d;padding:6px 8px">Reboot discovery + Slave Clock Sync</td><td style="border:1px solid #30363d;padding:6px 8px">oc</td><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">T-GM not LOCKED — GNSS signal loss</td><td style="border:1px solid #30363d;padding:6px 8px">Confirm GNSS lock; re-run</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">22</td><td style="border:1px solid #30363d;padding:6px 8px">Downstream slave sync</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">DiscoveredSlave1PtpConfig=nil — no downstream OC slave</td><td style="border:1px solid #30363d;padding:6px 8px">Add OC slave PtpConfig to TBC lab</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">23–28</td><td style="border:1px solid #30363d;padding:6px 8px">nodeLabel + priority + crash + GM + CPU + Slave Sync</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">Multi-profile pmc cascade → nil config after crash test</td><td style="border:1px solid #30363d;padding:6px 8px">Fix pmc socket path; fix crash test cleanup</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">29–31</td><td style="border:1px solid #30363d;padding:6px 8px">WPC GNSS disruption/recovery (×3)</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">BeforeEach LOCKED-guard failed — residual GNSS transient</td><td style="border:1px solid #30363d;padding:6px 8px">Retry; add explicit GNSS-LOCKED wait in BeforeEach</td></tr>
-</table>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Lab infra team</strong>: Confirm WPC T-GM node has stable GNSS lock (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ts2phc</code> LOCKED) and re-run the job — this alone likely resolves Groups 1 and part of 4.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>ptp-operator release-4.22 team</strong>: Investigate why <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test-slave1</code> PtpConfig is not reconciled onto the DualFollower node (cnfdf30); confirm no recent reconcile regression in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> HEAD.</div>
-<div style="padding-left:16px;margin:2px 0">3. <strong>linuxptp-daemon team</strong>: Demote <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dialSocket()</code> first-attempt error to DEBUG/WARN (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">daemon.go:136</code>); separately investigate the HA failover triggering a full DaemonSet rollout.</div>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Open Questions</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Contradiction — bc vs oc on same root cause:</strong> bc classifies "no solution found in Local GM mode" as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_regression</code> (L2 image v17, candidate <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">70cecc0</code>); oc classifies the identical error as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code> (GNSS signal loss). Both cannot be correct simultaneously — if the T-GM was GNSS-locked, the topology solver would succeed regardless of image version; if it was FREERUN, no image would help. The oc interpretation (infra_other) is better supported by the breadth of failures (all 7 suites, 31 errors) and the determinism of the error. NOTE: Not overriding bc's classification, but the cross-suite weight of evidence favors <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_other</code> as the dominant cause; L2 image v17 should be investigated separately after confirming GNSS health.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>bc serial-passed-but-parallel-failed:</strong> bc CPU Utilization (parallel) <strong>passed</strong> while Slave Clock Sync (parallel) <strong>failed</strong>. This is not a paradox — it is consistent with Group 1: the daemon was running (CPU measurable) but no ptpconfig was deployed (clock never reached LOCKED). No override needed.</div>
-<div style="padding-left:16px;margin:2px 0">3. <strong>Unverified cascade — dualnicbc parallel to Group 1:</strong> The dualnicbc analysis attributes parallel CPU + Slave Clock Sync failures to the systemic T-GM FREERUN, but dualnicbc's per-suite analysis calls these out separately. Marked HYPOTHESIS until re-run data confirms.</div>
-<br>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0"><div style="margin-top:16px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:8px"><div style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Per-Suite Analysis</div><a href="#suite-bc" style="display:inline-block;padding:4px 12px;background:#1f6feb33;border:1px solid #1f6feb;border-radius:16px;font-size:12px;font-weight:600;color:#58a6ff;text-decoration:none;margin:3px 2px">bc</a> <a href="#suite-dualfollower" style="display:inline-block;padding:4px 12px;background:#1f6feb33;border:1px solid #1f6feb;border-radius:16px;font-size:12px;font-weight:600;color:#58a6ff;text-decoration:none;margin:3px 2px">dualfollower</a> <a href="#suite-dualnicbc" style="display:inline-block;padding:4px 12px;background:#1f6feb33;border:1px solid #1f6feb;border-radius:16px;font-size:12px;font-weight:600;color:#58a6ff;text-decoration:none;margin:3px 2px">dualnicbc</a> <a href="#suite-dualnicbcha" style="display:inline-block;padding:4px 12px;background:#1f6feb33;border:1px solid #1f6feb;border-radius:16px;font-size:12px;font-weight:600;color:#58a6ff;text-decoration:none;margin:3px 2px">dualnicbcha</a></div><div style="margin-top:16px;border-top:1px solid #30363d;padding-top:12px"><h3 style="color:#f0f6fc;font-size:15px;margin-bottom:8px">Per-Suite Details</h3><div id="suite-bc" style="margin-top:12px;scroll-margin-top:20px"><details style="background:#0d1117;border:1px solid #30363d;border-radius:8px;overflow:hidden"><summary style="cursor:pointer;padding:10px 16px;background:#161b22;font-size:14px;font-weight:600;color:#58a6ff;border-bottom:1px solid #30363d">&#9654; bc (2 failures)</summary><div style="padding:12px 16px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: bc — 2 failures</h4>
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> The BC topology solver found zero valid solutions (Local GM mode) during serial BeforeAll setup, preventing any BC PTP config from being created; the parallel event-based sync test then timed out waiting for a LOCKED clock state that never arrived.</p>
-<br>
-<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_regression</p>
-<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<p style="margin:4px 0"><strong>Group 1: BC topology discovery failure + downstream clock sync timeout</strong> (2 tests)</p>
-<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-serial] PTP e2e tests PTP Reboot discovery The slave node is rebooted and discovered and in sync [Serial]</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-parallel] Event based tests PTP Slave Clock Sync</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; Evidence:</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[FAILED] Could not create a ptp config, err=no solution found for BC configuration in Local GM mode</code> — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results_all.xml:155</code>, thrown from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testconfig.go:1482</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">BeforeAll</code> at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">serial/ptp.go:367</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; bc-parallel ran for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">387.37s</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"result": "error"</code> — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results.json</code>; bc-parallel <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP CPU Utilization</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">430s</code>) <strong>passed</strong>, confirming the daemon is running but the clock is not synced</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testconfig.PtpConfigBC(isExtGM=false)</code> at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testconfig.go:1458–1483</code> checks <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">data.solutions[AlgoBCString]</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">data.solutions[AlgoBCWithSlavesString]</code>; both are empty (zero-length), so the function returns the "no solution found" error after 3 retries (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">serial/ptp.go:364</code>). No BC PtpConfig CR is ever created on the cluster. The bc-parallel suite independently discovers the node labels and running daemon pod (DiscoverySuccess), enables events, and calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testSyncState</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">parallel/ptp.go:183</code>), but the BC node's OS clock stays FREERUN because no ptp4l configuration was deployed; after the configured soak duration the test exits with error ("OS Clock was never LOCKED and test timed out", <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">parallel/ptp.go:393</code>). Cascade evidence is within-suite: CPU soak passed (daemon alive), Slave Clock Sync timed out (no sync).</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Candidate (unverified): <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">70cecc0</code> (chore: Update L2_DISCOVERY_IMAGE version to v</div>
-<br>
-<p style="margin:4px 0">_(truncated — see per-suite analysis for full details)_</p></div></details></div>
-<div id="suite-dualfollower" style="margin-top:12px;scroll-margin-top:20px"><details style="background:#0d1117;border:1px solid #30363d;border-radius:8px;overflow:hidden"><summary style="cursor:pointer;padding:10px 16px;background:#161b22;font-size:14px;font-weight:600;color:#58a6ff;border-bottom:1px solid #30363d">&#9654; dualfollower (12 failures)</summary><div style="padding:12px 16px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualfollower — 12 failures</h4>
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> The DualFollower slave PtpConfig (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test-slave1</code>) was never served by any linuxptp-daemon pod, so the test framework discovered only a T-GM topology and all 12 tests either failed mid-execution or immediately panic'd on nil ptpconfig pointers.</p>
-<br>
-<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_failure</p>
-<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<p style="margin:4px 0"><strong>Group 1: DualFollower topology not established — slave ptp4l never started</strong> (11 serial + 1 parallel = 12 tests)</p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; Tests: "PTP daemon apply match rule based on nodeLabel", "Slave can sync to master", "Dual follower can sync when one follower port goes down", all 8 WPC GM Verification/GNSS/ts2phc/Events tests, and "[dualfollower-parallel] PTP Slave Clock Sync"</div>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; Evidence:</div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">PtpModeDesired=DualFollower, PtpModeDiscovered=TGM, Status=discoverySuccess,</p>
-<p style="margin:4px 0">DiscoveredSlave1PtpConfig=nil, DiscoveredSlave2PtpConfig=nil</p>
-<p style="margin:4px 0">List of pods running ptp4l: [linuxptp-daemon-lsnwr linuxptp-daemon-lsnwr]</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">[FAILED] could not find regex in log stream for openshift-ptp/linuxptp-daemon-jvwl4</p>
-<p style="margin:4px 0">container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">PtpModeDiscovered=TGM, Status=discoveryFailure, DiscoveredClockUnderTestPtpConfig=nil,</p>
-<p style="margin:4px 0">DiscoveredGrandMasterPtpConfig=nil, DiscoveredSlave1PtpConfig=nil, List of pods running ptp4l: []</p>
-<p style="margin:4px 0">```</p>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: At suite start (09:10), the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test-slave1</code> PtpConfig (slaveIfCount: 2) existed in the cluster but no linuxptp-daemon pod on the follower node (cnfdf30) was running ptp4l for it — the T-GM daemon <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-lsnwr</code> (cnfdf32) was the only ptp4l instance, listed twice due to a pod-query anomaly. The graphsolver at 08:12 confirmed the physical DualFollower topology exists (cnfdf32:ens7f0→cnfdf30:ens4f3→cnfdf32:ens7f1), so the failure is in the operator's reconciliation of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test-slave1</code> onto cnfdf30. The first 3 ClockSync tests failed because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon-jvwl4</code> (the follower daemon</div>
-<br>
-<p style="margin:4px 0">_(truncated — see per-suite analysis for full details)_</p></div></details></div>
-<div id="suite-dualnicbc" style="margin-top:12px;scroll-margin-top:20px"><details style="background:#0d1117;border:1px solid #30363d;border-radius:8px;overflow:hidden"><summary style="cursor:pointer;padding:10px 16px;background:#161b22;font-size:14px;font-weight:600;color:#58a6ff;border-bottom:1px solid #30363d">&#9654; dualnicbc (3 failures)</summary><div style="padding:12px 16px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualnicbc — 3 failures</h4>
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Two distinct root causes: (1) a new serial test exposes a real socket-reconnect bug in the release-4.22 linuxptp-daemon after phc2sys SIGTERM; (2) all parallel "Event based tests PTP Slave Clock Sync" fail system-wide across every suite (6/6), pointing to a shared infrastructure issue with the PTP events framework or clock convergence, not a dualnicbc regression.</p>
-<br>
-<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_failure (serial: real daemon bug; parallel: systemic event-framework failure)</p>
-<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<p style="margin:4px 0"><strong>Group 1: phc2sys socket-reconnect error after SIGTERM</strong> (1 test)</p>
-<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbc-serial] PTP Outage recovery Should restart phc2sys with no socket errors after SIGTERM</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">glog.Errorf("error trying to connect to event socket")</code> — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon/pkg/daemon/daemon.go:136</code>, inside <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dialSocket()</code>, called from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">runSocketWriter</code> on every reconnect attempt after phc2sys restarts.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The test <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">verifyProcessRestartNoSocketErrors</code> (added to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> on Jul 1, 2026) kills phc2sys with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pkill -TERM</code>, then checks daemon logs for patterns including <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"error trying to connect to event socket"</code>. After phc2sys exits, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cmdRun</code> waits 1 s (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">connectionRetryInterval</code>) then relaunches the process; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">runSocketWriter</code> dials the cloud-event-proxy socket. If cloud-event-proxy is momentarily busy (old connection being torn down), <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dialSocket()</code> at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">daemon.go:136</code> logs at ERROR level and retries — but the log entry is already there, causing the test assertion <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Expect(socketErrMatches).To(BeEmpty(), ...)</code> to fail. The release-4.22 linuxptp-daemon image includes PR #618 (Jun 30, OCPBUGS-94177), which redesigned phc2sys startup sequencing; combined with the new test added Jul 1, this transient dial failure is now surfaced as a hard failure.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Test introduced by commit "Added tests to terminate processes and verify cleanup and restart without socket errors" (Jul 1, 2026, ptp-operator</div>
-<br>
-<p style="margin:4px 0">_(truncated — see per-suite analysis for full details)_</p></div></details></div>
-<div id="suite-dualnicbcha" style="margin-top:12px;scroll-margin-top:20px"><details style="background:#0d1117;border:1px solid #30363d;border-radius:8px;overflow:hidden"><summary style="cursor:pointer;padding:10px 16px;background:#161b22;font-size:14px;font-weight:600;color:#58a6ff;border-bottom:1px solid #30363d">&#9654; dualnicbcha (2 failures)</summary><div style="padding:12px 16px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualnicbcha — 2 failures</h4>
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> All linuxptp-daemon pods unexpectedly restarted during the phc2sys HA failover test, breaking both the serial log-watch and leaving the system in a degraded non-HA state for the parallel event test.</p>
-<br>
-<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_failure</p>
-<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<p style="margin:4px 0"><strong>Group 1: Daemon restart during phc2sys HA failover</strong> (2 tests)</p>
-<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-serial] PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-parallel] Event based tests PTP Slave Clock Sync</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; Evidence:</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Serial: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">could not find regex in log stream for openshift-ptp/linuxptp-daemon-f86rk container=linuxptp-daemon-container, err=timedout waiting for matches</code> (ptp.go:1130 @ 09:53:05.818)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DEBUG [collector.go: 530] Pod deleted: linuxptp-daemon-f86rk</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Pod deleted: ptp-operator-77569bf778-rxkrp</code> at 09:53:00–09:53:05 (while test was watching for phc2sys switch)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Parallel: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">DEBUG fullConfig=PtpModeDesired= DualNICBCHA, PtpModeDiscovered= DualNICBC</code> → <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OS Clock was never LOCKED and test timed out</code> (parallel/ptp.go:393)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The serial test brought down primary interface <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ens2f1</code> at 09:52:03 to trigger a phc2sys HA switch to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ens4f2</code>. Instead of a smooth switch, the ptp-operator pod was deleted at 09:53:00 and all four linuxptp-daemon pods (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">f86rk</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">6kptn</code>, `9pw</div></div></details></div></div>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">

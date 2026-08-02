@@ -45,15 +45,69 @@
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">64</div>Active</div>
-    <div class="stat"><div class="stat-num" style="color:#c9d1d9">64</div>Fingerprints</div>
-    <div class="stat"><div class="stat-num" style="color:#a371f7">45</div>Issues</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">86</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">86</div>Fingerprints</div>
+    <div class="stat"><div class="stat-num" style="color:#a371f7">43</div>Issues</div>
   </div>
   <table>
     <thead><tr>
       <th>Root Cause</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
-    <tbody><tr id="84eaee52809ce929">
+    <tbody><tr id="8ff2b545e3f58836">
+  <td class="col-rc">
+    <div class="rc-text">Groups</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">Now I have everything needed. 
+
+---
+
+**TL;DR:** Crio ephemeral streaming ports (32768–60999) are no longer filtered after PR #400 removed Linux dynamic ranges from `DynamicRanges`.
+
+**Overall Issue Class:** test_regression
+**Overall Severity:** HIGH
+
+## Root Cause Groups
+
+### Group A — Crio ephemeral ports not filtered by EndpointSlice check (1 test)
+- **Tests:** `Validation [It] should validate the communication matrix ports match the node&#x27;s open ports`
+- **Classification:** test_regression | **Confidence:** high
+- **Evidence:**
+  ```
+  FAILED: the following ports are used but don&#x27;t have an endpointslice:
+   Ingress,TCP,42551,,crio,,,master,false
+   Ingress,TCP,43499,,crio,,,master,false  Ingress,TCP,45999,,crio,,,master,false
+   Ingress,TCP,35091,,crio,,,worker,false  Ingress,TCP,40973,,crio,,,worker,false  Ingress,TCP,42821,,crio,,,worker,false
+  ```
+- **Root Cause:** Crio binds one ephemeral TCP port per node on the node&#x27;s primary IP for its gRPC streaming server (confirmed in `raw-ss-tcp`: `192.168.17.196:43499`, `192.168.17.195:45999`, etc.). These have no EndpointSlice. The test at `validation_test.go:159` calls `filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)`, but `commatrix.DynamicRanges` only covers the NodePort range 30000–32767 (`KubeletNodePortDefaultDynamicRange`). PR #400 (merged main Apr 28 2026, commit `1fec55d`) removed the Linux ephemeral range (32768–60999) from `DynamicRanges` — eliminating the filter that previously suppressed these crio ports. The 6 failing ports (35091–45999) are all in the ephemeral range but above NodePort max 32767, so they are never filtered. Backport to release-4.23 is unverified (check_backport.py unavailable).
+- **Breaking PR/Commit:** Candidate (unverified): [PR #400](https://github.com/openshift-kni/commatrix/pull/400) — commit `1fec55d` on `main`, which changed `pkg/dynamic-ranges/dynamic-ranges.go` (-114 lines) and `test/e2e/validation_test.go` (-1 line). Must verify whether cherry-picked to `release-4.23`.
+- **Flake?** No — crio consistently binds one streaming port per node (observed on all 5 nodes: cnfdu17, cnfdu17-master-1, cnfdu17-master-2, cnfdu17-worker-0, cnfdu17-worker-1).
+- **Fix:** Add `&quot;crio&quot;` to `filterOutPortsOfKnownServices` in `validation_test.go:221` (analogous to the existing `&quot;rpc.statd&quot;` exclusion), or add the Linux ephemeral range to the EndpointSlice check&#x27;s filter specifically. This filter lives on `main`/`release-4.23` test code, not in production images.
+
+### Group B — Stale matrix entries (warning only, not the failing test)
+- **Tests:** N/A (logged as warning at `validation_test.go:154`, not a `Fail()`)
+- **Classification:** infra_issue | **Confidence:** high
+- **Evidence:** `matrix-diff-summary.txt`: `TCP:8798 (machine-config-daemon), TCP:9192 (machine-approver), TCP:9443 (cloud-controller-manager), UDP:68 (NetworkManager) — &quot;in matrix but not in use&quot;`
+- **Root Cause:** 6 matrix entries reference ports no longer open in OCP 4.23 nightly (`4.23.0-0.nightly-2026-07-23-130946`): `machine-config-daemon` no longer uses port 8798 (only 8797/localhost visible in `raw-ss-tcp`), port 9192 (`kube-rbac-proxy` for machine-approver) absent, port 9443 (cloud-controller-manager) gone, UDP 68 (NetworkManager DHCP client) not detected. These are doc-drift, not a code regression.
+- **Breaking PR/Commit:** Unknown — OCP 4.23 component changes, not a commatrix code commit.
+- **Flake?** No — these are structural port changes in OCP 4.23.
+- **Fix:** Remove stale entries from the documented communication matrix CSV (doc-only update, `communication-matrix.csv`).
+
+## Summary Table
+
+| # | Test | Group | Classification | Confidence | Root Cause (one line) | Fix |
+|---|------|-------|---------------|------------|----------------------|-----|
+| 1 | should validate…ports match node&#x27;s open ports | A | test_regression | high | `commatrix.DynamicRanges` no longer covers Linux ephemeral range; crio ports 35091–45999 not filtered | Add crio to `filterOutPortsOfKnownServices` or restore ephemeral range in EPS filter |
+| 2 | (warning) stale matrix entries | B | infra_issue | high | Ports 8798, 9192, 9443, UDP:68 absent in OCP 4.23 nightly | Remove from documented matrix CSV |
+
+## Action Items
+1. **Fix test filter on release-4.23**: Add `&quot;crio&quot;` to the `filterOutPortsOfKnownServices` function in `test/e2e/validation_test.go` (line 221) — crio&#x27;s streaming port is a host-level ephemeral port with no EndpointSlice by design, same as `rpc.statd`. Verify PR #400 backport status on `release-4.23` first.
+2. **Update the documented matrix**: Remove the 6 stale entries (TCP:8798 ×2, TCP:9192, TCP:9443, UDP:68 ×2) from the `communication-matrix.csv` to eliminate the doc-drift warnings that obscure real failures.</div></details>
+  </td>
+  <td class="col-date">2026-08-02</td>
+  <td class="col-date">2026-08-02</td>
+  <td class="col-tests"><ul><li>RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (60 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (59 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (58 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (57 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Run oc command to check if cluster is ready (56 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (147 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (146 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (145 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (144 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (143 retries left).</li><li class='more'>+6 more</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-single-node-bm/2083538357094191104" target="_blank">4.21-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2083538381450514432" target="_blank">4.23-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2083538393190371328" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-single-node-bm/2083538394847121408" target="_blank">5.0-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2083538378904571904" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2083538346319024128" target="_blank">4.21-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2083538374714462208" target="_blank">4.23-aws-ovn-network-flow-matrix-single-node</a> <span class="date">(2026-08-02)</span></li></ul></td>
+</tr>
+<tr id="84eaee52809ce929">
   <td class="col-rc">
     <div class="rc-text">The commatrix nftables e2e test (`nftables_test.go:85`) intentionally reboots the single node (`ip-10-0-94-222.us-west-1.compute.internal`) at 13:46:19 to verify firewall rules survive reboot. The concurrent openshift-tests conformance suite (running in the same `single-node-e2e-test` step) was mid-execution when the node went NotReady, causing `[sig-storage] EmptyDir volumes pod should support shared volumes between containers` to fail because its storage pod lost its container during the unscheduled-from-conformance&#x27;s-perspective reboot. The commatrix tests themselves passed (`finished.json: &quot;passed&quot;:true,&quot;result&quot;:&quot;SUCCESS&quot;`). -</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
@@ -181,7 +235,7 @@
   </td>
   <td class="col-date">2026-07-01</td>
   <td class="col-date">2026-07-29</td>
-  <td class="col-tests"><ul><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (145 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (144 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (143 retries left).</li></ul></td>
+  <td class="col-tests"><ul><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (145 retries left).</li><li>RETRYING: [XXXXXXXXXXXX]: Try to grab file to see install finished (144 retries left).</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2082088996497788928" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-telco5g-network-flow-matrix-bm/2072304739218886656" target="_blank">4.21-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-telco5g-network-flow-matrix-bm/2072307561226309632" target="_blank">4.22-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-bm/2072304879291863040" target="_blank">4.23-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-telco5g-network-flow-matrix-bm/2072305231210745856" target="_blank">5.0-telco5g-network-flow-matrix-bm</a> <span class="date">(2026-07-01)</span></li></ul></td>
 </tr>
 <tr id="782906e00e07bf9a">
@@ -1983,141 +2037,6 @@
   <td class="col-date">2026-07-02</td>
   <td class="col-tests"><ul><li>Import the release payload &quot;latest&quot; from an external source</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-metal-ovn-network-flow-matrix-bm/2072666797944868864" target="_blank">5.0-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-07-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-metal-ovn-network-flow-matrix-bm/2071579710881533952" target="_blank">4.23-metal-ovn-network-flow-matrix-bm</a> <span class="date">(2026-06-29)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-telco5g-network-flow-matrix-single-node-bm/2071579715935670272" target="_blank">4.23-telco5g-network-flow-matrix-single-node-bm</a> <span class="date">(2026-06-29)</span></li></ul></td>
-</tr>
-<tr id="c58e466c451de212">
-  <td class="col-rc">
-    <div class="rc-text">The AWS Elastic Load Balancing v2 `CreateLoadBalancer` API call returned HTTP 400 `TooManyLoadBalancers` when attempting to create the internal NLB `ci-op-dp5rccp1-f687b-ln2gb-int` in us-west-1. This is hit in `loadbalancer.go:144` of the Cluster API AWS provider. Because the internal API-server NLB could not be created, the CAPI `AWSCluster` never reached `Ready`, the OpenShift installer timed out after 15 minutes, and the cluster was never provisioned — making all downstream gather steps fail with DNS-not-found errors against a non-existent API endpoint. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** AWS ELB quota exhausted in us-west-1; cluster install never completed.
-
-**Root Cause Groups:**
-
-- **Group 1: AWS Load Balancer Quota Exceeded** (affects: install should succeed: infrastructure, install should succeed: overall, all gather steps)
-  - **Evidence:**
-    ```
-    level=warning msg=Condition LoadBalancerReady has status: &quot;False&quot;, reason: &quot;LoadBalancerFailed&quot;,
-    message: &quot;failed to create load balancer: ... operation error Elastic Load Balancing v2:
-    CreateLoadBalancer, https response error StatusCode: 400, RequestID: bf499115-fca1-4197-b7b1-d32bbf492121,
-    TooManyLoadBalancers: The maximum number of load balancers has been reached&quot;
-    ```
-    ```
-    level=error msg=failed to fetch Cluster: failed to generate asset &quot;Cluster&quot;: failed to create cluster:
-    infrastructure was not ready within 15m0s
-    ```
-    ```
-    Container test exited with code 4, reason Error
-    ```
-  - **Root Cause:** The AWS Elastic Load Balancing v2 `CreateLoadBalancer` API call returned HTTP 400 `TooManyLoadBalancers` when attempting to create the internal NLB `ci-op-dp5rccp1-f687b-ln2gb-int` in us-west-1. This is hit in `loadbalancer.go:144` of the Cluster API AWS provider. Because the internal API-server NLB could not be created, the CAPI `AWSCluster` never reached `Ready`, the OpenShift installer timed out after 15 minutes, and the cluster was never provisioned — making all downstream gather steps fail with DNS-not-found errors against a non-existent API endpoint.
-  - **Breaking PR/Commit:** Unknown — this is an AWS account-level quota exhaustion, not a code change.
-  - **Is it a flake?** Yes — AWS quota limits are shared across concurrent CI jobs in the us-west-1 region; this is a transient capacity issue that resolves when other jobs clean up their load balancers.
-  - **Suggested Fix:** Retry the job (other CI runs will have released their LBs). If recurring, file a quota increase request for ELBv2 in us-west-1 for the `openshift-org-aws-3` account, or configure the job to use an alternate region/account with headroom.
-  - **Affected tests:** `install should succeed: infrastructure`, `install should succeed: overall`, `aws-ovn-network-flow-matrix-gather-audit-logs`, `aws-ovn-network-flow-matrix-gather-core-dump`, `aws-ovn-network-flow-matrix-gather-must-gather`, `aws-ovn-network-flow-matrix-gather-network`
-
----
-
-**Relation Between Groups:** Single root cause — all failures cascade from the one failed `CreateLoadBalancer` API call. The gather failures are not independent; they simply cannot contact an API server that was never stood up.
-
-**Per-Version Notes:** OCP 4.23 (nightly-2026-06-29-103314) — install failed before cluster bootstrapped; no 4.23-specific regression involved.
-
-**Affected Images:** None — failure occurred at AWS infrastructure provisioning before any OCP images were pulled onto cluster nodes.
-
-**Overall Issue Class:** infra_quota
-
-**Overall Severity:** LOW</div></details>
-  </td>
-  <td class="col-date">2026-07-01</td>
-  <td class="col-date">2026-07-01</td>
-  <td class="col-tests"><ul><li>install should succeed: infrastructure</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix/2072307135093411840" target="_blank">4.23-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li></ul></td>
-</tr>
-<tr id="9f44e38aa313f53a">
-  <td class="col-rc">
-    <div class="rc-text">The AWS `us-west-1` region hit its ELBv2 quota limit when the installer attempted to create two load balancers (`ci-op-l9xdlwnn-09f4c-bq6vt-int` internal and `ci-op-l9xdlwnn-09f4c-bq6vt-ext` internet-facing) for the OCP control plane. The first `CreateLoadBalancer` call returned HTTP 400 `TooManyLoadBalancers`; subsequent retries were throttled. The Cluster API provider timed out after 15 minutes (`infrastructure was not ready within 15m0s`), causing installer exit code 4. The cluster never bootstrapped, so no commatrix tests ran at all. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** AWS ELB quota exhausted in us-west-1 prevented cluster installation; project tests never ran.
-
-**Root Cause Groups:**
-
-- **Group 1: AWS Load Balancer Quota Exhausted** (affects Tests: &quot;install should succeed: infrastructure&quot;, &quot;install should succeed: overall&quot;, all gather steps)
-  - **Evidence:**
-    ```
-    level=warning msg=Condition LoadBalancerReady has status: &quot;False&quot;, reason: &quot;LoadBalancerFailed&quot;,
-    message: &quot;[failed to create load balancer: ... operation error Elastic Load Balancing v2:
-    CreateLoadBalancer, https response error StatusCode: 400, RequestID: 95310ddb-...,
-    TooManyLoadBalancers: The maximum number of load balancers has been reached,
-    failed to create load balancer: ... exceeded maximum number of attempts, 3,
-    api error Throttling: Rate exceeded]&quot;
-
-    level=error msg=failed to fetch Cluster: failed to generate asset &quot;Cluster&quot;:
-    failed to create cluster: infrastructure was not ready within 15m0s
-
-    Installer exit with code 4
-    ```
-  - **Root Cause:** The AWS `us-west-1` region hit its ELBv2 quota limit when the installer attempted to create two load balancers (`ci-op-l9xdlwnn-09f4c-bq6vt-int` internal and `ci-op-l9xdlwnn-09f4c-bq6vt-ext` internet-facing) for the OCP control plane. The first `CreateLoadBalancer` call returned HTTP 400 `TooManyLoadBalancers`; subsequent retries were throttled. The Cluster API provider timed out after 15 minutes (`infrastructure was not ready within 15m0s`), causing installer exit code 4. The cluster never bootstrapped, so no commatrix tests ran at all.
-  - **Breaking PR/Commit:** Unknown — this is an AWS account-level quota issue, not a code change.
-  - **Is it a flake?** Yes — transient AWS quota exhaustion caused by concurrent CI jobs depleting shared ELBv2 limits in us-west-1.
-  - **Suggested Fix:** Retry the job (quota contention typically resolves as other CI clusters are deprovisioned). Longer term, request an ELB quota increase for the `openshift-org` AWS account in `us-west-1`, or configure the job to use a region with more headroom.
-  - **Affected tests:** &quot;install should succeed: infrastructure&quot;, &quot;install should succeed: overall&quot;, gather-audit-logs, gather-core-dump, gather-must-gather, gather-network (all cascade failures from no API server)
-
----
-
-**Relation Between Groups:** Single root cause — all failures cascade from the ELBv2 quota hit. No API server was ever available, so every gather step also failed with `dial tcp: lookup api... no such host`.
-
-**Per-Version Notes:** OCP 4.22 (nightly-2026-06-30-192322) — cluster never installed; version-specific behavior not relevant.
-
-**Affected Images:** No images affected; failure occurred at AWS infrastructure provisioning, before any OCP or commatrix images were deployed.
-
-**Overall Issue Class:** infra_quota
-
-**Overall Severity:** LOW</div></details>
-  </td>
-  <td class="col-date">2026-07-01</td>
-  <td class="col-date">2026-07-01</td>
-  <td class="col-tests"><ul><li>install should succeed: infrastructure</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix/2072314412965826560" target="_blank">4.22-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li></ul></td>
-</tr>
-<tr id="e0609a5abecfb2ee">
-  <td class="col-rc">
-    <div class="rc-text">The `baremetalds-devscripts-setup` step timed out after 1h12m41s because bare-metal masters never came up during IPI bootstrap on Equinix Metal hardware (ofcir-112.cipool-ibmcloud.ofcir). The debug message `No masters found!` from the dev-scripts log bundle confirms the control plane never formed. All cluster operators reported `&lt;missing&gt;`, meaning the API server never reached a healthy state. Every downstream failure (gather-must-gather, gather-extra, gather-audit-logs — all hitting &quot;Service Unavailable&quot; on port 6443) is a cascade of this single bootstrap failure. The commatrix project tests never ran. -</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** Cluster bootstrap timed out on bare-metal IPI install; API server never became available.
-
-**Root Cause Groups:**
-
-- **Group 1: Bare-metal IPI cluster bootstrap failure** (affects: both failed tests)
-  - **Evidence:**
-    ```
-    level=debug msg=No masters found!
-    clusteroperator/kube-controller-manager is not available (&lt;missing&gt;) because &lt;missing&gt;
-    ... (all cluster operators show &lt;missing&gt;)
-    Get &quot;https://api.ostest.test.metalkube.org:6443/api?timeout=32s&quot;: Service Unavailable
-    &quot;e2e-metal-ipi-ovn-upgrade-network-flow-matrix-baremetalds-devscripts-setup&quot; failed after 1h12m41s ... exit status 2
-    ```
-  - **Root Cause:** The `baremetalds-devscripts-setup` step timed out after 1h12m41s because bare-metal masters never came up during IPI bootstrap on Equinix Metal hardware (ofcir-112.cipool-ibmcloud.ofcir). The debug message `No masters found!` from the dev-scripts log bundle confirms the control plane never formed. All cluster operators reported `&lt;missing&gt;`, meaning the API server never reached a healthy state. Every downstream failure (gather-must-gather, gather-extra, gather-audit-logs — all hitting &quot;Service Unavailable&quot; on port 6443) is a cascade of this single bootstrap failure. The commatrix project tests never ran.
-  - **Breaking PR/Commit:** Unknown — pure infra provisioning failure, no code regression involved.
-  - **Is it a flake?** Yes — bare-metal IPI bootstrap timeouts on Equinix Metal are a known transient infrastructure failure pattern.
-  - **Suggested Fix:** Retry the job. If it recurs consistently on the same hardware slot (ofcir-112), investigate the Equinix Metal node for hardware or network issues or rotate the CIR pool slot.
-  - **Affected tests:** `install should succeed: cluster bootstrap`, `install should succeed: overall`
-
----
-
-**Relation Between Groups:** Single group — all failures are cascades of the one bootstrap timeout. No distinct root causes.
-
-**Per-Version Notes:** OCP 4.21 (upgrading from 4.20 nightly-2026-06-27-205811 → 4.21 nightly-2026-06-25-091937): cluster never provisioned; upgrade never started.
-
-**Affected Images:** `registry.ci.openshift.org/ocp/release:4.20.0-0.nightly-2026-06-27-205811` (initial), `registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-091937` (latest) — both imported successfully; failure was in bare-metal provisioning, not image pull.
-
-**Overall Issue Class:** infra_timeout
-
-**Overall Severity:** LOW</div></details>
-  </td>
-  <td class="col-date">2026-06-29</td>
-  <td class="col-date">2026-07-01</td>
-  <td class="col-tests"><ul><li>install should succeed: overall</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-aws-ovn-network-flow-matrix/2072314412965826560" target="_blank">4.22-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix/2072307135093411840" target="_blank">4.23-aws-ovn-network-flow-matrix</a> <span class="date">(2026-07-01)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix/2071307843482423296" target="_blank">4.21-upgrade-from-stable-4.20-e2e-metal-ipi-ovn-upgrade-network-flow-matrix</a> <span class="date">(2026-06-29)</span></li></ul></td>
 </tr>
 </tbody>
   </table>
