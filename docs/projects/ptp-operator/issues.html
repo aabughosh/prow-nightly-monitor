@@ -45,15 +45,580 @@
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">326</div>Active</div>
-    <div class="stat"><div class="stat-num" style="color:#c9d1d9">326</div>Fingerprints</div>
-    <div class="stat"><div class="stat-num" style="color:#a371f7">31</div>Issues</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">364</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">364</div>Fingerprints</div>
+    <div class="stat"><div class="stat-num" style="color:#a371f7">33</div>Issues</div>
   </div>
   <table>
     <thead><tr>
       <th>Root Cause</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
-    <tbody><tr id="f88f73009379c89b">
+    <tbody><tr id="6efbd7156da06497">
+  <td class="col-rc">
+    <div class="rc-text">s (37 failures across 4 suites)</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">Based on the per-suite analyses in the prompt, here is the cross-suite summary:
+
+---
+
+**TL;DR:** T-GM ts2phc stuck in FREERUN despite DPLL LOCKED drives BC desync across all suites; pmc bug, T-BC topology gap, and event-consumer flake account for the rest.
+
+**Overall Issue Class:** infra_other (dominant); mixed test_regression + test_flake
+**Overall Severity:** HIGH
+
+## Root Causes (37 failures across 4 suites)
+
+### ~27/37 failures — T-GM ts2phc FREERUN → BC FREERUN cascade
+- **Suites:** tgm, dualnicbc, dualnicbcha | **Evidence:** PROVEN (tgm); HYPOTHESIS unverified cascade (BC suites)
+- **What:** cnfdf32 DPLL=LOCKED but ts2phc=FREERUN, crash-looped ×7; BC slave port `ens2f0np0` stuck in MASTER/clockClass=248 in both BC suites. Each BC suite analysis independently cites tgm&#x27;s `openshift_ptp_clock_state{process=&quot;ts2phc&quot;}=0` as cross-suite corroboration.
+- **Breaking change:** Unknown — candidate: ts2phc DPLL netlink regression in linuxptp-daemon release-5.0 (unverified)
+- **Flake?** No | **Fix:** Investigate ts2phc DPLL→LOCKED transition and crash-loop restart recovery on cnfdf32 WPC NIC (ens7fx).
+
+### 3/37 failures — pmc `GET PARENT_DATA_SET` test framework bug
+- **Suites:** dualnicbc | **Evidence:** PROVEN
+- **What:** Test framework passes `GET` and `PARENT_DATA_SET` as two tokens; pmc interactive mode returns `bad command:` for each, blocking parentPortIdentity lookup. `linuxptp-daemon/pkg/pmc/pmc.go:17` confirms correct single-arg form.
+- **Breaking change:** Unknown — regression on ptp-operator test `main` branch (repo not cloned in run)
+- **Flake?** No | **Fix:** Quote `GET PARENT_DATA_SET` as a single argument in the conformance test pmc helper.
+
+### 2/37 failures — T-BC topology constraint unsatisfied
+- **Suites:** bc+dualfollower+tbc+all | **Evidence:** PROVEN
+- **What:** `testconfig.go:1898` errors &quot;no T-BC solution found for TBC&quot;; lab nodes cnfdf30/31/32 lack a WPC NIC node with GNSS + ≥2 PHC interfaces required by the new AlgoTelcoBCString constraint solver.
+- **Breaking change:** Candidate (unverified): https://github.com/openshift/ptp-operator/pull/205 (commit aede1e9, merged 2026-06-23)
+- **Flake?** No | **Fix:** Add topology skip guard in `PtpConfigTelcoBC`/`SynchronizedBeforeSuite` when no T-BC solution is found.
+
+### 3/37 failures — Event consumer pod not ready (parallel suites)
+- **Suites:** dualnicbcha, bc+dualfollower+tbc+all | **Evidence:** PROVEN
+- **What:** `PtpEventsIsConsumerReady=false` at ~09:43 during parallel suite setup; OS-Clock-LOCKED event never delivered, causing timeout. bc-serial passed at 09:15 — serial suite does not exercise the event-consumer OS-Clock-LOCKED code path (not a contradiction).
+- **Breaking change:** Unknown
+- **Flake?** Yes | **Fix:** Add pre-test readiness wait for event consumer pod before parallel event-based suite entry.
+
+## Summary Table
+
+| # | Test | Suite | Group | Classification | Confidence | Root Cause (one line) | Fix |
+|---|------|-------|-------|----------------|------------|-----------------------|-----|
+| 1 | WPC GM state based on logs/metrics | tgm | 1 | infra_other | high | ts2phc FREERUN despite DPLL LOCKED | Fix ts2phc on cnfdf32 |
+| 2 | GNSS holdover connection loss | tgm | 1 | infra_other | high | same | same |
+| 3 | cloud-event-proxy crash recovery | tgm | 1 | infra_other | high | same | same |
+| 4 | ... +7 more same root cause | tgm | 1 | infra_other | high | ts2phc FREERUN | Fix ts2phc |
+| 5 | Verify clockClass BC locking | dualnicbc | 1 | infra_other | medium | BC FREERUN; hypothesis: T-GM cascade | Fix T-GM (cnfdf32) |
+| 6 | PTP metric present on slave | dualnicbc | 1 | infra_other | medium | same | same |
+| 7 | phc2sys SIGTERM restart | dualnicbc | 1 | infra_other | medium | same | same |
+| 8 | ... +5 more same root cause | dualnicbc | 1 | infra_other | medium | BC FREERUN | Fix T-GM |
+| 9 | Slave can sync to master | dualnicbc | 2 | test_regression | high | pmc bad command: GET PARENT_DATA_SET | Fix test pmc helper |
+| 10 | Downstream slave sync to BC master | dualnicbc | 2 | test_regression | high | same | same |
+| 11 | Profile with higher priority | dualnicbc | 2 | test_regression | high | same | same |
+| 12 | BC slave port sync to master | dualnicbcha | 1 | infra_other | medium | BC FREERUN; hypothesis: T-GM cascade | Fix T-GM (cnfdf32) |
+| 13 | phc2sys HA failover to secondary | dualnicbcha | 1 | infra_other | medium | same | same |
+| 14 | Link outage recovery | dualnicbcha | 1 | infra_other | medium | same | same |
+| 15 | ... +6 more same root cause | dualnicbcha | 1 | infra_other | medium | BC FREERUN | Fix T-GM |
+| 16 | PTP Slave Clock Sync (consumer) | dualnicbcha | 2 | test_flake | medium | Event consumer not ready; no event delivered | Readiness wait |
+| 17 | TBC reboot discovery slave reboot | bc+dual | 3 | test_regression | high | T-BC topology: no valid solution | Add skip guard |
+| 18 | SynchronizedBeforeSuite | bc+dual | 3 | test_regression | high | same | same |
+| 19 | bc-parallel OS Clock LOCKED | bc+dual | 4 | test_flake | medium | PtpEventsIsConsumerReady=false | Readiness wait |
+| 20 | dualfollower-parallel OS Clock LOCKED | bc+dual | 4 | test_flake | medium | same | same |
+| 21 | [bc+dual Group 3 — analysis truncated] | bc+dual | ? | unknown | low | Suite analysis text cut off | — |
+| 22 | [tgm 11th failure — not detailed] | tgm | ? | unknown | low | Suite analysis text cut off | — |
+
+## Action Items
+1. **linuxptp-daemon team:** Investigate why ts2phc fails to transition from FREERUN→LOCKED when DPLL is LOCKED on cnfdf32 WPC NIC (ens7fx); review ts2phc DPLL netlink event handling in release-5.0 and verify crash-loop restart recovery restores LOCKED state.
+2. **ptp-operator test team:** Fix pmc invocation in conformance test helper on `main` to pass `GET PARENT_DATA_SET` as a single quoted argument; add T-BC topology skip guard in `PtpConfigTelcoBC`/`SynchronizedBeforeSuite`.
+3. **CI/lab team:** Either provision a T-BC-capable lab node (WPC NIC + GNSS + ≥2 PHC interfaces) or gate PR #205 T-BC tests behind a topology capability check; also investigate event consumer pod restart/crash logs at ~09:43.
+
+## Open Questions
+1. **Cascade confidence:** The T-GM→BC FREERUN cascade is marked HYPOTHESIS. Direct clock-identity cross-referencing between cnfdf32 (T-GM) and the BC upstream grandmaster identity was not available in dualnicbc/dualnicbcha logs — this should be verified via must-gather artifacts.
+2. **Truncated analyses:** 2 failures are unaccounted (tgm 11th failure; bc+dual Group 3). Both suite analysis texts were cut off; their classifications and root causes are unknown.
+3. **Serial-passed / parallel-failed paradox (event consumer):** bc-serial passed at 09:15; parallel suites failed at 09:43 with consumer not ready. This is consistent with a flake (consumer degraded mid-run), not a systemic issue — but pod restart/crash logs should be checked to confirm.
+
+
+---
+
+&lt;!-- SUITE_DETAILS_START --&gt;
+## Per-Suite Details
+
+
+### dualnicbc
+
+---
+
+### Suite: dualnicbc — 11 failures
+
+**TL;DR:** The Boundary Clock nodes are in FREERUN (clock class 248) throughout the run, traced to the T-GM&#x27;s ts2phc being UNLOCKED, compounded by `pmc` rejecting `GET PARENT_DATA_SET` commands in the test framework.
+
+**Suite Issue Class:** infra_other
+
+**Suite Severity:** HIGH
+
+**Root Cause Groups:**
+
+**Group 1: pmc rejects `GET PARENT_DATA_SET` → clock ID lookup times out** (3 tests)
+- Tests: `Slave can sync to master`, `Downstream slave can sync to BC master`, `Can provide a profile with higher priority`
+- Evidence: `parentPortIdentity.clockIdentity not found in pmc output for /var/run/ptp4l.1.config: bad command: GET\nbad command: PARENT_DATA_SET`
+- Root Cause: The test framework is invoking `pmc` with `GET` and `PARENT_DATA_SET` as two separate unquoted shell tokens rather than the single quoted string `&#x27;GET PARENT_DATA_SET&#x27;`. The pmc interactive mode treats each token as a separate command and returns `bad command:` for both. This blocks the test from reading `parentPortIdentity.clockIdentity` or `grandmasterIdentity`, causing the 200s timeout. The linuxptp-daemon source confirms the correct form is `cmdGetParentDataSet = &quot;GET PARENT_DATA_SET&quot;` (linuxptp-daemon/pkg/pmc/pmc.go:17), which the daemon uses successfully; the issue lies in the conformance test framework&#x27;s pmc invocation on `main`.
+- Breaking PR/Commit: Unknown — test framework sources not cloned; cannot verify diff without the ptp-operator test repo at the `main` SHA used by this run.
+- Flake? No — identical error in dualnicbc, dualnicbcha, indicating a systematic pmc invocation bug in the `main` test branch, not a transient failure.
+- Fix: Quote `GET PARENT_DATA_SET` as a single argument when invoking pmc non-interactively in the conformance test helper.
+
+**Group 2: BC stays FREERUN (clock class 248) — all sync/event/recovery tests fail** (8 tests)
+- Tests: `Verify clockClass when locking PTP source on dual NIC boundary clock`, `PTP metric is present verifie
+
+_(truncated — see per-suite analysis for full details)_
+
+### dualnicbcha
+
+---
+
+### Suite: dualnicbcha — 10 failures
+
+**TL;DR:** The BC node&#x27;s slave port (`ens2f0np0`) never reached SLAVE state and remained stuck in MASTER/FREERUN, making every ClockSync, metric, and event test time out.
+
+**Suite Issue Class:** infra_other
+
+**Suite Severity:** HIGH
+
+---
+
+**Root Cause Groups:**
+
+**Group 1: BC slave port stuck in MASTER — no upstream sync** (9 serial tests)
+- Tests: `Slave can sync to master`, `Downstream slave can sync to BC master`, `DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails`, `Verify clockClass when locking PTP source`, `PTP metric is present verifies on slave`, `Should recover clockClass via event API after cloud-event-proxy crash`, `The slave node network interface is taken down and up`, `BC clock class recovers to Locked after upstream link outage`, `Should restart phc2sys with no socket errors after SIGTERM`
+- Evidence:
+  - `incorrect role for ens2f0np0, role expected=1(SLAVE), role observed=2(MASTER)` (junit-failures.txt)
+  - `parentPortIdentity.clockIdentity not found in pmc output for /var/run/ptp4l.0.config: bad command: GET\nbad command: PARENT_DATA_SET` (junit-failures.txt)
+  - `Expected PMC clock class 6 for /var/run/ptp4l.0.config … &lt;int&gt;: 248` (junit-failures.txt)
+- Root Cause: The BC&#x27;s upstream slave port `ens2f0np0` never transitioned to SLAVE state; instead it stayed in MASTER mode (ptp4l clock class 248 = FREERUN). Because ptp4l was not in SLAVE state, the `pmc GET PARENT_DATA_SET` command returned `bad command`, causing all tests that wait for a valid `parentPortIdentity.clockIdentity` or `grandmasterIdentity` to time out. Every downstream test (clock class locking, outage recovery, phc2sys HA, metrics) depends on this initial sync and failed as a cascade. Cross-suite corroboration: the tgm suite shows `openshift_ptp_clock_state{iface=&quot;ens7fx&quot;,process=&quot;ts2phc&quot;} 0` (FREERUN) on the lab T-GM node (`cnfdf32`), consistent with the T-GM not advertising a lockable clock to the BC; however, no
+
+_(truncated — see per-suite analysis for full details)_
+
+### tgm
+
+---
+
+### Suite: tgm — 11 failures
+
+**TL;DR:** The T-GM node (cnfdf32, linuxptp-daemon-qkbsf/4ttwh) is stuck in FREERUN because ts2phc never reaches LOCKED state despite DPLL being LOCKED, making all WPC GM and event-recovery tests fail.
+
+**Suite Issue Class:** test_failure
+**Suite Severity:** HIGH
+
+---
+
+**Root Cause Groups:**
+
+**Group 1: ts2phc FREERUN despite DPLL LOCKED — T-GM never achieves clockClass=6** (10 tests)
+
+- Tests: `WPC GM Verification Tests is verifying WPC GM state based on logs`, `is verifying WPC GM state based on metrics`, `Verify ts2phc clock state is not LOCKED after GM PtpConfig is deleted`, `WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss`, `Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED`, `WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery`, `Should recover clockClass via event API after cloud-event-proxy crash`, `Should restart phc2sys with no socket errors after SIGTERM`, `Should check for ptp events`, `Should receive events after linuxptp-daemon pod restart`
+
+- Evidence:
+  ```
+  openshift_ptp_clock_state{iface=&quot;ens7fx&quot;,node=&quot;cnfdf32...&quot;,process=&quot;dpll&quot;} 1
+  openshift_ptp_clock_state{iface=&quot;ens7fx&quot;,node=&quot;cnfdf32...&quot;,process=&quot;ts2phc&quot;} 0
+  could not find regex in log stream for openshift-ptp/linuxptp-daemon-qkbsf container=linuxptp-daemon-container, err=error reading from stream: context deadline exceeded
+  Expected phc2sys process status to be 1 for GM Expected &lt;string&gt;: 0 to equal &lt;string&gt;: 1
+  ```
+
+- Root Cause: DPLL hardware is LOCKED (state=1) on cnfdf32 but ts2phc reports FREERUN (state=0), meaning ts2phc is not successfully reading or acting on the DPLL lock signal. The ts2phc process was also crash-looping (restart count reached 7 before mid-suite), which means each restart comes back in FREERUN and never transitions to LOCKED. As a consequence, ptp4l clockClass stays at 248 (not 6), phc2sys reports status=0 (not running/restarting), log st
+
+_(truncated — see per-suite analysis for full details)_
+
+### bc+dualfollower+tbc+all
+
+---
+
+### Suite: bc+dualfollower+tbc+all — 5 failures
+
+**TL;DR:** Three independent root causes: new T-BC tests require hardware topology not present in the lab, PTP event consumer never ready causing event-based lock tests to fail, and one follower port stuck in LISTENING after recovery.
+**Suite Issue Class:** test_regression + test_flake + infra_other
+**Suite Severity:** HIGH
+
+**Root Cause Groups:**
+
+**Group 1: T-BC topology not satisfied** (2 tests)
+- Tests: `[tbc-serial] PTP Reboot discovery The slave node is rebooted…`, `[SynchronizedBeforeSuite]`
+- Evidence: `Could not create a ptp config, err=no T-BC solution found for TBC` (junit-failures.txt:217,223); `testconfig.go:1898: if len(*data.solutions[BestSolution]) == 0 { return fmt.Errorf(&quot;no T-BC solution found for %s&quot;, BestSolution) }`
+- Root Cause: PR #205 (commit `aede1e9`, merged to `main` June 23 2026) introduced T-BC tests requiring a WPC NIC node with GNSS input and ≥2 interfaces on the same PHC. The lab&#x27;s 3-node cluster (cnfdf30/31/32) has no valid `AlgoTelcoBCString` constraint solution. The test scripts run from `main` (confirmed: `TEST_BRANCH=main` in build log), so this new test code executes even though no cherry-pick to `release-5.0` occurred.
+- Breaking PR/Commit: Candidate (unverified): https://github.com/openshift/ptp-operator/pull/205 (commit `aede1e9`) — T-BC tests added to `main` without a T-BC-capable lab topology.
+- Flake? No — deterministic topology failure; every run will fail until lab hardware matches the T-BC constraint solver.
+- Fix: Add a topology skip guard in `PtpConfigTelcoBC` (or in the `SynchronizedBeforeSuite`) to skip TBC tests when no valid solution is found, rather than failing the suite.
+
+**Group 2: PTP event consumer not ready** (2 tests)
+- Tests: `[bc-parallel] Event based tests PTP Slave Clock Sync: OS Clock was never LOCKED`, `[dualfollower-parallel] Event based tests PTP Slave Clock Sync: OS Clock was never LOCKED`
+- Evidence: `PtpEventsIsConsumerReady= false` (build-l
+
+_(truncated — see per-suite analysis for full details)_
+
+&lt;!-- SUITE_DETAILS_END --&gt;</div></details>
+  </td>
+  <td class="col-date">2026-08-03</td>
+  <td class="col-date">2026-08-03</td>
+  <td class="col-tests"><ul><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]</li><li>[It] [tgm-serial] PTP e2e tests Running with event enabled Should check for ptp events  [Serial]</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2084157528073048064" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-03)</span></li></ul></td>
+</tr>
+<tr id="930ae2af4d2f78bc">
+  <td class="col-rc">
+    <div class="rc-text">s (36 failures across 4 suites)</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** ts2phc/BC PTP lock never achieved and a pmc command regression together collapsed all 36 sync tests.
+
+**Overall Issue Class:** test_regression
+**Overall Severity:** HIGH
+
+## Root Causes (36 failures across 4 suites)
+
+### ~15/36 failures — BC slave port never locked (FREERUN, clockClass=248)
+- **Suites:** dualnicbc (6), dualnicbcha (9) | **Evidence:** PROVEN
+- **What:** BC&#x27;s ens2f0np0 stayed in MASTER role throughout both suites; clockClass=248 confirmed. Hypothesis (unverified cascade from tgm): cnfdf32 T-GM in FREERUN may have deprived the BC of an upstream grandmaster, but no direct clock-identity linkage exists across suites.
+- **Breaking change:** Unknown (possible lab T-GM GNSS failure or release-5.0 ptp4l announce regression)
+- **Flake?** No | **Fix:** Confirm cnfdf32 GNSS signal health; if healthy, audit release-5.0 ptp4l announce-message handling.
+
+### ~3/36 failures — pmc GET PARENT_DATA_SET split into two rejected commands
+- **Suites:** dualnicbc (3 explicit), dualnicbcha (subset) | **Evidence:** PROVEN
+- **What:** `pmc` receives &quot;GET&quot; and &quot;PARENT_DATA_SET&quot; as separate commands, both rejected as &quot;bad command&quot;; identical on two different socket paths (`ptp4l.1.config`, `ptp4l.0.config`), ruling out config-specificity. See `linuxptp-daemon/pkg/pmc/pmc.go:40–58`.
+- **Breaking change:** Candidate (unverified): linuxptp-daemon [PR #629](https://github.com/k8snetworkplumbingwg/linuxptp-daemon/pull/629) sha `14eb788` (upstream sync 2026-07-22)
+- **Flake?** No | **Fix:** Fix `RunPMCExp`/goexpect to transmit `&quot;GET PARENT_DATA_SET&quot;` as a single input line.
+
+### 11/36 failures — T-GM ts2phc FREERUN despite DPLL LOCKED (cnfdf32)
+- **Suites:** tgm | **Evidence:** PROVEN
+- **What:** DPLL=LOCKED (state=1) but ts2phc=FREERUN (state=0) on ens7fx/cnfdf32; ptp4l never reaches clockClass=6; all WPC GM, holdover, event, and recovery tests time out waiting for lock.
+- **Breaking change:** Unknown (release-5.0 branch not locally cloned; backport unverifiable)
+- **Flake?** No | **Fix:** Inspect ts2phc config for ens7fx on cnfdf32 in the release-5.0 image; verify DPLL→ts2phc IPC path.
+
+### 4/36 failures — TBC no WPC hardware solution + event consumer never ready
+- **Suites:** bc+dualfollower+tbc+all | **Evidence:** PROVEN
+- **What:** (2 tests) TBC topology solver returns 0 solutions — lab lacks a WPC NIC node with ≥3 ports; BeforeSuite fails hard instead of skipping (`testconfig.go:1898–1899`). (2 tests) bc/dualfollower parallel event tests failed (`PtpEventsIsConsumerReady=false`); their serial counterparts passed — event infra failure independent of PTP sync.
+- **Breaking change:** TBC: Candidate (unverified) [PR #205](https://github.com/openshift/ptp-operator/pull/205) `aede1e9`. Event consumer: Unknown.
+- **Flake?** No | **Fix:** Add graceful skip in `PtpConfigTelcoBC()` when solver returns 0 solutions; separately fix event-consumer pod startup in ptp-event-framework-test.
+
+## Summary Table
+
+| # | Test | Suite | Group | Classification | Confidence | Root Cause (one line) | Fix |
+|---|------|-------|-------|---------------|------------|----------------------|-----|
+| 1 | Verify clockClass locking PTP source | dualnicbc | 1 | test_regression | medium | BC FREERUN, no upstream sync | Audit T-GM + ptp4l |
+| 2 | BC clock class recovers after outage | dualnicbc | 1 | test_regression | medium | BC FREERUN, no upstream sync | Audit T-GM + ptp4l |
+| 3 | Should restart phc2sys after SIGTERM | dualnicbc | 1 | test_regression | medium | BC FREERUN, no upstream sync | Audit T-GM + ptp4l |
+| 4 | ... +12 more with same root cause | dualnicbc / dualnicbcha | 1 | test_regression | medium | BC FREERUN / ens2f0np0 stuck MASTER | Audit T-GM + ptp4l |
+| 5 | Slave can sync to master | dualnicbc | 2 | test_regression | high | pmc GET PARENT_DATA_SET split | Fix RunPMCExp goexpect |
+| 6 | Downstream slave can sync to BC master | dualnicbc | 2 | test_regression | high | pmc GET PARENT_DATA_SET split | Fix RunPMCExp goexpect |
+| 7 | Can provide profile with higher priority | dualnicbc | 2 | test_regression | high | pmc GET PARENT_DATA_SET split | Fix RunPMCExp goexpect |
+| 8 | Verifying WPC GM state (logs) | tgm | 3 | test_regression | high | ts2phc FREERUN despite DPLL LOCKED | Fix ts2phc IPC cnfdf32 |
+| 9 | Testing WPC T-GM holdover | tgm | 3 | test_regression | high | ts2phc FREERUN despite DPLL LOCKED | Fix ts2phc IPC cnfdf32 |
+| 10 | Should check for ptp events | tgm | 3 | test_regression | high | ts2phc FREERUN → no lock events | Fix ts2phc IPC cnfdf32 |
+| 11 | ... +8 more with same root cause | tgm | 3 | test_regression | high | ts2phc FREERUN cascade | Fix ts2phc IPC cnfdf32 |
+| 12 | [tbc-serial] PTP Reboot discovery | tbc+all | 4 | test_regression | high | No T-BC WPC hardware in lab | Add solver skip |
+| 13 | [SynchronizedBeforeSuite] TBC | tbc+all | 4 | test_regression | high | No T-BC WPC hardware in lab | Add solver skip |
+| 14 | [bc-parallel] Event PTP Slave Clock Sync | bc+all | 4 | infra_other | high | Event consumer pod never ready | Fix pod startup |
+| 15 | [dualfollower-parallel] Event PTP Slave Clock Sync | bc+all | 4 | infra_other | high | Event consumer pod never ready | Fix pod startup |
+
+## Action Items
+1. **linuxptp-daemon team:** Fix `RunPMCExp`/goexpect to send `&quot;GET PARENT_DATA_SET&quot;` as one command; verify whether PR #629 (sha `14eb788`) was backported to release-5.0 and introduced the split.
+2. **Lab/ptp-operator team:** Debug ts2phc FREERUN on cnfdf32 — DPLL is LOCKED but ts2phc is not tracking ens7fx; confirm GNSS signal health and inspect release-5.0 ts2phc config/IPC path for this hardware.
+3. **Test team:** Add a graceful suite-level skip in `PtpConfigTelcoBC()` when the solver returns 0 solutions; separately investigate event-consumer pod readiness in the ptp-event-framework-test namespace.
+
+## Open Questions
+1. **Classification contradiction (dualnicbc vs dualnicbcha):** dualnicbc is classified `test_failure` while dualnicbcha is `infra_other` for near-identical symptoms (BC FREERUN + pmc bad command). Per-suite classifications are retained without override; the ambiguity between a daemon regression and a lab GNSS failure is unresolved.
+2. **Unverified T-GM→BC cascade:** T-GM FREERUN on cnfdf32 (tgm suite) may explain BC FREERUN in dualnicbc/dualnicbcha, but no cross-suite clock-identity linkage exists in the evidence; marked as HYPOTHESIS.
+3. **Serial-passed/parallel-failed paradox (bc+dualfollower):** bc and dualfollower serial suites passed (PTP sync healthy); parallel event tests failed because the event-consumer pod was never ready — a separate infra issue, not a global sync failure.
+
+
+---
+
+&lt;!-- SUITE_DETAILS_START --&gt;
+## Per-Suite Details
+
+
+### dualnicbc
+
+---
+
+### Suite: dualnicbc — 11 failures
+
+**TL;DR:** The dual-NIC BC never achieved clock lock (ptp4l stuck at clockClass=248/FREERUN), compounded by pmc rejecting management commands as &quot;bad command&quot; in interactive mode, collapsing all sync-dependent and event-dependent tests.
+
+**Suite Issue Class:** test_failure
+**Suite Severity:** HIGH
+
+---
+
+**Root Cause Groups:**
+
+**Group 1: pmc management socket rejecting PARENT_DATA_SET queries** (3 tests)
+- Tests: &quot;Slave can sync to master&quot;, &quot;Downstream slave can sync to BC master&quot;, &quot;Can provide a profile with higher priority&quot;
+- Evidence: `parentPortIdentity.clockIdentity not found in pmc output for /var/run/ptp4l.1.config: bad command: GET\nbad command: PARENT_DATA_SET`
+- Root Cause: `pmc` (run interactively via `goexpect` in the main-branch test binary) is receiving &quot;GET&quot; and &quot;PARENT_DATA_SET&quot; as two separate commands rather than one combined `GET PARENT_DATA_SET` command — each is rejected as &quot;bad command&quot; by pmc&#x27;s own interactive parser (`linuxptp-daemon/pkg/pmc/pmc.go:40-58`). This error is identical across both dualnicbc (`ptp4l.1.config`) and dualnicbcha (`ptp4l.0.config`), ruling out a config-specific issue and pointing to a test-runner pmc call regression on `main`. The `scripts/check_backport.py` referenced in the prompt did not exist in the workspace, so branch verification could not be performed.
+- Breaking PR/Commit: Candidate (unverified): `linuxptp-daemon` main HEAD `14eb788` — &quot;Merge pull request #629 from nocturnalastro/upstream-sync-2026-07-22&quot;; cannot confirm cherry-pick to `release-5.0` without the backport script.
+- Flake? No — identical error reproduced across all 3 pmc-querying tests in both dualnicbc and dualnicbcha suites.
+- Fix: Audit how `RunPMCExp` / goexpect sends `cmdStr` on the main branch and ensure the full `&quot;GET PARENT_DATA_SET&quot;` string is transmitted as a single input line, not split.
+
+**Group 2: BC stuck in FREERUN — clockClass=248, slave port stays MASTER** (6 tests)
+- Tests: &quot;Verify clockC
+
+_(truncated — see per-suite analysis for full details)_
+
+### dualnicbcha
+
+---
+
+### Suite: dualnicbcha — 10 failures
+
+**TL;DR:** The BC&#x27;s slave-side interface `ens2f0np0` never reached SLAVE state (stuck in MASTER/FREERUN throughout the entire run), blocking every test that depends on upstream PTP sync; one parallel event test timed out separately.
+
+**Suite Issue Class:** `infra_other`
+**Suite Severity:** HIGH
+
+---
+
+**Root Cause Groups:**
+
+**Group 1: BC slave port never synced to upstream master** (9 tests)
+- Tests: Slave can sync to master, Downstream slave can sync to BC master, DualNICBCHA phc2sys switches to secondary ptp4l, Verify clockClass when locking PTP source, PTP metric is present verifies on slave, Should recover clockClass via event API after cloud-event-proxy crash, The slave node network interface is taken down and up, BC clock class recovers to Locked after upstream link outage, Should restart phc2sys with no socket errors after SIGTERM
+- Evidence:
+  - `incorrect role for ens2f0np0, role expected=1(SLAVE), role observed=2(MASTER)` (junit-failures.txt:143)
+  - `parentPortIdentity.clockIdentity not found in pmc output for /var/run/ptp4l.0.config: bad command: GET\nbad command: PARENT_DATA_SET` (junit-failures.txt:117–122)
+  - `Expected PMC clock class 6 for /var/run/ptp4l.0.config` got `&lt;int&gt;: 248` (junit-failures.txt:150–155)
+- Root Cause: `ens2f0np0` (the BC&#x27;s slave-facing NIC) is in MASTER mode, meaning ptp4l received no acceptable ANNOUNCE messages from its upstream grandmaster and self-promoted. ClockClass=248 (FREERUN) confirmed throughout. Additionally, `pmc GET PARENT_DATA_SET` returns `bad command: GET / bad command: PARENT_DATA_SET` identically in both dualnicbc and dualnicbcha suites (different socket paths), indicating either a linuxptp pmc binary version in the release-5.0 daemon that changed command parsing, or ptp4l&#x27;s management interface rejecting standard queries — both consistent with a daemon-level regression or lab sync failure. The identical cross-suite pattern (tgm suite also shows T-GM not LOCKED; bc/d
+
+_(truncated — see per-suite analysis for full details)_
+
+### tgm
+
+---
+
+### Suite: tgm — 11 failures
+
+**TL;DR:** The T-GM node (cnfdf32) achieved DPLL LOCK but ts2phc remained in FREERUN, preventing clock class 6 and causing all WPC GM, event, and outage-recovery tests to time out.
+**Suite Issue Class:** `test_failure`
+**Suite Severity:** HIGH
+
+**Root Cause Groups:**
+
+**Group 1: T-GM ts2phc stuck in FREERUN despite DPLL LOCKED** (8 tests)
+- Tests: `is verifying WPC GM state based on logs`, `is verifying WPC GM state based on metrics`, `Verify ts2phc clock state is not LOCKED after GM PtpConfig is deleted`, `Testing WPC T-GM holdover through connection loss`, `Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED`, `Testing T-GM Events on GNSS reboot and recovery`, `Should recover clockClass via event API after cloud-event-proxy crash`, `Should restart phc2sys with no socket errors after SIGTERM`
+- Evidence: `openshift_ptp_clock_state{iface=&quot;ens7fx&quot;,node=&quot;cnfdf32...&quot;,process=&quot;dpll&quot;} 1` / `process=&quot;ts2phc&quot;} 0` — DPLL is LOCKED but ts2phc is FREERUN; `Expected phc2sys to be 1 for GM — false`; `Expected ptp4l clock class to eventually be 6 for GM — false`
+- Root Cause: On node cnfdf32 (T-GM role), hardware DPLL reports LOCKED (state=1) while ts2phc reports FREERUN (state=0), meaning ts2phc is not successfully tracking the DPLL/GNSS source. This prevents ptp4l from advertising clock class 6, leaves phc2sys unable to start in WPC GM mode (phc2sys status=0), and causes all tests waiting for class 6 or a running phc2sys to time out. The disconnect between dpll and ts2phc states points to a ts2phc configuration or IPC issue on the `release-5.0` linuxptp-daemon image on this hardware (ens7fx interface).
+- Breaking PR/Commit: Unknown — `release-5.0` branch is not cloned locally; only `main` (HEAD: `14eb788`) is available, so backport status cannot be verified.
+- Flake? No — the dpll/ts2phc state mismatch is a hard metric discrepancy, not a timing race.
+- Fix: Investigate ts2phc configuration for ens7fx on cnfdf32 
+
+_(truncated — see per-suite analysis for full details)_
+
+### bc+dualfollower+tbc+all
+
+---
+
+### Suite: bc+dualfollower+tbc+all — 4 failures
+
+**TL;DR:** Two independent root causes: TBC suite fails because no T-BC topology was solvable in the lab (missing WPC NIC hardware), and bc/dualfollower parallel event tests timed out because the PTP event consumer was never ready.
+**Suite Issue Class:** test_failure
+**Suite Severity:** HIGH
+
+---
+
+**Root Cause Groups:**
+
+**Group 1: TBC topology solver finds no solution** (2 tests)
+- Tests: `[tbc-serial] PTP Reboot discovery The slave node is rebooted and discovered and in sync [Serial]`, `[SynchronizedBeforeSuite]`
+- Evidence: `no T-BC solution found for TBC` (junit-failures.txt:206,211); source at `test/pkg/testconfig/testconfig.go:1898-1899`:  `if len(*data.solutions[BestSolution]) == 0 { return fmt.Errorf(&quot;no T-BC solution found for %s&quot;, BestSolution) }`
+- Root Cause: The `AlgoTelcoBCString` solver (`testconfig.go:704-710`) requires a WPC NIC with a receiver port + 2 transmitters on the same NIC (`StepIsWPCNic` + two `StepSameNic` constraints) and a local WPC T-GM on the same LAN. The lab (cnfdf30/cnfdf31/cnfdf32) satisfies this for the T-GM role (cnfdf32) but apparently has no second node with a WPC NIC and 3 ports for the T-BC role, so the solver returns zero solutions. The TBC test suite was introduced by commit `aede1e9` (merged to `main` only on 2026-06-23 via PR #205 from `nocturnalastro/tbc_ci_tests`); there is no `release-5.0` branch in the local clone and `check_backport.py` is non-functional, so backport status cannot be confirmed.
+- Breaking PR/Commit: Candidate (unverified): `aede1e9` / [PR #205](https://github.com/openshift/ptp-operator/pull/205) — added T-BC CI tests to `main`; test framework runs from `main` against a lab that lacks the required T-BC hardware topology
+- Flake? No — solver deterministically returns no solution when the required WPC NIC hardware is absent.
+- Fix: Either provision a lab node with a WPC NIC having ≥3 ports for the T-BC role, or add a graceful skip in `PtpConfigTelco
+
+_(truncated — see per-suite analysis for full details)_
+
+&lt;!-- SUITE_DETAILS_END --&gt;</div></details>
+  </td>
+  <td class="col-date">2026-08-03</td>
+  <td class="col-date">2026-08-03</td>
+  <td class="col-tests"><ul><li>[It] [bc-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [dualfollower-parallel] Event based tests PTP Slave Clock Sync</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Verify clockClass when locking PTP source on dual NIC boundary clock [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP metric is present verifies on slave [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests Running with event enabled Should recover clockClass via event API after cloud-event-proxy crash [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests Running with event enabled Should receive events after linuxptp-daemon pod restart [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP Outage recovery The slave node network interface is taken down and up [Serial]</li><li class='more'>+26 more</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2084067091593302016" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-08-03)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2084157528073048064" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-03)</span></li></ul></td>
+</tr>
+<tr id="b653492f498fe9c5">
+  <td class="col-rc">
+    <div class="rc-text">Groups</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">## Cross-Suite Summary — periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp
+
+**Version:** 4.20 | **Total failures:** 26 | **Suites:** bc, dualfollower, dualnicbc, dualnicbcha, tbc, tgm
+
+**TL;DR:** PTP hardware never synced cluster-wide, a new TBC test deployed an unsupported config, and the TGM holdover state machine skipped ClockClass 7.
+
+---
+
+## Root Cause Groups
+
+- **19/26 failures — Environment-wide PTP synchronization failure** (suites: bc, dualfollower, dualnicbc, dualnicbcha, tbc-partial)
+  Every test helper that reads `linuxptp-daemon-container` log streams (`GetForeignClockID`, `GetProfileName` in `ptp-operator/test/pkg/ptphelper/ptphelper.go`) timed out with either `context deadline exceeded` or `timedout waiting for matches`, because `ptp4l` never reached servo state `s2` (LOCKED) on any node. The failure is simultaneous across at least 9 distinct daemon pod names on all worker nodes, ruling out a single-node or single-profile fault and pointing to the PTP grandmaster timing reference (GNSS signal or lab hardware path) being unavailable or degraded for the entire ~3h45m run. No daemon image pull failures were observed; the operator deployed successfully at version 4.20.0.
+
+- **7/26 failures — New TBC dual-profile PtpConfig not reconciled by production daemon** (suites: tbc)
+  The TBC suite was introduced in `main` by commit `aede1e9` (&quot;T-BC tests&quot;, 2026-06-23) via `createTelcoBCConfig` (`testconfig.go:1967`), which creates a novel dual-profile PtpConfig CR (`test-wpc-tbc`) using `controllingProfile` in `PtpSettings` to link receiver profile `tbc-tr` and transmitter profile `tbc-tt`. The production `release-4.20` linuxptp-daemon binary predates this dual-profile controller logic; `applyNodePtpProfile` never processes the CR, so `printNodeProfile` (`daemon.go:971,1521`) never writes the `Ptp4lConf: #profile: test-wpc-tbc` line that every TBC test depends on via `GetProfileLogID` (`ptphelper.go:84`). All seven test retries (3-minute deadline, 1-minute stream windows) exhaust and return the two observed timeout variants.
+
+- **3/26 failures — TGM holdover state machine skips ClockClass 7; FREERUN event not published on ts2phc exit** (suites: tgm)
+  On node `cnfdf32`, when GNSS is disabled, ts2phc transitions directly from LOCKED (ClockClass 6) to FREERUN (ClockClass 248) without passing through `PTP_HOLDOVER`; the ClockClass 7 gate in `pkg/event/event.go:460,499,509` is therefore never triggered. Concurrently, when ts2phc terminates, the `ptp-clock-class-change` metric is updated to 248 but the `ptp-state-change` FREERUN event is never published — the `subs.LOCKSTATE` channel receives no notification while `subs.CLOCKCLASS` does — indicating a gap in daemon.go&#x27;s ts2phc-exit path versus a graceful state-machine transition. The most recent `release-4.20` linuxptp-daemon merge touching this path is OCPBUGS-88741 (openshift/linuxptp-daemon#612, merged 2026-06-16, commit `c522d1efe6`).
+
+---
+
+## Cross-Suite Patterns
+
+| Root Cause | bc | dualfollower | dualnicbc | dualnicbcha | tbc | tgm | Suite-specific? |
+|---|---|---|---|---|---|---|---|
+| Environment-wide PTP sync failure (ptp4l never LOCKED, log-stream timeout) | ✅ | ✅ | ✅ | ✅ | ✅ (partial) | ❌ | No — all 5 suites |
+| New TBC dual-profile PtpConfig not reconciled by production daemon | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | Yes — tbc only |
+| TGM holdover skips ClockClass 7 + FREERUN event missing on ts2phc exit | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | Yes — tgm only |
+
+---
+
+## Actionable Recommendations
+
+1. **Investigate the lab PTP grandmaster immediately.** The simultaneous failure of all 5 non-TGM suites across 9+ daemon pods is the highest-signal indicator of a GM-level outage (GNSS feed, fiber/PPS cable, or upstream T-GM holdover expiry). Pull `ts2phc` and `ptp4l` logs directly from every `linuxptp-daemon-*` pod (`oc logs -n openshift-ptp &lt;pod&gt; -c linuxptp-daemon-container`) and check for `offset` lines — if none appear, the GM is not sending. Retry the full job only after the GM is confirmed healthy; a retry on a broken environment will waste CI resources.
+
+2. **Gate the new TBC test suite on daemon version.** The `tbc` suite&#x27;s `createTelcoBCConfig` deploys a dual-profile `controllingProfile` CR that the `release-4.20` (and `release-4.22`) production daemon cannot reconcile. Either backport the dual-profile controller logic to `release-4.20` (track the upstream `main` commit `aede1e9`), or add a `SkipIfDaemonVersionBelow` guard in `testconfig.go` so the suite is skipped until the supporting daemon is available. Without this fix the 7 TBC failures are guaranteed to recur on every `release-4.20` nightly regardless of lab health.
+
+3. **File a targeted bug for the TGM holdover / FREERUN event gap and bisect OCPBUGS-88741.** The `cnfdf32` TGM state machine skipping ClockClass 7 and the missing `ptp-state-change` FREERUN event on ts2phc exit are reproducible, code-level regressions independent of lab health. Audit `pkg/event/event.go` (lines 460, 499, 509) and the ts2phc process-exit handler in `daemon.go` against pre-OCPBUGS-88741 behavior. If bisection confirms `c522d1efe6` as the culprit, revert or patch only that path, and add a unit test asserting ClockClass 6 → 7 → 248 ordering after GNSS disable.
+
+---
+
+## Analysis Summary
+
+| # | Test | Group | Classification | Confidence | Root Cause | Action |
+|---|------|-------|---------------|------------|-----------|--------|
+| 1 | [bc] PTP daemon apply match rule based on nodeLabel | Env PTP sync | infra_timeout | High | ptp4l never LOCKED; log-stream context deadline exceeded | Fix lab GM |
+| 2 | [bc] Slave can sync to master | Env PTP sync | infra_timeout | High | ptp4l never LOCKED; log-stream context deadline exceeded | Fix lab GM |
+| 3 | [bc] Downstream slave can sync to BC master | Env PTP sync | infra_timeout | High | ptp4l never LOCKED; log-stream context deadline exceeded | Fix lab GM |
+| 4 | [bc] Can provide a profile with higher priority | Env PTP sync | infra_timeout | High | ptp4l never LOCKED; log-stream context deadline exceeded | Fix lab GM |
+| 5 | [dualfollower] Slave can sync to master | Env PTP sync | infra_timeout | High | linuxptp-daemon-6xl5p never emits sync log lines | Fix lab GM |
+| 6 | [dualfollower] Dual follower can sync when one follower port goes down | Env PTP sync | infra_timeout | High | linuxptp-daemon-6xl5p context deadline exceeded | Fix lab GM |
+| 7 | [dualfollower] Can provide a profile with higher priority | Env PTP sync | infra_timeout | High | linuxptp-daemon-6xl5p timedout waiting for matches | Fix lab GM |
+| 8 | [dualfollower] PTP Slave Clock Sync [parallel] | Env PTP sync | infra_timeout | High | OS Clock was never LOCKED | Fix lab GM |
+| 9 | [dualnicbc] Slave can sync to master | Env PTP sync | infra_timeout | High | linuxptp-daemon-vfnqw/5lj7k context deadline exceeded | Fix lab GM |
+| 10 | [dualnicbc] Downstream slave can sync to BC master | Env PTP sync | infra_timeout | High | linuxptp-daemon-vfnqw context deadline exceeded | Fix lab GM |
+| 11 | [dualnicbc] Can provide a profile with higher priority | Env PTP sync | infra_timeout | High | linuxptp-daemon-vfnqw timedout waiting for matches | Fix lab GM |
+| 12 | [dualnicbc] PTP Slave Clock Sync [parallel] | Env PTP sync | infra_timeout | High | OS Clock was never LOCKED | Fix lab GM |
+| 13 | [dualnicbcha] Slave can sync to master | Env PTP sync | infra_timeout | High | linuxptp-daemon-pb4kk context deadline exceeded | Fix lab GM |
+| 14 | [dualnicbcha] Downstream slave can sync to BC master | Env PTP sync | infra_timeout | High | linuxptp-daemon-pb4kk context deadline exceeded | Fix lab GM |
+| 15 | [dualnicbcha] phc2sys switches to secondary ptp4l when primary interface fails | Env PTP sync | infra_timeout | High | phc2sys cannot lock until ptp4l reaches s2 | Fix lab GM |
+| 16 | [dualnicbcha] OS Clock was never LOCKED | Env PTP sync | infra_timeout | High | Direct LOCKED assertion failed; ptp4l never s2 | Fix lab GM |
+| 17 | [tbc] PTP daemon apply match rule based on nodeLabel | TBC config unsupported | test_regression | High | release-4.20 daemon ignores dual-profile controllingProfile CR | Backport or version-gate |
+| 18 | [tbc] Slave can sync to master | TBC config unsupported | test_regression | High | GetProfileLogID regex never matched; profile never applied | Backport or version-gate |
+| 19 | [tbc] Downstream slave can sync to BC master | TBC config unsupported | test_regression | High | GetProfileLogID regex never matched; profile never applied | Backport or version-gate |
+| 20 | [tbc] Can provide a profile with higher priority | TBC config unsupported | test_regression | High | GetProfileLogID regex never matched; profile never applied | Backport or version-gate |
+| 21 | [tbc] Check GM announcements in locked mode and holdover transitions | TBC config unsupported | test_regression | High | GetProfileLogID regex never matched; daemon never reconciles CR | Backport or version-gate |
+| 22 | [tbc] PTP Slave Clock Sync [parallel] | TBC config unsupported | test_regression | Medium | OS Clock never LOCKED downstream of unreconciled TBC config | Backport or version-gate |
+| 23 | [tbc] FIFO scheduling assertion | TBC config unsupported | test_regression | Medium | Stale state from preceding sync failures; not independent | Backport or version-gate |
+| 24 | [tgm] holdover through connection loss | TGM holdover SM | test_regression | High | ClockClass 6→248 direct; ClockClass 7 never reached | Audit event.go:460/499/509; bisect c522d1efe6 |
+| 25 | [tgm] ts2phc termination | TGM holdover SM | test_regression | High | ptp-state-change FREERUN event not published on ts2phc exit | Patch ts2phc-exit path in daemon.go |
+| 26 | [tgm] GNSS reboot and recovery | TGM holdover SM | test_regression | High | GM stuck in FREERUN (248) from prior test; ClockClass 7 expected | Fix holdover SM; ensure test teardown recovers GNSS |
+
+---
+
+**Overall Issue Class:** infra_timeout (primary, 19 failures) + test_regression (secondary, 7 failures)
+
+**Overall Severity:** CRITICAL — the infrastructure failure alone blocks all PTP sync validation across 5 suites for every nightly run until the GM is recovered; the TBC test regression will persist unconditionally on every release-4.20 run.
+
+
+---
+
+# Per-Suite Details
+
+
+## bc
+
+---
+
+### Suite: tbc (7 failures)
+
+**Suite TL;DR:** The entire TBC suite failed because the PTP hardware environment never achieved clock synchronization, causing test log-stream lookups to time out across all syncing tests, with one additional FIFO-scheduling assertion failing due to stale state from those sync failures.
+
+**Root Cause Groups:**
+
+- **Group 1: PTP hardware not syncing → log-stream read timeouts** (affects: `PTP daemon apply match rule based on nodeLabel`, `Slave can sync to master`, `Downstream slave can sync to BC master`, `Can provide a profile with higher priority`, `Check GM announcements in locked mode and holdover transitions`, `PTP Slave Clock Sync [parallel]`)
+  - **Evidence:**
+    ```
+    could not get slave profile name, err=could not find regex in log stream for
+    openshift-ptp/linuxptp-daemon-57h79 container=linuxptp-daemon-container,
+    err=error reading from stream: context deadline exceeded
+
+    could not get any profile line, err=could not find regex in log stream for
+    openshift-ptp/linuxptp-daemon-57h79 container=linuxptp-daemon-container,
+    err=timedout waiting for matches
+
+    could not get any profile line, err=could not find regex in log stream for
+    openshift-ptp/linuxptp-daemon-zqkqd container=linuxptp-daemon-container,
+    err=error reading from stream: context deadline exceeded
+
+    [tbc-parallel] Event based tests PTP Slave Clock Sync:
+    OS Clock was never LOCKED and test timed out
+    ```
+    The same &quot;could not find regex in log stream&quot; pattern appears identically across **all** other suites in this run (bc: `linuxptp-daemon-4stqt`/`2gr6s`, dualfollower: `6xl5p`, dualnicbc: `vfnqw`/`5lj7k`, dualnicbcha: `pb4kk`/`jmj9c`) — at least 9 different daemon pod names across 5 suites all fail the same way.
+  - **Root Cause:** The PTP hardware/network stack on the test cluster never achieved synchronization. `ptp4l` and `phc2sys` inside the `linuxptp-daemon-container` pods did not emit the expected log lines (foreign clock ID, profile sync messages), so the test helper `GetForeignClockID`/`GetProfileName` (which tails the pod log stream and regex-matches) timed out with either a per-test context deadline or the helper&#x27;s own poll timeout. &quot;OS Clock was never LOCKED&quot; from the parallel event test confirms the clock servo never entered LOCKED state. This is infrastructure-wide — it affects every PTP mode (TBC, BC, Dual-Follower, Dual-NIC-BC, TGM), not a single code path.
+  - **Breaking PR/Commit:** Unknown — no code change can be pinpointed; failure is environmental. No image pull failures were observed in the build log; all 6 nodes were Ready at test start.
+  - **Is it a flake?** Possibly — PTP hardware sync can be intermittently disrupted by transient lab issues (cable, GNSS signal, upstream T-GM holdover expiry). However, the fact that every suite in the same job run is affected simultaneously makes a true flake less likely than a hard infrastructure regression in the lab environment.
+  - **Suggested Fix:** Retry the job to confirm; if failures persist across multiple runs, inspect the physical T-GM (GNSS signal, IEEE 1588 grandmaster lock state) and network path between `cnfdf30`–`cnfdf32` boundary clock nodes and the grandmaster. The `linuxptp-daemon` pod logs (from the `must-gather` artifact) will show whether `ptp4l` entered `FAULTY` or never left `UNCALIBRATED`.
+
+- **Group 2: FIFO scheduling state assertion failure** (affects: `Running with fifo scheduling Should check whether using fifo scheduling`)
+  - **Evidence:**
+    ```
+    Expected
+        &lt;map[string]int64 | len:2&gt;: {
+            &quot;test-wpc-tbc_tbc-tr&quot;: 10,
+            &quot;test-wpc-tbc_tbc-tt&quot;: 10,
+        }
+    to have length 0
+    ```
+    `linuxptp-daemon/pkg/daemon/testdata/profile-tbc-tr.yaml` line 156–157 and `profile-tbc-tt.yaml` line 121–122 both contain `ptpSchedulingPolicy: SCHED_FIFO` / `ptpSchedulingPriority: 10`, confirming the TBC ptpconfig&#x27;s two profiles intentionally launch `ptp4l` under `/bin/chrt -f 10` (see `daemon.go:1560`).
+  - **Root Cause:** The test asserts that zero FIFO-scheduled processes are present at a specific checkpoint (either the initial-state check before applying FIFO config, or the post-cleanup check after removing it). Because the earlier TBC sync tests (Group 1) timed out without completing their teardown phase, the `test-wpc-tbc` ptpconfig with `SCHED_FIFO` was left active on the node. When the fifo-scheduling test ran, it found both `tbc-tr` and `tbc-tt` profiles already running under FIFO priority 10 — violating the expected clean starting (or ending) state.
+  - **Breaking PR/Commit:** Unknown — this is a cascade failure from Group 1 dirty state, not an independent regression.
+  - **Is it a flake?** No — it is a deterministic consequence of Group 1 failing to clean up; it will reproduce whenever the sync tests time out in the TBC suite.
+  - **Suggested Fix:** No independent fix needed; resolving the Group 1 infrastructure issue will allow teardown to complete and restore the clean FIFO state the assertion expects. If the FIFO test recurs independently, add an explicit pre-test teardown that deletes any residual `test-wpc-tbc` ptpconfig before asserting the FIFO map is empty.
+
+**Suite Issue Class:** infra_timeout
+**Suite Severity:** HIGH
+
+## dualfollower
+
+---
+
+### Suite: dualfollower (4 failures)
+
+**Suite TL;DR:** All 4 dualfollower tests fail because the linuxptp-daemon pod on the test node never emits the expected PTP sync log output — confirmed by the parallel event test independently reporting the OS clock never reached LOCKED state, making this a systemic PTP synchronization regression that also hit every other suite in this job run (bc, dualnicbc, dualnicbcha, tbc).
+
+**Root Cause Groups:**
+
+- **Group 1: linuxptp-daemon fails to emit expected sync/profile log lines** (affects: `Slave can sync to master`, `Dual follower can sync when one follower port goes down`, `Can provide a profile with higher priority`)
+  - **Evidence:**
+    ```
+    could not get any profile line, err=could not find regex in log stream for
+    openshift-ptp/linuxptp-daemon-6xl5p container=linuxptp-daemon-container,
+    err=error reading from stream: context deadline exceeded
+
+    could not get any profile line, err=could not find regex in log stream for
+    openshift-ptp/linuxptp-daemon-6xl5p container=linuxptp-daemon-container,
+    err=timedout waiting for matches
+    ```
+    All three serial failures target the same pod `linuxptp-daemon-6xl5p`. The test framework (`ptphelper.go`) streams logs from `linuxptp-daemon-container` and applies a regex to extract the foreign clock ID / profile line. Two distinct inner errors appear: `context deadline exceeded` (the K8s log stream connection dropped, likely because the daemon pod crashed or restarted) and `timedout waiting for matches` (the daemon was alive but never emitted the expected log line). The consistency of the pod name across all three 200-second timeouts confirms the daemon on that node never achieved a sync state that would produce the expected `ptp4l` profile/clock-ID output.
+
+  - **Root Cause:** The `linuxptp-daemon` image deployed from `release-4.20` (built via `git clone --single-branch --branch release-4.20 openshift/ptp-operator`) is either crashing without sync or running but no longer emitting the log lines that `ptphelper.go` regexes for. This failure is not isolated to dualfollower: the identical error pattern hit every suite (`linuxptp-daemon-4stqt` for bc, `linuxptp-daemon-vfnqw` for dualnicbc, `linuxptp-daemon-pb4kk` for dualnicbcha, `linuxptp-daemon-57h79` for tbc), ruling out a single-node hardware problem and pointing to a regression in the release-4.20 daemon image or PTP hardware configuration.
+
+  - **Breaking PR/Commit:** Unknown — the `scripts/check_backport.py` tool referenced in the investigation instructions is absent from this workspace. The linuxptp-daemon clone only shows main-branch HEAD `14eb788` (&quot;Sync from upstream 22-Jul-2026&quot;); the release-4.20 production image&#x27;s exact HEAD SHA is not available in evidence. The most recent cloud-event-proxy main commit is `0a69e46` (&quot;ntpThresholds&quot;). Neither can be confirmed as backported to release-4.20 without running check_backport.
+
+  - **Is it a flake?** No — five independent suites on five independent pods across three physical worker nodes all fail with the same error in the same run. This is a deterministic regression, not a transient flake.
+
+  - **Suggested Fix:** Identify the most recent commit merged to `release-4.20` on `openshift/ptp-operator` and `openshift/linuxptp-daemon` after the last passing nightly; bisect to find the change that broke ptp4l&#x27;s log output format or daemon stability. Confirm whether linuxptp-daemon PR #629 (&quot;Sync from upstream 22-Jul-2026&quot;) or a nearby commit altered any log format string that the test regex targets.
+
+- **Group 2: OS clock never achieves LOCKED state** (affects: `Event based tests PTP Slave Clock Sync`)
+  - **Evidence:**
+    ```
+    OS Clock was never LOCKED and test timed out
+    ```
+    The parallel event test independently verifies the OS clock via PTP events rather than log streaming, and it also reports failure — confirming that PTP synchronization itself never completed, not merely that log reading failed.
+
+  - **Root Cause:** This is the same underlying root cause as Group 1 (PTP daemon not achieving sync on the `release-4.20` images). The event-based test uses a different code path (`PtpEventsIsConsumerReady= false` is logged during test discovery, further indicating the cloud-event-proxy sidecar was not ready), so it surfaces a different error message but originates from the same daemon/sync failure.
+
+  - **Breaking PR/Commit:** Unknown (same as</div></details>
+  </td>
+  <td class="col-date">2026-07-29</td>
+  <td class="col-date">2026-08-03</td>
+  <td class="col-tests"><ul><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP ClockSync PTP daemon apply match rule based on nodeLabel [Serial]</li><li>[It] [tbc-serial] PTP e2e tests Check GM announcements in locked mode and holdover transitions [Serial]</li><li>No meaningful output found in logs</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2084264040837681152" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-03)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/82254/rehearse-82254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081455654517608448" target="_blank">rehearse-82254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-03)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2083627994911346688" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/80182/rehearse-80182-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2069079496102776832" target="_blank">rehearse-80182-4.22-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81171/rehearse-81171-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2070692330741960704" target="_blank">rehearse-81171-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2072024459623010304" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/82254/rehearse-82254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081455654517608448" target="_blank">rehearse-82254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2082846591940562944" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-31)</span></li><li class='more'>+1 more runs</li></ul></td>
+</tr>
+<tr id="f88f73009379c89b">
   <td class="col-rc">
     <div class="rc-text">s (15 failures across 2 suites)</div>
     <details><summary>Full analysis</summary><div class="full-analysis">---
@@ -526,193 +1091,6 @@ _(truncated — see per-suite analysis for full details)_
   <td class="col-date">2026-08-02</td>
   <td class="col-tests"><ul><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Slave fails to sync when authentication mismatch occurs (negative test) [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Verify clockClass when locking PTP source on single NIC boundary clock [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Verify clockClass when locking PTP source on dual NIC boundary clock [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP metric is present verifies on slave [Serial]</li><li>[It] [bc-serial] PTP e2e tests Running with event enabled Should check for ptp events  [Serial]</li><li class='more'>+11 more</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.19-e2e-telco5g-ptp/2072546013146517504" target="_blank">4.19-e2e-telco5g-ptp</a> <span class="date">(2026-08-02)</span></li></ul></td>
-</tr>
-<tr id="b653492f498fe9c5">
-  <td class="col-rc">
-    <div class="rc-text">Groups</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">## Cross-Suite Summary — periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp
-
-**Version:** 4.20 | **Total failures:** 26 | **Suites:** bc, dualfollower, dualnicbc, dualnicbcha, tbc, tgm
-
-**TL;DR:** PTP hardware never synced cluster-wide, a new TBC test deployed an unsupported config, and the TGM holdover state machine skipped ClockClass 7.
-
----
-
-## Root Cause Groups
-
-- **19/26 failures — Environment-wide PTP synchronization failure** (suites: bc, dualfollower, dualnicbc, dualnicbcha, tbc-partial)
-  Every test helper that reads `linuxptp-daemon-container` log streams (`GetForeignClockID`, `GetProfileName` in `ptp-operator/test/pkg/ptphelper/ptphelper.go`) timed out with either `context deadline exceeded` or `timedout waiting for matches`, because `ptp4l` never reached servo state `s2` (LOCKED) on any node. The failure is simultaneous across at least 9 distinct daemon pod names on all worker nodes, ruling out a single-node or single-profile fault and pointing to the PTP grandmaster timing reference (GNSS signal or lab hardware path) being unavailable or degraded for the entire ~3h45m run. No daemon image pull failures were observed; the operator deployed successfully at version 4.20.0.
-
-- **7/26 failures — New TBC dual-profile PtpConfig not reconciled by production daemon** (suites: tbc)
-  The TBC suite was introduced in `main` by commit `aede1e9` (&quot;T-BC tests&quot;, 2026-06-23) via `createTelcoBCConfig` (`testconfig.go:1967`), which creates a novel dual-profile PtpConfig CR (`test-wpc-tbc`) using `controllingProfile` in `PtpSettings` to link receiver profile `tbc-tr` and transmitter profile `tbc-tt`. The production `release-4.20` linuxptp-daemon binary predates this dual-profile controller logic; `applyNodePtpProfile` never processes the CR, so `printNodeProfile` (`daemon.go:971,1521`) never writes the `Ptp4lConf: #profile: test-wpc-tbc` line that every TBC test depends on via `GetProfileLogID` (`ptphelper.go:84`). All seven test retries (3-minute deadline, 1-minute stream windows) exhaust and return the two observed timeout variants.
-
-- **3/26 failures — TGM holdover state machine skips ClockClass 7; FREERUN event not published on ts2phc exit** (suites: tgm)
-  On node `cnfdf32`, when GNSS is disabled, ts2phc transitions directly from LOCKED (ClockClass 6) to FREERUN (ClockClass 248) without passing through `PTP_HOLDOVER`; the ClockClass 7 gate in `pkg/event/event.go:460,499,509` is therefore never triggered. Concurrently, when ts2phc terminates, the `ptp-clock-class-change` metric is updated to 248 but the `ptp-state-change` FREERUN event is never published — the `subs.LOCKSTATE` channel receives no notification while `subs.CLOCKCLASS` does — indicating a gap in daemon.go&#x27;s ts2phc-exit path versus a graceful state-machine transition. The most recent `release-4.20` linuxptp-daemon merge touching this path is OCPBUGS-88741 (openshift/linuxptp-daemon#612, merged 2026-06-16, commit `c522d1efe6`).
-
----
-
-## Cross-Suite Patterns
-
-| Root Cause | bc | dualfollower | dualnicbc | dualnicbcha | tbc | tgm | Suite-specific? |
-|---|---|---|---|---|---|---|---|
-| Environment-wide PTP sync failure (ptp4l never LOCKED, log-stream timeout) | ✅ | ✅ | ✅ | ✅ | ✅ (partial) | ❌ | No — all 5 suites |
-| New TBC dual-profile PtpConfig not reconciled by production daemon | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | Yes — tbc only |
-| TGM holdover skips ClockClass 7 + FREERUN event missing on ts2phc exit | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | Yes — tgm only |
-
----
-
-## Actionable Recommendations
-
-1. **Investigate the lab PTP grandmaster immediately.** The simultaneous failure of all 5 non-TGM suites across 9+ daemon pods is the highest-signal indicator of a GM-level outage (GNSS feed, fiber/PPS cable, or upstream T-GM holdover expiry). Pull `ts2phc` and `ptp4l` logs directly from every `linuxptp-daemon-*` pod (`oc logs -n openshift-ptp &lt;pod&gt; -c linuxptp-daemon-container`) and check for `offset` lines — if none appear, the GM is not sending. Retry the full job only after the GM is confirmed healthy; a retry on a broken environment will waste CI resources.
-
-2. **Gate the new TBC test suite on daemon version.** The `tbc` suite&#x27;s `createTelcoBCConfig` deploys a dual-profile `controllingProfile` CR that the `release-4.20` (and `release-4.22`) production daemon cannot reconcile. Either backport the dual-profile controller logic to `release-4.20` (track the upstream `main` commit `aede1e9`), or add a `SkipIfDaemonVersionBelow` guard in `testconfig.go` so the suite is skipped until the supporting daemon is available. Without this fix the 7 TBC failures are guaranteed to recur on every `release-4.20` nightly regardless of lab health.
-
-3. **File a targeted bug for the TGM holdover / FREERUN event gap and bisect OCPBUGS-88741.** The `cnfdf32` TGM state machine skipping ClockClass 7 and the missing `ptp-state-change` FREERUN event on ts2phc exit are reproducible, code-level regressions independent of lab health. Audit `pkg/event/event.go` (lines 460, 499, 509) and the ts2phc process-exit handler in `daemon.go` against pre-OCPBUGS-88741 behavior. If bisection confirms `c522d1efe6` as the culprit, revert or patch only that path, and add a unit test asserting ClockClass 6 → 7 → 248 ordering after GNSS disable.
-
----
-
-## Analysis Summary
-
-| # | Test | Group | Classification | Confidence | Root Cause | Action |
-|---|------|-------|---------------|------------|-----------|--------|
-| 1 | [bc] PTP daemon apply match rule based on nodeLabel | Env PTP sync | infra_timeout | High | ptp4l never LOCKED; log-stream context deadline exceeded | Fix lab GM |
-| 2 | [bc] Slave can sync to master | Env PTP sync | infra_timeout | High | ptp4l never LOCKED; log-stream context deadline exceeded | Fix lab GM |
-| 3 | [bc] Downstream slave can sync to BC master | Env PTP sync | infra_timeout | High | ptp4l never LOCKED; log-stream context deadline exceeded | Fix lab GM |
-| 4 | [bc] Can provide a profile with higher priority | Env PTP sync | infra_timeout | High | ptp4l never LOCKED; log-stream context deadline exceeded | Fix lab GM |
-| 5 | [dualfollower] Slave can sync to master | Env PTP sync | infra_timeout | High | linuxptp-daemon-6xl5p never emits sync log lines | Fix lab GM |
-| 6 | [dualfollower] Dual follower can sync when one follower port goes down | Env PTP sync | infra_timeout | High | linuxptp-daemon-6xl5p context deadline exceeded | Fix lab GM |
-| 7 | [dualfollower] Can provide a profile with higher priority | Env PTP sync | infra_timeout | High | linuxptp-daemon-6xl5p timedout waiting for matches | Fix lab GM |
-| 8 | [dualfollower] PTP Slave Clock Sync [parallel] | Env PTP sync | infra_timeout | High | OS Clock was never LOCKED | Fix lab GM |
-| 9 | [dualnicbc] Slave can sync to master | Env PTP sync | infra_timeout | High | linuxptp-daemon-vfnqw/5lj7k context deadline exceeded | Fix lab GM |
-| 10 | [dualnicbc] Downstream slave can sync to BC master | Env PTP sync | infra_timeout | High | linuxptp-daemon-vfnqw context deadline exceeded | Fix lab GM |
-| 11 | [dualnicbc] Can provide a profile with higher priority | Env PTP sync | infra_timeout | High | linuxptp-daemon-vfnqw timedout waiting for matches | Fix lab GM |
-| 12 | [dualnicbc] PTP Slave Clock Sync [parallel] | Env PTP sync | infra_timeout | High | OS Clock was never LOCKED | Fix lab GM |
-| 13 | [dualnicbcha] Slave can sync to master | Env PTP sync | infra_timeout | High | linuxptp-daemon-pb4kk context deadline exceeded | Fix lab GM |
-| 14 | [dualnicbcha] Downstream slave can sync to BC master | Env PTP sync | infra_timeout | High | linuxptp-daemon-pb4kk context deadline exceeded | Fix lab GM |
-| 15 | [dualnicbcha] phc2sys switches to secondary ptp4l when primary interface fails | Env PTP sync | infra_timeout | High | phc2sys cannot lock until ptp4l reaches s2 | Fix lab GM |
-| 16 | [dualnicbcha] OS Clock was never LOCKED | Env PTP sync | infra_timeout | High | Direct LOCKED assertion failed; ptp4l never s2 | Fix lab GM |
-| 17 | [tbc] PTP daemon apply match rule based on nodeLabel | TBC config unsupported | test_regression | High | release-4.20 daemon ignores dual-profile controllingProfile CR | Backport or version-gate |
-| 18 | [tbc] Slave can sync to master | TBC config unsupported | test_regression | High | GetProfileLogID regex never matched; profile never applied | Backport or version-gate |
-| 19 | [tbc] Downstream slave can sync to BC master | TBC config unsupported | test_regression | High | GetProfileLogID regex never matched; profile never applied | Backport or version-gate |
-| 20 | [tbc] Can provide a profile with higher priority | TBC config unsupported | test_regression | High | GetProfileLogID regex never matched; profile never applied | Backport or version-gate |
-| 21 | [tbc] Check GM announcements in locked mode and holdover transitions | TBC config unsupported | test_regression | High | GetProfileLogID regex never matched; daemon never reconciles CR | Backport or version-gate |
-| 22 | [tbc] PTP Slave Clock Sync [parallel] | TBC config unsupported | test_regression | Medium | OS Clock never LOCKED downstream of unreconciled TBC config | Backport or version-gate |
-| 23 | [tbc] FIFO scheduling assertion | TBC config unsupported | test_regression | Medium | Stale state from preceding sync failures; not independent | Backport or version-gate |
-| 24 | [tgm] holdover through connection loss | TGM holdover SM | test_regression | High | ClockClass 6→248 direct; ClockClass 7 never reached | Audit event.go:460/499/509; bisect c522d1efe6 |
-| 25 | [tgm] ts2phc termination | TGM holdover SM | test_regression | High | ptp-state-change FREERUN event not published on ts2phc exit | Patch ts2phc-exit path in daemon.go |
-| 26 | [tgm] GNSS reboot and recovery | TGM holdover SM | test_regression | High | GM stuck in FREERUN (248) from prior test; ClockClass 7 expected | Fix holdover SM; ensure test teardown recovers GNSS |
-
----
-
-**Overall Issue Class:** infra_timeout (primary, 19 failures) + test_regression (secondary, 7 failures)
-
-**Overall Severity:** CRITICAL — the infrastructure failure alone blocks all PTP sync validation across 5 suites for every nightly run until the GM is recovered; the TBC test regression will persist unconditionally on every release-4.20 run.
-
-
----
-
-# Per-Suite Details
-
-
-## bc
-
----
-
-### Suite: tbc (7 failures)
-
-**Suite TL;DR:** The entire TBC suite failed because the PTP hardware environment never achieved clock synchronization, causing test log-stream lookups to time out across all syncing tests, with one additional FIFO-scheduling assertion failing due to stale state from those sync failures.
-
-**Root Cause Groups:**
-
-- **Group 1: PTP hardware not syncing → log-stream read timeouts** (affects: `PTP daemon apply match rule based on nodeLabel`, `Slave can sync to master`, `Downstream slave can sync to BC master`, `Can provide a profile with higher priority`, `Check GM announcements in locked mode and holdover transitions`, `PTP Slave Clock Sync [parallel]`)
-  - **Evidence:**
-    ```
-    could not get slave profile name, err=could not find regex in log stream for
-    openshift-ptp/linuxptp-daemon-57h79 container=linuxptp-daemon-container,
-    err=error reading from stream: context deadline exceeded
-
-    could not get any profile line, err=could not find regex in log stream for
-    openshift-ptp/linuxptp-daemon-57h79 container=linuxptp-daemon-container,
-    err=timedout waiting for matches
-
-    could not get any profile line, err=could not find regex in log stream for
-    openshift-ptp/linuxptp-daemon-zqkqd container=linuxptp-daemon-container,
-    err=error reading from stream: context deadline exceeded
-
-    [tbc-parallel] Event based tests PTP Slave Clock Sync:
-    OS Clock was never LOCKED and test timed out
-    ```
-    The same &quot;could not find regex in log stream&quot; pattern appears identically across **all** other suites in this run (bc: `linuxptp-daemon-4stqt`/`2gr6s`, dualfollower: `6xl5p`, dualnicbc: `vfnqw`/`5lj7k`, dualnicbcha: `pb4kk`/`jmj9c`) — at least 9 different daemon pod names across 5 suites all fail the same way.
-  - **Root Cause:** The PTP hardware/network stack on the test cluster never achieved synchronization. `ptp4l` and `phc2sys` inside the `linuxptp-daemon-container` pods did not emit the expected log lines (foreign clock ID, profile sync messages), so the test helper `GetForeignClockID`/`GetProfileName` (which tails the pod log stream and regex-matches) timed out with either a per-test context deadline or the helper&#x27;s own poll timeout. &quot;OS Clock was never LOCKED&quot; from the parallel event test confirms the clock servo never entered LOCKED state. This is infrastructure-wide — it affects every PTP mode (TBC, BC, Dual-Follower, Dual-NIC-BC, TGM), not a single code path.
-  - **Breaking PR/Commit:** Unknown — no code change can be pinpointed; failure is environmental. No image pull failures were observed in the build log; all 6 nodes were Ready at test start.
-  - **Is it a flake?** Possibly — PTP hardware sync can be intermittently disrupted by transient lab issues (cable, GNSS signal, upstream T-GM holdover expiry). However, the fact that every suite in the same job run is affected simultaneously makes a true flake less likely than a hard infrastructure regression in the lab environment.
-  - **Suggested Fix:** Retry the job to confirm; if failures persist across multiple runs, inspect the physical T-GM (GNSS signal, IEEE 1588 grandmaster lock state) and network path between `cnfdf30`–`cnfdf32` boundary clock nodes and the grandmaster. The `linuxptp-daemon` pod logs (from the `must-gather` artifact) will show whether `ptp4l` entered `FAULTY` or never left `UNCALIBRATED`.
-
-- **Group 2: FIFO scheduling state assertion failure** (affects: `Running with fifo scheduling Should check whether using fifo scheduling`)
-  - **Evidence:**
-    ```
-    Expected
-        &lt;map[string]int64 | len:2&gt;: {
-            &quot;test-wpc-tbc_tbc-tr&quot;: 10,
-            &quot;test-wpc-tbc_tbc-tt&quot;: 10,
-        }
-    to have length 0
-    ```
-    `linuxptp-daemon/pkg/daemon/testdata/profile-tbc-tr.yaml` line 156–157 and `profile-tbc-tt.yaml` line 121–122 both contain `ptpSchedulingPolicy: SCHED_FIFO` / `ptpSchedulingPriority: 10`, confirming the TBC ptpconfig&#x27;s two profiles intentionally launch `ptp4l` under `/bin/chrt -f 10` (see `daemon.go:1560`).
-  - **Root Cause:** The test asserts that zero FIFO-scheduled processes are present at a specific checkpoint (either the initial-state check before applying FIFO config, or the post-cleanup check after removing it). Because the earlier TBC sync tests (Group 1) timed out without completing their teardown phase, the `test-wpc-tbc` ptpconfig with `SCHED_FIFO` was left active on the node. When the fifo-scheduling test ran, it found both `tbc-tr` and `tbc-tt` profiles already running under FIFO priority 10 — violating the expected clean starting (or ending) state.
-  - **Breaking PR/Commit:** Unknown — this is a cascade failure from Group 1 dirty state, not an independent regression.
-  - **Is it a flake?** No — it is a deterministic consequence of Group 1 failing to clean up; it will reproduce whenever the sync tests time out in the TBC suite.
-  - **Suggested Fix:** No independent fix needed; resolving the Group 1 infrastructure issue will allow teardown to complete and restore the clean FIFO state the assertion expects. If the FIFO test recurs independently, add an explicit pre-test teardown that deletes any residual `test-wpc-tbc` ptpconfig before asserting the FIFO map is empty.
-
-**Suite Issue Class:** infra_timeout
-**Suite Severity:** HIGH
-
-## dualfollower
-
----
-
-### Suite: dualfollower (4 failures)
-
-**Suite TL;DR:** All 4 dualfollower tests fail because the linuxptp-daemon pod on the test node never emits the expected PTP sync log output — confirmed by the parallel event test independently reporting the OS clock never reached LOCKED state, making this a systemic PTP synchronization regression that also hit every other suite in this job run (bc, dualnicbc, dualnicbcha, tbc).
-
-**Root Cause Groups:**
-
-- **Group 1: linuxptp-daemon fails to emit expected sync/profile log lines** (affects: `Slave can sync to master`, `Dual follower can sync when one follower port goes down`, `Can provide a profile with higher priority`)
-  - **Evidence:**
-    ```
-    could not get any profile line, err=could not find regex in log stream for
-    openshift-ptp/linuxptp-daemon-6xl5p container=linuxptp-daemon-container,
-    err=error reading from stream: context deadline exceeded
-
-    could not get any profile line, err=could not find regex in log stream for
-    openshift-ptp/linuxptp-daemon-6xl5p container=linuxptp-daemon-container,
-    err=timedout waiting for matches
-    ```
-    All three serial failures target the same pod `linuxptp-daemon-6xl5p`. The test framework (`ptphelper.go`) streams logs from `linuxptp-daemon-container` and applies a regex to extract the foreign clock ID / profile line. Two distinct inner errors appear: `context deadline exceeded` (the K8s log stream connection dropped, likely because the daemon pod crashed or restarted) and `timedout waiting for matches` (the daemon was alive but never emitted the expected log line). The consistency of the pod name across all three 200-second timeouts confirms the daemon on that node never achieved a sync state that would produce the expected `ptp4l` profile/clock-ID output.
-
-  - **Root Cause:** The `linuxptp-daemon` image deployed from `release-4.20` (built via `git clone --single-branch --branch release-4.20 openshift/ptp-operator`) is either crashing without sync or running but no longer emitting the log lines that `ptphelper.go` regexes for. This failure is not isolated to dualfollower: the identical error pattern hit every suite (`linuxptp-daemon-4stqt` for bc, `linuxptp-daemon-vfnqw` for dualnicbc, `linuxptp-daemon-pb4kk` for dualnicbcha, `linuxptp-daemon-57h79` for tbc), ruling out a single-node hardware problem and pointing to a regression in the release-4.20 daemon image or PTP hardware configuration.
-
-  - **Breaking PR/Commit:** Unknown — the `scripts/check_backport.py` tool referenced in the investigation instructions is absent from this workspace. The linuxptp-daemon clone only shows main-branch HEAD `14eb788` (&quot;Sync from upstream 22-Jul-2026&quot;); the release-4.20 production image&#x27;s exact HEAD SHA is not available in evidence. The most recent cloud-event-proxy main commit is `0a69e46` (&quot;ntpThresholds&quot;). Neither can be confirmed as backported to release-4.20 without running check_backport.
-
-  - **Is it a flake?** No — five independent suites on five independent pods across three physical worker nodes all fail with the same error in the same run. This is a deterministic regression, not a transient flake.
-
-  - **Suggested Fix:** Identify the most recent commit merged to `release-4.20` on `openshift/ptp-operator` and `openshift/linuxptp-daemon` after the last passing nightly; bisect to find the change that broke ptp4l&#x27;s log output format or daemon stability. Confirm whether linuxptp-daemon PR #629 (&quot;Sync from upstream 22-Jul-2026&quot;) or a nearby commit altered any log format string that the test regex targets.
-
-- **Group 2: OS clock never achieves LOCKED state** (affects: `Event based tests PTP Slave Clock Sync`)
-  - **Evidence:**
-    ```
-    OS Clock was never LOCKED and test timed out
-    ```
-    The parallel event test independently verifies the OS clock via PTP events rather than log streaming, and it also reports failure — confirming that PTP synchronization itself never completed, not merely that log reading failed.
-
-  - **Root Cause:** This is the same underlying root cause as Group 1 (PTP daemon not achieving sync on the `release-4.20` images). The event-based test uses a different code path (`PtpEventsIsConsumerReady= false` is logged during test discovery, further indicating the cloud-event-proxy sidecar was not ready), so it surfaces a different error message but originates from the same daemon/sync failure.
-
-  - **Breaking PR/Commit:** Unknown (same as</div></details>
-  </td>
-  <td class="col-date">2026-07-29</td>
-  <td class="col-date">2026-08-02</td>
-  <td class="col-tests"><ul><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP ClockSync PTP daemon apply match rule based on nodeLabel [Serial]</li><li>[It] [tbc-serial] PTP e2e tests Check GM announcements in locked mode and holdover transitions [Serial]</li><li>No meaningful output found in logs</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2083627994911346688" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/80182/rehearse-80182-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2069079496102776832" target="_blank">rehearse-80182-4.22-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81171/rehearse-81171-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2070692330741960704" target="_blank">rehearse-81171-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp-upstream/2072024459623010304" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/82254/rehearse-82254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2081455654517608448" target="_blank">rehearse-82254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-02)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2082846591940562944" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-07-31)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2081892951830564864" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-07-29)</span></li></ul></td>
 </tr>
 <tr id="503edaa7c58bebe5">
   <td class="col-rc">
