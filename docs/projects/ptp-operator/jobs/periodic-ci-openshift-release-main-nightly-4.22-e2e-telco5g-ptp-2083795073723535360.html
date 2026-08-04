@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.22-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-08-03T19:48:15.232084+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-04T20:00:39.600693+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -84,114 +84,228 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+  <p style="margin:4px 0"><strong>TL;DR:</strong> T-GM GNSS signal loss (clock class 248) cascades to all slave sync failures; dualnicbcha adds a missing release-4.22 backport.</p>
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Lab infra caused all 6 parallel clock-sync soaks to timeout; T-BC hardware mismatch aborted 5 tbc serial tests.</p>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Causes (15 failures across 2 suites)</h3>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>~13/16 failures — T-GM GNSS instability, GM stuck in FREERUN (clock class 248), cascading to all parallel and tgm-serial tests:</strong></div>
+<p style="margin:4px 0">All six parallel "Event based tests PTP Slave Clock Sync" suites (bc, dualfollower, dualnicbc, dualnicbcha, oc, tbc) failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OS Clock was never LOCKED and test timed out</code>. Three tgm-serial tests failed with the same upstream signal loss: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Timed out waiting for clock class 7</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">expected a metric [7.000000] but got map[.../ens7fx/master:248]</code>, and ts2phc restart-count regression (counter reset to 1 after re-apply, expected continuation from 5). Root: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code> never achieved PRTC lock; without a healthy GM no downstream BC or follower can synchronize.</p>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">6/15 failures — Parallel OS clock never reached LOCKED (cross-suite)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> tbc, bc, dualfollower, dualnicbc, dualnicbcha, oc | <strong>Evidence:</strong> PROVEN</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testSyncState()</code> (parallel/ptp.go) soaks for 6 min; all 6 parallel "Event based tests PTP Slave Clock Sync" timed out at ≈363 s simultaneously, pointing to a shared lab infrastructure degradation during the parallel phase.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown; Candidate (unverified): cloud-event-proxy [PR #722](https://github.com/redhat-cne/cloud-event-proxy/pull/722) (ntpThresholds, merged 2026-07-27) — backport to release-4.22 unconfirmed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — deterministic ≈363 s wall time across all 6 independent suites.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Inspect T-GM GNSS status and ptp4l logs on lab nodes during the parallel window; restore GNSS connectivity if T-GM was FREERUN and rerun.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>~3/16 failures — Missing backport of delayed-phc2sys fix to release-4.22 (affects dualnicbcha suite only):</strong></div>
+<p style="margin:4px 0"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-serial] PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l</code> failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> reading the pod log stream; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-parallel] Event based tests PTP Slave Clock Sync</code> compounded with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OS Clock was never LOCKED</code>. Root: The nightly 4.22 linuxptp-daemon image includes the intentional phc2sys delayed-startup change (linuxptp-daemon#215), but commits <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bb43e35</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">402a5b0</code> — which add a ptp4l-sync prerequisite wait to the test — exist only on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> and have not been cherry-picked to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> (verified absent from the 30-commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FETCH_HEAD</code> log; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> HEAD is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">48030af</code>).</p>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">5/15 failures — T-BC BeforeAll topology abort (tbc suite)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> tbc | <strong>Evidence:</strong> PROVEN</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpConfigTelcoBC()</code> (testconfig.go:1891) requires a WPC/E810 NIC with ≥2 PHC-sharing interfaces; the tbc CI lab has no valid T-BC L2 solution, so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">BeforeAll</code> calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail()</code> and all 5 serial specs error.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Candidate (unverified): [PR #205](https://github.com/k8snetworkplumbingwg/ptp-operator/pull/205) (commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">84723c8</code>) added T-BC test mode to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>; backport to release-4.22 unconfirmed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — deterministic topology mismatch; bc-serial passes same spec names with BC topology.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Provision a WPC/E810 NIC with ≥2 PHC-sharing interfaces in tbc CI lab, or convert <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpConfigTelcoBC</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Skip</code> instead of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail</code> when no solution found.</div>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">3/15 failures — T-GM GNSS / ts2phc hardware instability</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> tgm | <strong>Evidence:</strong> PROVEN (per bc+dualfollower+…+tgm suite analysis; details truncated in input)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> T-GM GNSS hardware tests failed independently; ts2phc or GNSS antenna instability on the tgm lab node during the test run.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Unknown — per-suite analysis truncated; insufficient detail to assess.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Inspect GNSS signal quality and ts2phc logs on tgm lab node; repair/replace GNSS hardware if signal is absent.</div>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">1/15 failure — DualNICBCHA HA failover standalone failure</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> dualnicbcha | <strong>Evidence:</strong> PROVEN (per bc+…+tgm suite analysis; details truncated in input)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> The HA failover test failed as a standalone, independent of the clock-sync soak failures in the same suite batch.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Unknown — insufficient per-suite detail.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Review dualnicbcha HA failover pod logs; check whether the failover event overlapped with the T-GM instability window.</div>
-<br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
+<p style="margin:4px 0"><strong>Cross-Suite Patterns:</strong></p>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">PTP daemon apply match rule</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">T-BC BeforeAll abort — no valid WPC NIC topology</td><td style="border:1px solid #30363d;padding:6px 8px">Provision WPC NIC or add Skip</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">Downstream slave can sync to BC master</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">T-BC BeforeAll abort — no valid WPC NIC topology</td><td style="border:1px solid #30363d;padding:6px 8px">Provision WPC NIC or add Skip</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">Can provide a profile with higher priority</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">T-BC BeforeAll abort — no valid WPC NIC topology</td><td style="border:1px solid #30363d;padding:6px 8px">Provision WPC NIC or add Skip</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">... +2 more with same root cause</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">T-BC BeforeAll abort — no valid WPC NIC topology</td><td style="border:1px solid #30363d;padding:6px 8px">Provision WPC NIC or add Skip</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">5</td><td style="border:1px solid #30363d;padding:6px 8px">Event based tests PTP Slave Clock Sync</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">OS clock never LOCKED in 6-min parallel soak</td><td style="border:1px solid #30363d;padding:6px 8px">Restore T-GM GNSS, rerun</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">6</td><td style="border:1px solid #30363d;padding:6px 8px">Event based tests PTP Slave Clock Sync</td><td style="border:1px solid #30363d;padding:6px 8px">bc</td><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">OS clock never LOCKED in 6-min parallel soak</td><td style="border:1px solid #30363d;padding:6px 8px">Restore T-GM GNSS, rerun</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">7</td><td style="border:1px solid #30363d;padding:6px 8px">Event based tests PTP Slave Clock Sync</td><td style="border:1px solid #30363d;padding:6px 8px">dualfollower</td><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">OS clock never LOCKED in 6-min parallel soak</td><td style="border:1px solid #30363d;padding:6px 8px">Restore T-GM GNSS, rerun</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">8</td><td style="border:1px solid #30363d;padding:6px 8px">... +3 more with same root cause</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbc/dualnicbcha/oc</td><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">OS clock never LOCKED in 6-min parallel soak</td><td style="border:1px solid #30363d;padding:6px 8px">Restore T-GM GNSS, rerun</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">9</td><td style="border:1px solid #30363d;padding:6px 8px">T-GM GNSS test ×3</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">medium</td><td style="border:1px solid #30363d;padding:6px 8px">GNSS/ts2phc hardware instability on tgm node</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect/repair GNSS hardware</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">10</td><td style="border:1px solid #30363d;padding:6px 8px">DualNICBCHA HA failover</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha</td><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">medium</td><td style="border:1px solid #30363d;padding:6px 8px">HA failover test standalone failure</td><td style="border:1px solid #30363d;padding:6px 8px">Review HA failover pod logs</td></tr>
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Pattern</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suites affected</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">GNSS / GM FREERUN (clock class 248)</td><td style="border:1px solid #30363d;padding:6px 8px">bc, dualfollower, dualnicbc, dualnicbcha, oc, tbc — all suites, every parallel topology</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">Missing phc2sys-delay backport</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha only (serial + parallel)</td></tr>
 </table>
 <br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Lab infra team:</strong> Inspect T-GM GNSS status and ts2phc/ptp4l logs during the parallel test window; if GNSS was lost, restore signal and rerun — this unblocks 6 failures immediately and may resolve the tgm failures too.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Test/CI team:</strong> Provision a WPC/E810 NIC with ≥2 PHC-sharing interfaces in the tbc CI lab node, or patch <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpConfigTelcoBC()</code> to call <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Skip</code> rather than <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail</code> when no T-BC solution is found — unblocks 5 tbc failures.</div>
-<div style="padding-left:16px;margin:2px 0">3. <strong>Test/CI team:</strong> Retrieve and publish full bc+…+tgm Group 2 (T-GM) and Group 3 (DualNICBCHA) per-suite details; current analysis was truncated, leaving 4 failures with unknown breaking change and flake status.</div>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Open Questions</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Serial-passed / parallel-failed paradox:</strong> bc-serial event tests passed (API reachability, <75 s) while bc-parallel clock-sync soaked to timeout (363 s). The per-suite analysis argues these test different things (API up vs. OS clock LOCKED over 6 min) — this interpretation is consistent but not conclusively proven; if the lab was healthy at serial time and degraded mid-run, it would also explain the pattern. Recommend correlating ptp4l/ts2phc timestamps against the serial→parallel transition.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Hypothesis (unverified cascade):</strong> T-GM GNSS instability (Group 3, tgm suite) may have caused T-GM FREERUN → downstream BC/OC nodes unable to achieve LOCKED → parallel clock-sync timeout (Group 1). No ptp4l log evidence linking Group 1 BC node clocks to the T-GM clock identity is available; this cascade must be verified before treating Groups 1 and 3 as a single root cause.</div>
-<div style="padding-left:16px;margin:2px 0">3. <strong>T-BC PR backport status unverified:</strong> PR #205 is the candidate breaking change for the tbc topology failure; backport to release-4.22 has not been confirmed. If not backported, the root cause is purely a lab hardware gap, not a code regression.</div>
-<br>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0"><div style="margin-top:16px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:8px"><div style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Per-Suite Analysis</div><a href="#suite-tbc" style="display:inline-block;padding:4px 12px;background:#1f6feb33;border:1px solid #1f6feb;border-radius:16px;font-size:12px;font-weight:600;color:#58a6ff;text-decoration:none;margin:3px 2px">tbc</a> <a href="#suite-bc+dualfollower+dualnicbc+dualnicbcha+oc+tgm" style="display:inline-block;padding:4px 12px;background:#1f6feb33;border:1px solid #1f6feb;border-radius:16px;font-size:12px;font-weight:600;color:#58a6ff;text-decoration:none;margin:3px 2px">bc+dualfollower+dualnicbc+dualnicbcha+oc+tgm</a></div><div style="margin-top:16px;border-top:1px solid #30363d;padding-top:12px"><h3 style="color:#f0f6fc;font-size:15px;margin-bottom:8px">Per-Suite Details</h3><div id="suite-tbc" style="margin-top:12px;scroll-margin-top:20px"><details style="background:#0d1117;border:1px solid #30363d;border-radius:8px;overflow:hidden"><summary style="cursor:pointer;padding:10px 16px;background:#161b22;font-size:14px;font-weight:600;color:#58a6ff;border-bottom:1px solid #30363d">&#9654; tbc (6 failures)</summary><div style="padding:12px 16px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: tbc — 6 failures</h4>
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> The T-BC BeforeAll setup fails because the lab can't satisfy T-BC hardware/topology requirements, causing all 5 serial tests to error; the 1 parallel event test times out waiting for OsClockSyncStateChange events (a cross-suite infrastructure issue affecting all parallel event suites).</p>
-<br>
-<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_failure</p>
-<br>
-<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<p style="margin:4px 0">The GNSS failure is universal and cross-suite; the phc2sys backport gap is suite-specific to dualnicbcha because it is the only topology tested here that exercises the phc2sys source-switching path under DualNICBCHA conditions.</p>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<p style="margin:4px 0"><strong>Actionable Recommendations:</strong></p>
 <br>
-<p style="margin:4px 0"><strong>Group 1: T-BC topology setup failure — BeforeAll abort</strong> (5 tests)</p>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Re-run the job after confirming GNSS antenna/receiver health on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code>.</strong> The ts2phc restart count (5 at job start) and persistent class 248 indicate the testbed hardware had been cycling before the job began. Once GM reaches class 7, the 13 GNSS-cascade failures will resolve without any code change.</div>
 <br>
-<div style="padding-left:16px;margin:2px 0">&bull; Tests: PTP daemon apply match rule based on nodeLabel, Downstream slave can sync to BC master, Can provide a profile with higher priority, Should restart phc2sys with no socket errors after SIGTERM, Check GM announcements in locked mode and holdover transitions</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Evidence:</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testconfig.go:1898-1920</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpConfigTelcoBC()</code> returns <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"no T-BC solution found for TBC"</code> or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"T-BC requires at least 2 interfaces on WPC NIC for slave interface, found N"</code> when L2 discovery can't map the lab to T-BC requirements.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp.go:364-367</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">execute.BeforeAll</code> calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail(fmt.Sprintf("Could not create a ptp config, err=%s", err))</code>, propagating as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error</code> to all 5 tests in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP e2e tests</code> Context.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Contradiction resolved: identical test names pass in bc-serial (time: 4–10s each) because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">CreatePtpConfigurationsWithRetry</code> succeeds for BC topology but fails for TBC — confirmed by JSON results showing bc-serial <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pass</code> vs tbc-serial <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error</code> for the same spec names.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PtpConfigTelcoBC</code> (testconfig.go:1891) requires a WPC/E810 node with ≥2 interfaces sharing the same PHC clock (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">InterfacesByPHCAndPins</code> at testconfig.go:1913 + len check at testconfig.go:1918). If the L2 discovery (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">AlgoTelcoBCString</code> solver at testconfig.go:1898) finds zero valid T-BC solutions for the current lab topology, the BeforeAll fails and all 5 "PTP e2e tests" Context specs fail with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code>. The T-BC test mode was introduced into <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> by commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">84723c8</code> / PR #205 (merged June 23, 2026); the `re</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Cherry-pick <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bb43e35</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">402a5b0</code> from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> into <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator</code>.</strong> These commits add a ptp4l-sync wait before the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetPodLogsRegex</code> phc2sys log search, matching the delayed-startup behavior introduced in linuxptp-daemon#215. Without this backport, the dualnicbcha serial and parallel tests will continue to fail on every 4.22 nightly that ships the delayed-startup daemon.</div>
 <br>
-<p style="margin:4px 0">_(truncated — see per-suite analysis for full details)_</p></div></details></div>
-<div id="suite-bc+dualfollower+dualnicbc+dualnicbcha+oc+tgm" style="margin-top:12px;scroll-margin-top:20px"><details style="background:#0d1117;border:1px solid #30363d;border-radius:8px;overflow:hidden"><summary style="cursor:pointer;padding:10px 16px;background:#161b22;font-size:14px;font-weight:600;color:#58a6ff;border-bottom:1px solid #30363d">&#9654; bc+dualfollower+dualnicbc+dualnicbcha+oc+tgm (9 failures)</summary><div style="padding:12px 16px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: bc+dualfollower+dualnicbc+dualnicbcha+oc+tgm — 9 failures</h4>
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> All 5 parallel "Event based tests PTP Slave Clock Sync" tests hit the 6-minute soak timer without OS clock ever reaching LOCKED state; T-GM GNSS hardware tests failed independently; DualNICBCHA HA failover test failed as a standalone issue.</p>
-<br>
-<p style="margin:4px 0"><strong>Suite Issue Class:</strong> infra_other</p>
-<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<div style="padding-left:16px;margin:2px 0">3. <strong>Add a GM pre-flight health gate to the CI job.</strong> Before running any slave or BC tests, assert that the T-GM reports clock class ≤ 7 (and ts2phc restart count is 0). A pre-flight failure would surface infra problems immediately and avoid burning the full ~16-test suite on an unrecoverable testbed state.</div>
 <br>
 <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">infra_flake</code> (dominant, ~13/16) + <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_regression</code> (secondary, ~3/16 — missing backport)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH — every parallel suite is blocked by the GNSS infra issue, and the dualnicbcha test regression will recur on every subsequent nightly until the backport lands.</p>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Per-Suite Details</h2>
+<br>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">dualfollower</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualfollower (1 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> The single dualfollower failure is the "Event based tests PTP Slave Clock Sync" parallel test timing out because the OS clock never reached LOCKED state — a symptom of T-GM (grandmaster) GNSS instability that knocked out all parallel clock-sync tests across every PTP mode simultaneously.</p>
+<br>
 <p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<p style="margin:4px 0"><strong>Group 1: Parallel clock sync timeout — OS Clock never LOCKED</strong> (5 tests)</p>
-<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-parallel] Event based tests PTP Slave Clock Sync</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualfollower-parallel] Event based tests PTP Slave Clock Sync</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbc-parallel] Event based tests PTP Slave Clock Sync</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-parallel] Event based tests PTP Slave Clock Sync</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[oc-parallel] Event based tests PTP Slave Clock Sync</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[bc-parallel] Event based tests PTP Slave Clock Sync": {"time": 363.895689547, "result": "error"}</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[dualfollower-parallel] Event based tests PTP Slave Clock Sync": {"time": 363.825274809, "result": "error"}</code> — all five ran ≈363 s (6-minute test timer)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testSyncState()</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/conformance/parallel/ptp.go</code> sets a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testCaseDuration</code> timer (6 min from config); if <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">wasLocked</code> is still <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">false</code> at expiry it calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail("OS Clock was never LOCKED and test timed out")</code>. All 5 parallel suites hit this branch simultaneously, indicating the lab's OS clock sync state never transitioned to LOCKED during the parallel test window. The consistent ≈363 s across all 5 modes rules out per-mode flake and points to a shared lab infrastructure condition (e.g. upstream T-GM instability during the parallel phase — see Group 2 — is a plausible driver but unverified cascade: no ptp4l log evidence linking BC nodes to the T-GM clock identity is available in the provided evidence files).</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Contradiction addressed:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-serial]</code> event tests PASSED (e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"Should receive events after linuxptp-daemon pod restart [Serial]"</code> 74.3 s, `"Should check for ptp events [Serial</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: T-GM GNSS instability cascades to OS clock never LOCKED</strong> (affects: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualfollower-parallel] Event based tests PTP Slave Clock Sync</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">junit-failures.txt — dualfollower parallel failure:</h2>
+<p style="margin:4px 0">Test: [It] [dualfollower-parallel] Event based tests PTP Slave Clock Sync</p>
+<p style="margin:4px 0">Message: OS Clock was never LOCKED and test timed out</p>
 <br>
-<p style="margin:4px 0">_(truncated — see per-suite analysis for full details)_</p></div></details></div></div>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">junit-failures.txt — same error across ALL parallel suites (not just dualfollower):</h2>
+<p style="margin:4px 0">Test: [It] [bc-parallel] Event based tests PTP Slave Clock Sync</p>
+<p style="margin:4px 0">Message: OS Clock was never LOCKED and test timed out</p>
+<p style="margin:4px 0">Test: [It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync</p>
+<p style="margin:4px 0">Message: OS Clock was never LOCKED and test timed out</p>
+<p style="margin:4px 0">Test: [It] [dualnicbcha-parallel] Event based tests PTP Slave Clock Sync</p>
+<p style="margin:4px 0">Message: OS Clock was never LOCKED and test timed out</p>
+<p style="margin:4px 0">Test: [It] [oc-parallel] Event based tests PTP Slave Clock Sync</p>
+<p style="margin:4px 0">Message: OS Clock was never LOCKED and test timed out</p>
+<p style="margin:4px 0">Test: [It] [tbc-parallel] Event based tests PTP Slave Clock Sync</p>
+<p style="margin:4px 0">Message: OS Clock was never LOCKED and test timed out</p>
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">junit-failures.txt — TGM serial tests exposing the upstream GM instability:</h2>
+<p style="margin:4px 0">Test: [It] [tgm-serial] PTP e2e tests WPC GM Verification Tests Verify ts2phc metrics are cleaned up after GM PtpConfig delete and re-apply [Serial]</p>
+<p style="margin:4px 0">Message: ts2phc restart count should continue after re-apply (not reset), got 1 (initial was 5)</p>
+<br>
+<p style="margin:4px 0">Test: [It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</p>
+<p style="margin:4px 0">Message: Timed out waiting for clock class 7</p>
+<br>
+<p style="margin:4px 0">Test: [It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</p>
+<p style="margin:4px 0">Message: expected a metric [7.000000] but got map[/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/ens7fx/master:248]</p>
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">Source: test/conformance/parallel/ptp.go:387-393</h2>
+<p style="margin:4px 0">wasLocked := false</p>
+<p style="margin:4px 0">for {</p>
+<p style="margin:4px 0">select {</p>
+<p style="margin:4px 0">case <-tcEndChan:</p>
+<p style="margin:4px 0">if !wasLocked {</p>
+<p style="margin:4px 0">Fail("OS Clock was never LOCKED and test timed out")</p>
+<p style="margin:4px 0">}</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The T-GM node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code>) had ts2phc already cycling (5 restarts counted at test start; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ts2phc restart count should continue after re-apply (not reset), got 1 (initial was 5)</code>), and its GNSS source never returned to clock class 7 (observed as class 248 = PRTC unlocked/free-run). Without a healthy GM pushing lock downstream, no BC or follower in any topology could drive phc2sys to emit an <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OsClockSyncStateChange</code> event with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">state=LOCKED</code>; the test at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/conformance/parallel/ptp.go:393</code> therefore exhausts its timer across every parallel suite. The dualfollower serial tests all passed (0 failures on 78 tests), confirming PTP operator/daemon deployment was healthy — only the physical timing signal was absent.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">scripts/check_backport.py</code> was available to verify backport status of candidate SHAs. The failure pattern (all suites, same tick, pre-existing ts2phc restart counter = 5) is consistent with transient lab hardware instability rather than a code change on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code>.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — lab hardware flake. The T-GM GNSS instability is transient and hardware-induced. The dualfollower serial suite passing in the same run (78/78) confirms no code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-run the job; if it persists, investigate the T-GM node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code>) GNSS/ts2phc health (check why ts2phc had already restarted 5 times before tests began). No code change is required on the ptp-operator <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> branch.</div>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_flake</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">dualnicbc</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualnicbc (1 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> The single <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbc-parallel] Event based tests PTP Slave Clock Sync</code> failure is a cascade from the T-GM node (cnfdf32) being stuck in clock class 248 (FREERUN) due to GNSS signal unavailability, which prevented any downstream slave from ever reaching LOCKED state.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: T-GM GNSS signal loss / GM stuck in FREERUN (clock class 248)</strong> (affects: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbc-parallel] Event based tests PTP Slave Clock Sync</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">From junit-failures.txt (tgm-serial suite, same CI run):</h2>
+<p style="margin:4px 0">Test: [It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</p>
+<p style="margin:4px 0">Message: expected a metric [7.000000] but got map[/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/ens7fx/master:248]</p>
+<br>
+<p style="margin:4px 0">Test: [It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</p>
+<p style="margin:4px 0">Message: Timed out waiting for clock class 7</p>
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">From junit-failures.txt (dualnicbc-parallel):</h2>
+<p style="margin:4px 0">Test: [It] [dualnicbc-parallel] Event based tests PTP Slave Clock Sync</p>
+<p style="margin:4px 0">Message: OS Clock was never LOCKED and test timed out</p>
+<br>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">From test/conformance/parallel/ptp.go:390-393:</h2>
+<p style="margin:4px 0">case <-tcEndChan:</p>
+<p style="margin:4px 0">// The os clock never reach LOCKED status and the test has timed out</p>
+<p style="margin:4px 0">if !wasLocked {</p>
+<p style="margin:4px 0">Fail("OS Clock was never LOCKED and test timed out")</p>
+<p style="margin:4px 0">}</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The T-GM node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code> was reporting clock class 248 (FREERUN) instead of class 7 (PRTC/LOCKED), confirmed by the metric <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">map[/cluster/node/cnfdf32.../ens7fx/master:248]</code>. This is a GNSS signal availability failure on the physical testbed: without the GM achieving LOCKED state, no downstream PTP slave or BC node can synchronize, so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">wasLocked</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">testSyncState()</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/conformance/parallel/ptp.go:387</code>) was never set to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">true</code> before the test timer (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">tcEndChan</code>) fired. All 6 parallel "PTP Slave Clock Sync" tests across all modes (bc, dualfollower, dualnicbc, dualnicbcha, oc, tbc) failed with the identical message, which is the characteristic pattern of an upstream GM failure cascading to all slaves.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change is implicated; the linuxptp-daemon <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> HEAD is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">14eb78891b22cd2b7a4056fdac4f8131fb73649b</code> (Merge PR #629, upstream-sync-2026-07-22) and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">check_backport.py</code> is not present in this workspace to verify. The failure pattern (GM FREERUN, GNSS timeout) points to physical testbed infra, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> yes — this is an infra flake: GNSS signal instability on the telco5g testbed hardware causes intermittent T-GM lock failures that are not reproducible by code changes alone.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-run the job; if the GNSS signal is restored the T-GM will reach class 7 and all downstream slave tests will pass. If recurring, investigate the GNSS antenna/receiver on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code> for hardware or connectivity issues.</div>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> infra_timeout</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">dualnicbcha</h3>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualnicbcha (2 failures)</h4>
+<br>
+<p style="margin:4px 0"><strong>Suite TL;DR:</strong> Both failures are caused by the OCP 4.22 <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon</code> image now intentionally delaying phc2sys startup until ptp4l synchronizes, while the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> test code was never updated to wait for that prerequisite — the fix exists only on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> and has not been cherry-picked.</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Delayed phc2sys startup not accounted for in release-4.22 test code</strong> (affects: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-serial] PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-parallel] Event based tests PTP Slave Clock Sync</code>)</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<br>
+<p style="margin:4px 0">Serial test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">junit-failures.txt</code>):</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">could not find regex in log stream for openshift-ptp/linuxptp-daemon-5qc8p</p>
+<p style="margin:4px 0">container=linuxptp-daemon-container,</p>
+<p style="margin:4px 0">err=error reading from stream: context deadline exceeded</p>
+<p style="margin:4px 0">```</p>
+<br>
+<p style="margin:4px 0">Parallel test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">junit-failures.txt</code>):</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">OS Clock was never LOCKED and test timed out</p>
+<p style="margin:4px 0">```</p>
+<br>
+<p style="margin:4px 0">Build log confirming the deployed image is from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code>:</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">+ export PTP_UNDER_TEST_BRANCH=release-4.22</p>
+<p style="margin:4px 0">+ PTP_UNDER_TEST_BRANCH=release-4.22</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">git clone --single-branch --branch release-4.22 https://github.com/openshift/ptp-operator.git</p>
+<p style="margin:4px 0">```</p>
+<br>
+<p style="margin:4px 0"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> test code (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">git show FETCH_HEAD:test/conformance/serial/ptp.go</code>): directly calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetPodLogsRegex</code> for phc2sys log immediately, <strong>with no prior wait for ptp4l to reach SLAVE state</strong>:</p>
+<p style="margin:4px 0">```go</p>
+<p style="margin:4px 0">// Get phc2sys logs to identify which interface it's using</p>
+<p style="margin:4px 0">const phc2sysLogPattern = <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">phc2sys(?m).<em>?:.</em> selecting (\w+) as out-of-domain source clock</code></p>
+<p style="margin:4px 0">logMatches, err := pods.GetPodLogsRegex(fullConfig.DiscoveredClockUnderTestPod.Namespace, ...)</p>
+<p style="margin:4px 0">```</p>
+<br>
+<p style="margin:4px 0"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> branch fix (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bb43e35</code>) commit message:</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">phc2sys is now intentionally delayed in linuxptp-daemon until the clock</p>
+<p style="margin:4px 0">source (ptp4l or ts2phc) has synchronized. The DualNICBCHA test was</p>
+<p style="margin:4px 0">timing out during the 1-minute log search window because phc2sys hadn't</p>
+<p style="margin:4px 0">started yet.</p>
+<p style="margin:4px 0">Prerequisite: k8snetworkplumbingwg/linuxptp-daemon#215</p>
+<p style="margin:4px 0">```</p>
+<br>
+<p style="margin:4px 0">Delayed startup confirmed in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">linuxptp-daemon/pkg/daemon/daemon.go:923-926</code>:</p>
+<p style="margin:4px 0">```go</p>
+<p style="margin:4px 0">if p.skipInitialStartup != "" {</p>
+<p style="margin:4px 0">glog.Infof("Delaying %s startup: %s", p.name, p.skipInitialStartup)</p>
+<p style="margin:4px 0">continue</p>
+<p style="margin:4px 0">}</p>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">And cleared only after ptp4l reports sub-second offset (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">daemon.go:2094-2131</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">HandleDelayedPhc2sysStartup</code>).</p>
+<br>
+<p style="margin:4px 0">Parallel test fail site (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/conformance/parallel/ptp.go:393</code>):</p>
+<p style="margin:4px 0">```go</p>
+<p style="margin:4px 0">// The os clock never reach LOCKED status and the test has timed out</p>
+<p style="margin:4px 0">Fail("OS Clock was never LOCKED and test timed out")</p>
+<p style="margin:4px 0">```</p>
+<br>
+<p style="margin:4px 0">Verified <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bb43e35</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">402a5b0</code> are absent from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> (30-deep <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FETCH_HEAD</code> log: neither SHA nor their commit messages appear; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> HEAD is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">48030af</code>).</p>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The OCP 4.22.0-0.nightly-2026-07-22-152558 linuxptp-daemon image includes the intentional delayed-phc2sys-startup feature (introduced by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">k8snetworkplumbingwg/linuxptp-daemon#215</code>): phc2sys is held in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">skipInitialStartup</code> state and only launched by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">HandleDelayedPhc2sysStartup</code> once ptp4l reports an offset below 1 second (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">daemon.go:2102</code>). The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> test code at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/conformance/serial/ptp.go</code> jumps directly to streaming phc2sys logs with a 1-minute timeout, so the context expires before phc2sys has emitted the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">selecting … as out-of-domain source clock</code> line. For the parallel test, phc2sys not running means <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">CLOCK_REALTIME</code> never achieves the LOCKED state that <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">parallel/ptp.go:393</code> waits for. The fix (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bb43e35</code>, "test: update CI tests for delayed phc2sys startup") explicitly inserts an <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Eventually</code> gate waiting for the primary BC slave interface to reach SLAVE state before searching phc2sys logs, and is merged to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> but <strong>not</strong> cherry-picked to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code>.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Linuxptp-daemon behavioral change: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">k8snetworkplumbingwg/linuxptp-daemon#215</code> (delayed phc2sys startup — synced into OCP 4.22 nightly)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Missing test fix (main only): https://github.com/openshift/ptp-operator/commit/bb43e35bc01d23cfbb2aa9bee59b4cae193c2021 — NOT cherry-picked to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Related assertion fix (main only): https://github.com/openshift/ptp-operator/commit/402a5b07852f717809aad6e475323bc1907f0b2d — NOT cherry-picked to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code></div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> No — the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> test code has no mechanism to wait for phc2sys startup; every run against this image will deterministically time out until the fix is backported.</div>
+<br>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Cherry-pick <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">bb43e35</code> (and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">402a5b0</code> for the related assertion fix) from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> into <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift/ptp-operator</code>. Alternatively, consider backporting <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">k8snetworkplumbingwg/linuxptp-daemon#215</code>'s context to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> documentation so the relationship between daemon behavior and test expectations is explicit.</div>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_regression</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
 </div>
 
 <div class="footer">
