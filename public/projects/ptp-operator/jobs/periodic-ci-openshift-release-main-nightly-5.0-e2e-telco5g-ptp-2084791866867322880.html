@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-08-06T19:50:52.438913+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-07T19:19:25.347043+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -84,39 +84,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Lab cluster setup aborted because a stale <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> file existed on the lab host; no PTP tests ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Stale Abort File on Lab Host (1 CI step failure, 0 PTP tests ran)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">e2e-telco5g-ptp-telco5g-ptp-cluster-setup</code> (pre-step; all downstream PTP tests were never reached)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">fatal: [10.8.34.218]: FAILED! => {"failed_when_result": true, ... "path": "/home/kni/abort", "exists": true}</p>
-<p style="margin:4px 0">ERROR: kubeconfig not found at /tmp/secret/kubeconfig after fetch-kubeconfig</p>
-<p style="margin:4px 0">Step e2e-telco5g-ptp-telco5g-ptp-cluster-setup failed after 43s.</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The Ansible playbook <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> task "Check if abort file exists" (line 12) found <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> present on lab host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.8.34.218</code> and intentionally failed — this is a guard that halts provisioning when a prior job left the cluster in a bad state or flagged the host as busy. Because the playbook aborted, the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fetch-kubeconfig</code> phase never wrote the kubeconfig, causing the cluster-setup step to exit 1. No PTP operator deployment or tests were ever attempted.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a lab host state issue, not a code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — stale abort files are a known transient lab condition; retrying after the abort file is cleared should succeed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Manually remove <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> from lab host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.8.34.218</code> (or the lab automation should clean it up between jobs) and re-trigger the job.</div>
-<br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
-<br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">telco5g-ptp-cluster-setup</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Stale <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> on lab host blocked cluster provisioning</td><td style="border:1px solid #30363d;padding:6px 8px">Remove abort file, retry</td></tr>
-</table>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. Remove <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> from lab host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.8.34.218</code>; verify lab cleanup playbooks run between jobs to prevent stale abort files.</div>
-<div style="padding-left:16px;margin:2px 0">2. Re-trigger the periodic job — no ptp-operator code change is required.</div>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">
