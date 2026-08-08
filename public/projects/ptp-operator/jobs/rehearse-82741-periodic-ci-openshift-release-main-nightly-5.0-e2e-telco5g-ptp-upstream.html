@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>rehearse-82741-5.0-e2e-telco5g-ptp-upstream</code></h1>
-  <div class="meta">Generated: 2026-08-05T19:05:12.425889+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-08T19:06:29.540078+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#rehearse-82741-periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/82741/rehearse-82741-periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2085070758815469568" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/82741/rehearse-82741-periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2085818604598595584" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">aborted</div>
+    <div class="info-value" style="color:#f85149">failure</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,16 +62,19 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">30m</div>
+    <div class="info-value">35m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
     <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
   </div>
-  
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#d29922">MEDIUM</span></div>
+  </div>
   <div class="info-card">
     <div class="info-label">Run Date</div>
-    <div class="info-value" style="font-size:12px">2026-08-05</div>
+    <div class="info-value" style="font-size:12px">2026-08-07</div>
   </div>
 </div>
 
@@ -81,7 +84,39 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> PR #82741's new <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">source /output/golang-1.25.0</code> line fails immediately — file does not exist in the test container.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> build_error</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Missing golang-1.25.0 file in CI test container (all tests)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> (none — test step aborted before any PTP test ran)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_other | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">+ [[ 5.0 =~ ^[5-9]\. ]]</p>
+<p style="margin:4px 0">+ source /output/golang-1.25.0</p>
+<p style="margin:4px 0">/bin/bash: line 426: /output/golang-1.25.0: No such file or directory</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The rehearsed PR #82741 ("step-registry/telco-runner: refactor PTP CI script, add Go 1.25.0") added a branch for OCP <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">^[5-9]\.</code> versions that sources <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/output/golang-1.25.0</code>. That file does not exist in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-telco-runner-latest</code> container image used by the job. The test step exited with code 1 after 8 seconds — before any PTP test could execute. The PTP operator itself was never deployed or tested.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> [openshift/release#82741](https://github.com/openshift/release/pull/82741) — confirmed as the PR being rehearsed; its script change introduced the failing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">source</code> call.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — deterministic: the file is simply absent from the container image.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Either (a) add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/output/golang-1.25.0</code> to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-telco-runner</code> container image used by OCP 5.x jobs, or (b) guard the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">source</code> call with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[[ -f /output/golang-1.25.0 ]] && source /output/golang-1.25.0</code> and install Go separately. The PR should not merge until the image provides the expected file at that path.</div>
+<br>
+<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">telco5g-ptp-tests (step)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">source /output/golang-1.25.0</code> fails — file missing in container</td><td style="border:1px solid #30363d;padding:6px 8px">Add golang-1.25.0 to ci-telco-runner image or guard the source call</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/output/golang-1.25.0</code> to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-telco-runner</code> container image (or ensure the image build step installs Go 1.25.0 at that path) before merging PR #82741.</div>
+<div style="padding-left:16px;margin:2px 0">2. Add a pre-flight check in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-ptp-tests-commands.sh</code> that verifies required toolchain files exist and fails fast with a human-readable error, rather than relying on bash's default <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">source</code> error.</div>
 </div>
 
 <div class="footer">
