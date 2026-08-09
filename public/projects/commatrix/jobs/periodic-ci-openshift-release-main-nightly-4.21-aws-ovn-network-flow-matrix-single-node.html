@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.21-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-08-08T19:24:55.229233+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-09T19:20:45.089234+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2086075237522214912" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.21-aws-ovn-network-flow-matrix-single-node/2086437674016575488" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">failure</div>
+    <div class="info-value" style="color:#3fb950">success</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,19 +62,16 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">210m</div>
+    <div class="info-value">192m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
+    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
   </div>
-  <div class="info-card">
-    <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
-  </div>
+  
   <div class="info-card">
     <div class="info-label">Run Date</div>
-    <div class="info-value" style="font-size:12px">2026-08-08</div>
+    <div class="info-value" style="font-size:12px">2026-08-09</div>
   </div>
 </div>
 
@@ -84,39 +81,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> PROJECT TESTS PASSED — CI MonitorTest failed detecting the intentional single-node reboot as a cluster invariant violation.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — MonitorTest detected intentional node reboot (1 step)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> (OpenShift e2e MonitorTest suite)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Suite run returned error: failed due to a MonitorTest failure</p>
-<p style="margin:4px 0">Step aws-ovn-network-flow-matrix-single-node-single-node-e2e-test failed after 2h7m58s.</p>
-<p style="margin:4px 0">2026/08/01 13:53:43  Node ip-10-0-37-121.us-west-2.compute.internal is NotReady</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The commatrix nftables test intentionally rebooted node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ip-10-0-37-121.us-west-2.compute.internal</code> at 13:53:26 to verify nftables rules persist across reboots. The subsequent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> step runs the OCP MonitorTest suite (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">legacy-node-invariants</code>), which flagged the "node not ready" interval as a cluster invariant violation — even though it was an expected, controlled reboot. All 3 commatrix e2e specs passed (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">finished.json: "passed":true,"result":"SUCCESS"</code>).</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is not a code regression; it is a structural gap in the CI job definition.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — this pattern recurs whenever the nftables reboot test runs before the MonitorTest-based e2e step on a single-node cluster; the reboot window is finite and deterministic.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a MonitorTest exception/allowance for the expected node-not-ready interval caused by the nftables reboot, or run the commatrix test step after the e2e suite so the reboot doesn't land within the MonitorTest observation window.</div>
-<br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
-<br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">single-node-e2e-test (MonitorTest)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Intentional nftables reboot flagged by legacy-node-invariants MonitorTest</td><td style="border:1px solid #30363d;padding:6px 8px">Exempt expected reboot window or reorder steps</td></tr>
-</table>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. File a job-config issue against <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift/release</code> to exempt the expected node-not-ready reboot window (13:53:43 UTC) from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">legacy-node-invariants</code> MonitorTest assertions — either via a known-disruption annotation or by using <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">--allowed-not-ready-seconds</code> for the reboot step.</div>
-<div style="padding-left:16px;margin:2px 0">2. Retry the job; the commatrix project code is healthy on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.21</code> — no source changes are needed.</div>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#10003;</div><div style="font-size:18px;font-weight:600;color:#3fb950">Job Passed</div><div style="color:#8b949e;margin-top:8px">All tests passed — no AI analysis needed.</div></div>
 </div>
 
 <div class="footer">
