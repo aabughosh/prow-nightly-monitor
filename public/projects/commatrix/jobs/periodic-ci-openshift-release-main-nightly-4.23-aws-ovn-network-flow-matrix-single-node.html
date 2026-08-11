@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.23-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-08-09T19:20:45.089234+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-11T08:16:12.723381+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2086437700017065984" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.23-aws-ovn-network-flow-matrix-single-node/2086799946501066752" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -62,7 +62,7 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">71m</div>
+    <div class="info-value">86m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
@@ -70,11 +70,11 @@
   </div>
   <div class="info-card">
     <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#d29922">MEDIUM</span></div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Run Date</div>
-    <div class="info-value" style="font-size:12px">2026-08-09</div>
+    <div class="info-value" style="font-size:12px">2026-08-10</div>
   </div>
 </div>
 
@@ -86,35 +86,48 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> crio ephemeral streaming port TCP 44405 is open on the SNO node but has no EndpointSlice; newly-strict test (PR #400 on main) exposes it.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Static communication matrix CSV has 7 stale port entries for OCP 4.23 nightly; one ephemeral crio port lacks an EndpointSlice.</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_regression</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — crio ephemeral port flagged as undocumented open port (1 test)</h4>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Stale Matrix Entries (1 test)</h4>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_regression | <strong>Confidence:</strong> high</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix-diff-ss</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,44405,,crio,,,master,false</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail(fmt.Sprintf("the following ports are used but don't have an endpointslice: \n %s", missingEPSMat))</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; Build log: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[FAIL] Validation ... validation_test.go:161</code> → <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FAIL! -- 3 Passed | 1 Failed</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> crio binds TCP 44405 (an ephemeral streaming port, within Linux's default <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ip_local_port_range</code> 32768–60999) on the SNO node. It has no EndpointSlice backing and is not excluded by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> (which only skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code>). This port was silently ignored before commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> (PR #400, merged 2026-02-05 on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>) because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">getLinuxDynamicPrivateRange()</code> covered 32768–60999. PR #400 removed that range from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">GetDynamicRanges()</code> AND removed <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LinuxDynamicPrivateDefaultDynamicRange</code> from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go</code>'s doc-diff filter. The only remaining dynamic filter is 30000–32767 (Kubelet NodePorts), which does not cover 44405. Since CI runs test scripts from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> against <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.23</code> cluster images, the stricter test now surfaces this port. The port itself is unchanged in 4.23 — it was always there, just previously filtered.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Candidate: [PR #400 / commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code>](https://github.com/openshift-kni/commatrix/commit/7d56343e0d6e32f2fcc9b639ada47bb83cc57740) — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Remove Linux Dynamic ranges</code> — on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> only; not verifiable on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.23</code> (no remote branch in local clone).</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — crio consistently binds to this port; the missing filter is deterministic.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"crio"</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go</code> (treating it like <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> — ephemeral/streaming port with no EPS backing), OR investigate why crio uses an ephemeral port with no EndpointSlice and add proper documentation/EPS for it.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[FAIL] Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code> — "Checking that all static entries are present in the ss (open ports) matrix"</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix-diff-summary.txt</code>: TCP 80, 443, 8798, 9192, 9099, 9443, 10258 in documented matrix but not backed by an EndpointSlice</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The documented static matrix CSV (shipped in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.23</code> production image) contains 7 entries that no longer match OCP 4.23 nightly component state. TCP 80/443 (router-default) have no EndpointSlice on SNO master; TCP 8798/9192 ports were removed or changed; TCP 9443 was replaced by 9258 for cloud-controller-manager-operator; TCP 10258 has no EPS; TCP 9099 (CVO) is open on the node but not discoverable via EndpointSlice. The test scripts run from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> branch compare the runtime-discovered EPS data against the static CSV baked into the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.23</code> image — the image's CSV is stale relative to the running 4.23 nightly.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — requires examining OCP 4.23 component changes that removed/moved these ports. Not a commatrix code regression; the static CSV data needs updating.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — 7 specific non-ephemeral ports consistently absent from EndpointSlice output.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Update the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.23</code> branch static matrix CSV to remove TCP 80, 443, 8798, 9192 and update TCP 9443→9258 and TCP 10258 entries to reflect actual OCP 4.23 nightly service topology.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group B — Ephemeral crio Port Without EndpointSlice (1 test, same run)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> Same test as Group A (combined failure)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_flake | <strong>Confidence:</strong> medium</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ss-port-analysis.txt</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LISTEN 0 4096 10.0.71.15:40513 0.0.0.0:* users:(("crio",pid=2742,fd=12))</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">port-map.txt</code>: PORT 40513 — Issues: NO_ENDPOINTSLICE, Ephemeral range: YES (32768-60999)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">investigation-summary.txt</code>: "Ephemeral port owned by 'unknown'. This is a host-level process, not a Kubernetes Service."</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> TCP 40513 is a Linux ephemeral port (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">32768–60999</code>) currently held by crio. It is documented in the matrix as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Ingress,TCP,40513,,crio,,,master,false</code> but has no backing EndpointSlice. This port is non-deterministic and will differ on every reboot, making validation inherently unreliable.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Candidate (unverified): PR #400 / commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">1fec55d</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Remove Linux Dynamic ranges from generated communication matrix</code>) — this removed dynamic ranges but may have left a specific ephemeral entry still referenced in static docs.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — the port number changes on reboot; the presence of exactly this value in the matrix is coincidental and will fail differently on future runs.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Remove the hardcoded TCP 40513 crio entry from the static matrix in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.23</code>, or add it to an exclusion/skip list in the test configuration.</div>
 <br>
 <h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
 <tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">should validate communication matrix ports match node's open ports</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">PR #400 removed Linux ephemeral range filter; crio TCP 44405 no longer silently ignored</td><td style="border:1px solid #30363d;padding:6px 8px">Add crio to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> or document crio's ephemeral port</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">should validate communication matrix ports match open ports</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">7 stale matrix entries not backed by EndpointSlice in OCP 4.23</td><td style="border:1px solid #30363d;padding:6px 8px">Update static CSV in release-4.23</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">should validate communication matrix ports match open ports</td><td style="border:1px solid #30363d;padding:6px 8px">B</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">medium</td><td style="border:1px solid #30363d;padding:6px 8px">Ephemeral crio port TCP 40513 in matrix but no EPS</td><td style="border:1px solid #30363d;padding:6px 8px">Remove ephemeral port entry from matrix</td></tr>
 </table>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go</code>, add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"crio"</code> to the service exclusion list in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> (alongside <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>) to suppress false positives from crio's ephemeral streaming ports — or investigate whether crio's use of TCP 44405 is intentional and should have an EndpointSlice in the SNO AWS OVN matrix.</div>
-<div style="padding-left:16px;margin:2px 0">2. Audit PR #400's removal of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LinuxDynamicPrivateDefaultDynamicRange</code> to confirm no other ephemeral-range ports (between 32768–60999) are also now causing false-positive failures in other job variants.</div>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Update <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.23</code> static matrix CSV</strong>: Remove TCP 80, 443, 8798, 9192; update cloud-controller-manager-operator from TCP 9443→9258; remove or correct TCP 10258 — these 7 entries no longer reflect OCP 4.23 nightly service topology.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Remove TCP 40513 from static matrix in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.23</code></strong>: This is an ephemeral crio-held port in the Linux ephemeral range (32768–60999); it will differ every reboot and should not be in the deterministic matrix (aligns with the intent of PR #400 which removed the full dynamic range).</div>
 </div>
 
 <div class="footer">

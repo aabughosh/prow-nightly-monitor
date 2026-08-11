@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-08-09T19:20:45.089234+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-11T08:16:12.723381+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2086437714277699584" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2086799959075590144" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -62,7 +62,7 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">79m</div>
+    <div class="info-value">90m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
@@ -70,11 +70,11 @@
   </div>
   <div class="info-card">
     <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">MEDIUM</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Run Date</div>
-    <div class="info-value" style="font-size:12px">2026-08-09</div>
+    <div class="info-value" style="font-size:12px">2026-08-10</div>
   </div>
 </div>
 
@@ -86,74 +86,35 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> The commatrix documentation CSV is stale for OCP 5.0 nightly — 6 ports removed from components and 9 dynamic host ports have no EndpointSlice backing.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Test fails because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> binds TCP/33045 on the SNO node and the test's known-service filter does not exclude it.</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_regression</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Stale matrix entries: documented ports no longer in use (6 ports)</h4>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — crio port 33045 not filtered as known service (1 test)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] should validate the communication matrix ports match the node's open ports</code></div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_regression | <strong>Confidence:</strong> high</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">[FAIL] Validation [It] should validate the communication matrix ports match the node's open ports</p>
-<p style="margin:4px 0">/tmp/secret/commatrix/test/e2e/validation_test.go:161</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Ports in matrix but not in use on node:</p>
-<p style="margin:4px 0">Ingress,TCP,80  (router-default)</p>
-<p style="margin:4px 0">Ingress,TCP,443 (router-default)</p>
-<p style="margin:4px 0">Ingress,TCP,8798 (machine-config-daemon)</p>
-<p style="margin:4px 0">Ingress,TCP,9192 (machine-approver/kube-rbac-proxy)</p>
-<p style="margin:4px 0">Ingress,TCP,9443 (cloud-controller-manager-operator)</p>
-<p style="margin:4px 0">Ingress,TCP,10258 (aws-cloud-controller-manager)</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix.csv</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> was generated against an older OCP 5.0 nightly. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-08-03</code> nightly removed or changed ports for several components: MCD dropped port 8798 (now only 8797 on loopback), machine-approver port 9192 is absent on SNO (single-node needs no automatic approver), and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">aws-cloud-controller-manager</code> ports 9443/10258 are no longer bound. The ingress router (80/443) is not yet listening at test time, or SNO routes traffic differently. The CSV at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> documents these as mandatory (Optional=false), causing the validation to fail.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Candidate (unverified): commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">0355747</code> (PR #489 <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">add-etcd-2381-to-docs</code>) touched the documented matrices; the OCP 5.0 nightly component port changes (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-08-03</code>) are the primary trigger. No commatrix code regression — this is documentation drift.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — the same 6 ports are consistently absent in the ss output across multiple polling intervals.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Update <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix.csv</code> on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> to remove the 6 stale entries (TCP 80, 443, 8798, 9192, 9443, 10258), and optionally add back the ports under the correct bindings if they genuinely exist but with different metadata.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group B — Open ports missing EndpointSlice (9 ports)</h4>
-<br>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code> (same test, second assertion)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_regression | <strong>Confidence:</strong> medium</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Ports open but missing EndpointSlice:</p>
-<p style="margin:4px 0">Ingress,TCP,37325,,crio,,,master,false</p>
-<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,30123,openshift-ovn-kubernetes,ovnkube,ovnkube-node-8cb24,ovnkube-controller</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,30259 / 31904  (same ovnkube-node-8cb24 pod)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Ingress,TCP,46629 / 54981 + UDP 41954 / 56065  (rpc.statd)</div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">LISTEN *:30123  users:(("ovnkube",pid=5953,fd=31))</p>
-<p style="margin:4px 0">LISTEN 0.0.0.0:46629  users:(("rpc.statd",pid=2949,fd=9))</p>
-<p style="margin:4px 0">LISTEN 10.0.109.112:37325  users:(("crio",pid=4158,fd=11))</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Three distinct sub-causes feed this group: (1) <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> binds port 37325 on the node IP — this is an ephemeral port dynamically assigned by the OS (range 32768-60999) with no Kubernetes Service; (2) <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> opens 4 dynamic RPC ports (46629, 54981 TCP; 41954, 56065 UDP) that are OS-level and have no EndpointSlice; (3) <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ovnkube</code> listens on three NodePort-range ports (30123, 30259, 31904) that have no backing EndpointSlice — these appear bound to a specific pod hash (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ovnkube-node-8cb24</code>) which suggests ephemeral internal OVN ports not tied to any Kubernetes Service. Commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3b1985e</code> (PR #493, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fix/expand-eps-entries-to-eligible-pools</code>, main only — backport to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> unverified) changed EndpointSlice expansion logic; if not backported, the ovnkube ports may now lack proper EPS resolution.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Candidate (unverified): <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3b1985e</code> (PR #493). Verify with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">python scripts/check_backport.py /tmp/ci-investigate-commatrix 3b1985e release-5.0</code>.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No for rpc.statd/crio (same ports across all polls). The ovnkube NodePorts are structurally reproducible.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> (1) Add rpc.statd dynamic ports and crio ephemeral port to the exclusion/filter list in the test or mark them Optional=true in the matrix; (2) investigate whether the 3 ovnkube NodePort-range ports need EndpointSlice entries or should be filtered as internal OVN ports; (3) cherry-pick <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3b1985e</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> if the EPS expansion fix is confirmed to address ovnkube port lookup.</div>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix-diff-ss</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,33045,,crio,,,master,false</code> (in ss, absent from EPS matrix)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail(fmt.Sprintf("the following ports are used but don't have an endpointslice: \n %s", missingEPSMat))</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[FAIL] Validation [It] should validate the communication matrix ports match the node's open ports /tmp/secret/commatrix/test/e2e/validation_test.go:161</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> binds TCP/33045 on the SNO node (visible in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ss-generated-matrix.csv</code>). <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> has no Kubernetes EndpointSlice, so it appears in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">missingEPSMat</code> (ports open on node without EPS backing). Port 33045 is above the NodePort ceiling (32767) so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> does not catch it. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> (in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go:221</code>) only skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code> — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is not listed. All other <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Missing</code> ports are correctly disposed of: rpc.statd via <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code>, and the ovnkube NodePort allocations (30613, 31434, 32546) via the NodePort dynamic range 30000–32767.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Candidate (unverified): <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">1fec55d</code> / PR #400 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">shirmoran/remove-linux-dynamic-range</code>) removed Linux ephemeral port ranges (~32768+) from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code>; previously port 33045 fell inside that range and was silently filtered. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">scripts/check_backport.py</code> tool and a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> remote ref are not present in this clone, so branch presence cannot be confirmed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — TCP/33045 is deterministically open on every OCP 5.0 SNO boot; the failure is reproducible.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go</code> (same pattern as the existing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> skip). Optionally add a comment explaining that crio binds a random TCP port for its stream/gRPC health endpoint that has no EndpointSlice.</div>
 <br>
 <h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
 <tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">should validate commatrix ports match node open ports (stale)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">6 ports in release-5.0 CSV no longer listening in OCP 5.0 nightly 2026-08-03</td><td style="border:1px solid #30363d;padding:6px 8px">Remove TCP 80,443,8798,9192,9443,10258 from matrix CSV</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">should validate commatrix ports match node open ports (missing EPS)</td><td style="border:1px solid #30363d;padding:6px 8px">B</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">medium</td><td style="border:1px solid #30363d;padding:6px 8px">9 dynamic host ports (crio ephemeral, rpc.statd dynamic, ovnkube NodePort-range) have no EndpointSlice</td><td style="border:1px solid #30363d;padding:6px 8px">Filter dynamic OS ports; verify PR #493 backport for ovnkube EPS resolution</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">should validate communication matrix ports match open ports</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">crio TCP/33045 not excluded by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code></td><td style="border:1px solid #30363d;padding:6px 8px">Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> skip in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code></td></tr>
 </table>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Update <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix.csv</code> on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code></strong>: Remove the 6 stale entries (TCP 80, 443, 8798, 9192, 9443, 10258). Confirm whether 9443/10258 have genuinely been removed in OCP 5.0 nightly or are just temporarily absent.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Verify and backport PR #493</strong> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fix/expand-eps-entries-to-eligible-pools</code>, commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3b1985e</code>) to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>; run <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">python scripts/check_backport.py /tmp/ci-investigate-commatrix 3b1985e release-5.0</code> to confirm its absence, then cherry-pick to fix ovnkube NodePort-range EPS lookup.</div>
-<div style="padding-left:16px;margin:2px 0">3. <strong>Add a filter/exclusion for ephemeral and OS-level dynamic ports</strong> (rpc.statd, crio) — mark them as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Optional=true</code> or add them to a known-dynamic-ports allowlist so they don't cause false-positive failures on future runs.</div>
+<div style="padding-left:16px;margin:2px 0">1. In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go:226</code> add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">if cd.Service == "crio" { continue }</code> inside <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code>, identical to the existing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> block.</div>
+<div style="padding-left:16px;margin:2px 0">2. Investigate whether the Linux ephemeral-range removal (PR #400) should have included a corresponding expansion of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> to cover other host services (crio, kubelet-internal) that bind above port 32767 but below the traditional Linux ephemeral floor.</div>
 </div>
 
 <div class="footer">
