@@ -45,15 +45,115 @@
     <a href="./history.html">Run History</a>
   </div>
   <div class="summary">
-    <div class="stat"><div class="stat-num" style="color:#f85149">383</div>Active</div>
-    <div class="stat"><div class="stat-num" style="color:#c9d1d9">383</div>Fingerprints</div>
-    <div class="stat"><div class="stat-num" style="color:#a371f7">36</div>Issues</div>
+    <div class="stat"><div class="stat-num" style="color:#f85149">385</div>Active</div>
+    <div class="stat"><div class="stat-num" style="color:#c9d1d9">385</div>Fingerprints</div>
+    <div class="stat"><div class="stat-num" style="color:#a371f7">37</div>Issues</div>
   </div>
   <table>
     <thead><tr>
       <th>Root Cause</th><th>First Seen</th><th>Last Seen</th><th>Affected Tests</th><th>Affected Jobs</th>
     </tr></thead>
-    <tbody><tr id="b653492f498fe9c5">
+    <tbody><tr id="4c976cc161a7be0b">
+  <td class="col-rc">
+    <div class="rc-text">s (7 failures across 1 suites)</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">Based on the prompt and all available evidence, 
+
+---
+
+**TL;DR:** GNSS hardware fault on cnfdf32 caused 7 failures across 4 suites; no code regression.
+
+**Overall Issue Class:** infra_other
+**Overall Severity:** HIGH
+
+## Root Causes (7 failures across 1 suites)
+
+### 3/7 failures — T-GM GNSS lock non-recovery on cnfdf32
+- **Suites:** tgm | **Evidence:** PROVEN
+- **What:** After GNSS signal disruption, `cnfdf32` (T-GM, `ens7fx`) receives `SYNCHRONIZED` events but clockClass never returns from 248 (FREERUN) to 7 (LOCKED). `ptp.go:4061/4157/4185`. Node was anomalously young (20m vs 45–46m peers) at inspection time, suggesting a prior reset.
+- **Breaking change:** Unknown
+- **Flake?** No — all three T-GM tests hit the same persistent hardware state.
+- **Fix:** Investigate/reset GNSS hardware on cnfdf32; verify GPS antenna and cable connectivity.
+
+### 1/7 failures — T-BC path not discoverable (tbc setup abort)
+- **Suites:** tbc | **Evidence:** PROVEN
+- **What:** `graphsolver.go:73` found BC/DualNicBC solutions but no T-BC or TBCWithSlaves path during BeforeEach. cnfdf32&#x27;s short uptime (20m) likely left its PTP interfaces not yet fully visible to the solver. `ptp.go:367`.
+- **Breaking change:** Unknown
+- **Flake?** Possibly — if cnfdf32 had stabilized earlier a T-BC path might have resolved. Retry recommended.
+- **Fix:** Ensure cnfdf32 is fully stable (all PTP interfaces discovered) before running tbc suite, then re-run.
+
+### 3/7 failures — PTP convergence/event timeouts in dualfollower+dualnicbcha
+- **Suites:** dualfollower, dualnicbcha | **Evidence:** PROVEN (per-suite); cascade from Group 1 is HYPOTHESIS (unverified)
+- **What:** Follower/BC nodes failed to achieve PTP sync or event state within test timeouts. Downstream cascade from cnfdf32 T-GM FREERUN is plausible but not independently confirmed in per-suite analysis. Both serial and parallel dualfollower tests failed.
+- **Breaking change:** Unknown
+- **Flake?** No — consistent with persistent T-GM degradation; may resolve if cnfdf32 GNSS is fixed.
+- **Fix:** Fix cnfdf32 GNSS (Group 1 fix); re-run dualfollower/dualnicbcha to confirm cascade dependency.
+
+## Summary Table
+
+| # | Test | Suite | Group | Classification | Confidence | Root Cause (one line) | Fix |
+|---|------|-------|-------|----------------|------------|----------------------|-----|
+| 1 | T-GM holdover through connection loss | tgm | 1 | infra_other | high | cnfdf32 GNSS won&#x27;t re-lock to clockClass 7 | Reset GNSS hw on cnfdf32 |
+| 2 | ts2phc termination FREERUN→LOCKED | tgm | 1 | infra_other | high | cnfdf32 GNSS won&#x27;t re-lock to clockClass 7 | Reset GNSS hw on cnfdf32 |
+| 3 | T-GM Events on GNSS reboot+recovery | tgm | 1 | infra_other | high | cnfdf32 GNSS won&#x27;t re-lock to clockClass 7 | Reset GNSS hw on cnfdf32 |
+| 4 | TBC slave reboot discovery+sync | tbc | 2 | infra_other | medium | cnfdf32 not fully ready; no T-BC graph path found | Stabilize cnfdf32, retry |
+| 5 | Dual follower port-down sync | dualfollower | 3 | infra_other | medium | PTP convergence timeout, likely T-GM cascade | Fix cnfdf32, re-run |
+| 6 | PTP Slave Clock Sync (parallel) | dualfollower | 3 | infra_other | medium | PTP convergence timeout, likely T-GM cascade | Fix cnfdf32, re-run |
+| 7 | DualNICBCHA phc2sys secondary failover | dualnicbcha | 3 | infra_other | medium | PTP convergence timeout, likely T-GM cascade | Fix cnfdf32, re-run |
+
+## Action Items
+1. **Lab infra team:** Inspect and reset cnfdf32&#x27;s GNSS hardware (antenna, cable, firmware); confirm clockClass recovers to 7 after signal disruption before scheduling next run.
+2. **CI oncall:** Re-run the full job once cnfdf32 is healthy; all 7 failures are expected to clear.
+3. **Optionally:** Add a pre-suite readiness gate that verifies T-GM clockClass=7 and all worker node ages are within a reasonable threshold before allowing tbc/tgm suites to proceed.
+
+## Open Questions
+- **Cascade hypothesis (Groups 1→3):** The dualfollower and dualnicbcha failures are consistent with T-GM FREERUN cascading downstream, but the per-suite analysis for those suites does not independently confirm cnfdf32 as the dependency. This should be verified by checking whether dualfollower/dualnicbcha nodes (cnfdf30/cnfdf31) showed T-GM-sourced FREERUN in their ptp4l logs at failure time.
+- **Serial-passed/parallel-failed:** Both a serial (`dualfollower-serial`) and a parallel (`dualfollower-parallel`) test failed in Group 3, which is consistent with a system-wide T-GM degradation rather than a test isolation issue — no paradox to resolve.
+- **cnfdf32 young age:** The 20m node age at inspection could indicate a crash-restart loop unrelated to GNSS. Whether the GNSS fault caused the restart or vice versa is unknown.
+
+
+---
+
+&lt;!-- SUITE_DETAILS_START --&gt;
+## Per-Suite Details
+
+
+### dualfollower+dualnicbcha+tbc+tgm
+
+---
+
+### Suite: dualfollower+dualnicbcha+tbc+tgm — 7 failures
+
+**TL;DR:** Three independent lab-side failures hit four different test suites: a GNSS hardware fault on cnfdf32 prevents T-GM lock recovery, a missing T-BC topology path aborts the TBC suite in setup, and three tests in dualfollower/dualnicbcha hit PTP convergence timeouts.
+
+**Suite Issue Class:** infra_other  
+**Suite Severity:** HIGH
+
+---
+
+**Root Cause Groups:**
+
+**Group 1: T-GM GNSS lock recovery failure** (3 tests)
+- Tests: `[tgm-serial] Testing WPC T-GM holdover through connection loss`, `[tgm-serial] Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED`, `[tgm-serial] Testing T-GM Events on GNSS reboot and recovery`
+- Evidence: `[FAILED] Timed out waiting for clock class 7` (ptp.go:4061); `[FAILED] Timed out waiting for state FREERUN and ClockClass 248` (ptp.go:4185); `[FAILED] expected a metric [7.000000] but got map[...metric:248]` (ptp.go:4157)
+- Root Cause: Node `cnfdf32.telco5gran.eng.rdu2.redhat.com` is the T-GM (uses `ens7fx`). After GNSS signal disruption, the clock never transitions back from clockClass 248 (FREERUN) to clockClass 7 (LOCKED). The GNSS `SYNCHRONIZED` event IS received (`ens7fx/master/notification:SYNCHRONIZED` logged at 08:31:01), but clock class remains 248 — pointing to a hardware or firmware issue on cnfdf32&#x27;s GNSS receiver that prevents re-locking. cnfdf32 was also anomalously young (20m AGE vs 45m/46m for peer nodes) at cluster inspection time.
+- Breaking PR/Commit: Unknown — this is a lab hardware issue, not a code regression.
+- Flake? No — all three TGM tests hit the same failure mode consistently, confirming a persistent GNSS hardware state problem on cnfdf32.
+- Fix: Investigate/reset GNSS hardware on cnfdf32 or replace the node; confirm GPS antenna/cable connectivity.
+
+**Group 2: T-BC topology not discoverable** (1 test)
+- Tests: `[tbc-serial] PTP Reboot discovery The slave node is rebooted and discovered and in sync [Serial]`
+- Eviden
+
+_(truncated — see per-suite analysis for full details)_
+
+&lt;!-- SUITE_DETAILS_END --&gt;</div></details>
+  </td>
+  <td class="col-date">2026-08-11</td>
+  <td class="col-date">2026-08-11</td>
+  <td class="col-tests"><ul><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]</li><li>[It] [dualfollower-parallel] Event based tests PTP Slave Clock Sync</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2087056583728041984" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-11)</span></li></ul></td>
+</tr>
+<tr id="b653492f498fe9c5">
   <td class="col-rc">
     <div class="rc-text">Groups</div>
     <details><summary>Full analysis</summary><div class="full-analysis">## Cross-Suite Summary — periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp
@@ -238,7 +338,7 @@
   <td class="col-date">2026-07-29</td>
   <td class="col-date">2026-08-11</td>
   <td class="col-tests"><ul><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP ClockSync PTP daemon apply match rule based on nodeLabel [Serial]</li><li>[It] [tbc-serial] PTP e2e tests Check GM announcements in locked mode and holdover transitions [Serial]</li><li>No meaningful output found in logs</li><li>Test failed: ! =&gt; {&quot;ansible_facts&quot;: {&quot;discovered_interpreter_python&quot;: &quot;/usr/libexec/platform-python&quot;}, &quot;changed&quot;: false,</li><li>Last log lines: [36mINFO[0m[2026-08-07T00:02:03Z] Ran for 0s | [31mERRO[0m[2026-08-07T00:02:03Z] Some steps failed: </li><li>Last log lines: [36mINFO[0m[2026-08-07T06:01:07Z] Ran for 0s | [31mERRO[0m[2026-08-07T06:01:07Z] Some steps failed: </li><li>Last log lines: [36mINFO[0m[2026-08-10T00:02:02Z] Ran for 0s | [31mERRO[0m[2026-08-10T00:02:02Z] Some steps failed: </li><li>Last log lines: [36mINFO[0m[2026-08-10T06:01:35Z] Ran for 0s | [31mERRO[0m[2026-08-10T06:01:35Z] Some steps failed: </li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp/2086603888516927488" target="_blank">5.1-e2e-telco5g-ptp</a> <span class="date">(2026-08-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream/2086694366721609728" target="_blank">5.1-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp/2085516717290688512" target="_blank">5.1-e2e-telco5g-ptp</a> <span class="date">(2026-08-09)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream/2085607102474096640" target="_blank">5.1-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-09)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2083627994911346688" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-08)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp/2085516717290688512" target="_blank">5.1-e2e-telco5g-ptp</a> <span class="date">(2026-08-08)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream/2085607102474096640" target="_blank">5.1-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-08)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/82741/rehearse-82741-periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2085818604598595584" target="_blank">rehearse-82741-5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-08)</span></li><li class='more'>+15 more runs</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2087193362930077696" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/82910/rehearse-82910-periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2087179245330632704" target="_blank">rehearse-82910-5.0-e2e-telco5g-ptp</a> <span class="date">(2026-08-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp/2086603888516927488" target="_blank">5.1-e2e-telco5g-ptp</a> <span class="date">(2026-08-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream/2086694366721609728" target="_blank">5.1-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp/2085516717290688512" target="_blank">5.1-e2e-telco5g-ptp</a> <span class="date">(2026-08-09)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream/2085607102474096640" target="_blank">5.1-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-09)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/pr-logs/pull/openshift_release/81254/rehearse-81254-periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2083627994911346688" target="_blank">rehearse-81254-4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-08)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp/2085516717290688512" target="_blank">5.1-e2e-telco5g-ptp</a> <span class="date">(2026-08-08)</span></li><li class='more'>+17 more runs</li></ul></td>
 </tr>
 <tr id="1033685da5b80368">
   <td class="col-rc">
@@ -372,6 +472,101 @@ _(truncated — see per-suite analysis for full details)_
   <td class="col-date">2026-08-11</td>
   <td class="col-tests"><ul><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]</li><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP Reboot discovery The slave node is rebooted and discovered and in sync [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM Verification Tests Verify ts2phc metrics are cleaned up after GM PtpConfig delete and re-apply [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2086603874264682496" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-08-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2086694355812225024" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2085516701369110528" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-08-09)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2085607100800569344" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-09)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2085516701369110528" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-08-08)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2085607100800569344" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-08)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2085516701369110528" target="_blank">5.0-e2e-telco5g-ptp</a> <span class="date">(2026-08-07)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2085607100800569344" target="_blank">5.0-e2e-telco5g-ptp-upstream</a> <span class="date">(2026-08-07)</span></li></ul></td>
+</tr>
+<tr id="4118b33a854e113d">
+  <td class="col-rc">
+    <div class="rc-text">s (6 failures across 1 suites)</div>
+    <details><summary>Full analysis</summary><div class="full-analysis">---
+
+**TL;DR:** All 6 failures are lab/hardware problems: GNSS loss on T-GM node, T-BC topology undiscoverable, DualNICBCHA log timeout.
+
+**Overall Issue Class:** infra_other
+**Overall Severity:** MEDIUM
+
+## Root Causes (6 failures across 1 suites)
+
+### 3/6 failures — T-GM node stuck in FREERUN (no GNSS lock)
+- **Suites:** all+dualnicbcha+tbc+tgm | **Evidence:** PROVEN
+- **What:** Node `cnfdf32` remained at clockClass 248 (FREERUN) for the entire tgm run (08:27–08:35); all three tgm tests require a GNSS-locked baseline (clockClass ≤ 7). `ptp.go:4061/4157/4185`.
+- **Breaking change:** Unknown
+- **Flake?** Possible — intermittent GNSS antenna/receiver condition in lab; no historical recurrence data.
+- **Fix:** Verify GNSS antenna/receiver on `cnfdf32.telco5gran.eng.rdu2.redhat.com` is physically connected and rerun once clockClass 6/7 is confirmed in ts2phc logs.
+
+### 2/6 failures — T-BC topology not discoverable
+- **Suites:** all+dualnicbcha+tbc+tgm | **Evidence:** PROVEN
+- **What:** `SynchronizedBeforeSuite` aborted with &quot;no T-BC solution found for TBC&quot; (`ptp.go:367`, `parallel_suite_test.go:59`), cascading to the tbc reboot-discovery test.
+- **Breaking change:** Unknown
+- **Flake?** No — deterministic topology-discovery failure aborted tbc suite setup entirely.
+- **Fix:** Check T-BC node PtpConfig and hardware provisioning in the lab; confirm topology satisfies discovery requirements before rerunning.
+
+### 1/6 failures — DualNICBCHA daemon log read timeout
+- **Suites:** all+dualnicbcha+tbc+tgm | **Evidence:** PROVEN
+- **What:** `[dualnicbcha-serial]` phc2sys failover test timed out reading linuxptp daemon logs; log subsystem was unresponsive or slow.
+- **Breaking change:** Unknown
+- **Flake?** Possible — intermittent infra/log-collection slowness.
+- **Fix:** Check linuxptp daemon log availability on the DualNICBCHA node; retry if transient.
+
+## Summary Table
+
+| # | Test | Suite | Group | Classification | Confidence | Root Cause (one line) | Fix |
+|---|------|-------|-------|---------------|------------|----------------------|-----|
+| 1 | WPC T-GM holdover connection loss | tgm-serial | 1 | infra_other | medium | GNSS not locking on cnfdf32 (clockClass 248) | Fix GNSS antenna, rerun |
+| 2 | ts2phc termination FREERUN recovery | tgm-serial | 1 | infra_other | medium | GNSS not locking on cnfdf32 (clockClass 248) | Fix GNSS antenna, rerun |
+| 3 | T-GM Events GNSS reboot/recovery | tgm-serial | 1 | infra_other | medium | GNSS not locking on cnfdf32 (clockClass 248) | Fix GNSS antenna, rerun |
+| 4 | [SynchronizedBeforeSuite] | tbc | 2 | infra_other | medium | No T-BC solution found, suite aborted | Fix T-BC topology config |
+| 5 | TBC slave node reboot discovery | tbc-serial | 2 | infra_other | medium | Cascade from SynchronizedBeforeSuite failure | Fix T-BC topology config |
+| 6 | DualNICBCHA phc2sys secondary failover | dualnicbcha-serial | 3 | infra_other | medium | Daemon log read timeout | Check log subsystem, retry |
+
+## Action Items
+1. **Lab team:** Inspect GNSS antenna/receiver on `cnfdf32.telco5gran.eng.rdu2.redhat.com`; confirm clockClass 6/7 in ts2phc logs before rerunning tgm suite (unblocks 3 failures).
+2. **Lab team:** Diagnose T-BC topology discovery failure — verify T-BC node PtpConfig and hardware meet test prerequisites (unblocks 2 failures).
+3. **Lab team:** Check linuxptp daemon log responsiveness on DualNICBCHA node; retry the dualnicbcha test if transient.
+
+## Open Questions
+None. All root causes are consistent lab/hardware failures within a single combined suite analysis. No serial-passed/parallel-failed paradox observed. No cross-suite contradictions. No code changes identified as contributing.
+
+
+---
+
+&lt;!-- SUITE_DETAILS_START --&gt;
+## Per-Suite Details
+
+
+### all+dualnicbcha+tbc+tgm
+
+---
+
+### Suite: all+dualnicbcha+tbc+tgm — 6 failures
+
+**TL;DR:** Three distinct lab/hardware problems drove all 6 failures: the T-GM node lost GPS lock (FREERUN, clockClass 248), no T-BC topology could be discovered, and the DualNICBCHA test timed out reading daemon logs.
+
+**Suite Issue Class:** infra_other
+
+**Suite Severity:** MEDIUM
+
+---
+
+**Root Cause Groups:**
+
+**Group 1: T-GM node stuck in FREERUN — GNSS not locking** (3 tests)
+- Tests: `[tgm-serial] WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss`, `[tgm-serial] WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED`, `[tgm-serial] WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery`
+- Evidence:
+  - `[FAILED] Timed out waiting for clock class 7` — `ptp.go:4061 @ 08/06/26 08:30:51`
+  - `[FAILED] Timed out waiting for state FREERUN and ClockClass 248` — `ptp.go:4185 @ 08/06/26 08:34:01`
+  - `[FAILED] expected a metric [7.000000] but got map[/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/ens7fx/master/metric:248]` — `ptp.go:4157`
+- Root Cause: Node `cnfdf32` (the T-GM) was stuck in FREERUN (clockClass 248 = no GNSS lock) throughout the entire tgm suite run (08:27–08:35). The holdover test expected the T-GM to already be LOCKED (clockClass ≤ 7) before triggering a GNSS loss; the ts2phc termination test expected to observe a FREERUN→LOCKED recovery cycle; the events test expected to see clockClass 7 events. All three require a functioning GNSS receiver on cnfdf32, which was not providing lock. The bc-serial, dualnicbc, and dualfollower suites passed because they do not depend on GNSS hardware.
+- Breaking PR/Commit: Unknown — this is a lab hardware condition (GNSS antenna/receiver on cnfdf32), not a code change.
+- Flake? Possible — GNSS lock loss in a lab is an intermittent infra condition, but no historical data is available in this run to confirm recurrence.
+- Fix: Verify the GNSS antenna/re
+
+_(truncated — see per-suite analysis for full details)_
+
+&lt;!-- SUITE_DETAILS_END --&gt;</div></details>
+  </td>
+  <td class="col-date">2026-08-06</td>
+  <td class="col-date">2026-08-11</td>
+  <td class="col-tests"><ul><li>[SynchronizedBeforeSuite]</li><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP Reboot discovery The slave node is rebooted and discovered and in sync [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</li></ul></td>
+  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2087056583728041984" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2086332022917173248" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-09)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2085244632978952192" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-08)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2085244632978952192" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-06)</span></li></ul></td>
 </tr>
 <tr id="1bf396f531c95dc6">
   <td class="col-rc">
@@ -628,101 +823,6 @@ _(truncated — see per-suite analysis for full details)_
   <td class="col-date">2026-08-11</td>
   <td class="col-tests"><ul><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [bc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]</li><li>[It] [dualfollower-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Downstream slave can sync to BC master [Serial]</li><li>[It] [dualnicbc-serial] PTP e2e tests PTP ClockSync Can provide a profile with higher priority [Serial]</li><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync Slave can sync to master [Serial]</li><li class='more'>+8 more</li></ul></td>
   <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2086966245512450048" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-08-11)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2086241734336974848" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-08-09)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2085154201121329152" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-08-08)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2085154201121329152" target="_blank">4.20-e2e-telco5g-ptp</a> <span class="date">(2026-08-06)</span></li></ul></td>
-</tr>
-<tr id="4118b33a854e113d">
-  <td class="col-rc">
-    <div class="rc-text">s (6 failures across 1 suites)</div>
-    <details><summary>Full analysis</summary><div class="full-analysis">---
-
-**TL;DR:** All 6 failures are lab/hardware problems: GNSS loss on T-GM node, T-BC topology undiscoverable, DualNICBCHA log timeout.
-
-**Overall Issue Class:** infra_other
-**Overall Severity:** MEDIUM
-
-## Root Causes (6 failures across 1 suites)
-
-### 3/6 failures — T-GM node stuck in FREERUN (no GNSS lock)
-- **Suites:** all+dualnicbcha+tbc+tgm | **Evidence:** PROVEN
-- **What:** Node `cnfdf32` remained at clockClass 248 (FREERUN) for the entire tgm run (08:27–08:35); all three tgm tests require a GNSS-locked baseline (clockClass ≤ 7). `ptp.go:4061/4157/4185`.
-- **Breaking change:** Unknown
-- **Flake?** Possible — intermittent GNSS antenna/receiver condition in lab; no historical recurrence data.
-- **Fix:** Verify GNSS antenna/receiver on `cnfdf32.telco5gran.eng.rdu2.redhat.com` is physically connected and rerun once clockClass 6/7 is confirmed in ts2phc logs.
-
-### 2/6 failures — T-BC topology not discoverable
-- **Suites:** all+dualnicbcha+tbc+tgm | **Evidence:** PROVEN
-- **What:** `SynchronizedBeforeSuite` aborted with &quot;no T-BC solution found for TBC&quot; (`ptp.go:367`, `parallel_suite_test.go:59`), cascading to the tbc reboot-discovery test.
-- **Breaking change:** Unknown
-- **Flake?** No — deterministic topology-discovery failure aborted tbc suite setup entirely.
-- **Fix:** Check T-BC node PtpConfig and hardware provisioning in the lab; confirm topology satisfies discovery requirements before rerunning.
-
-### 1/6 failures — DualNICBCHA daemon log read timeout
-- **Suites:** all+dualnicbcha+tbc+tgm | **Evidence:** PROVEN
-- **What:** `[dualnicbcha-serial]` phc2sys failover test timed out reading linuxptp daemon logs; log subsystem was unresponsive or slow.
-- **Breaking change:** Unknown
-- **Flake?** Possible — intermittent infra/log-collection slowness.
-- **Fix:** Check linuxptp daemon log availability on the DualNICBCHA node; retry if transient.
-
-## Summary Table
-
-| # | Test | Suite | Group | Classification | Confidence | Root Cause (one line) | Fix |
-|---|------|-------|-------|---------------|------------|----------------------|-----|
-| 1 | WPC T-GM holdover connection loss | tgm-serial | 1 | infra_other | medium | GNSS not locking on cnfdf32 (clockClass 248) | Fix GNSS antenna, rerun |
-| 2 | ts2phc termination FREERUN recovery | tgm-serial | 1 | infra_other | medium | GNSS not locking on cnfdf32 (clockClass 248) | Fix GNSS antenna, rerun |
-| 3 | T-GM Events GNSS reboot/recovery | tgm-serial | 1 | infra_other | medium | GNSS not locking on cnfdf32 (clockClass 248) | Fix GNSS antenna, rerun |
-| 4 | [SynchronizedBeforeSuite] | tbc | 2 | infra_other | medium | No T-BC solution found, suite aborted | Fix T-BC topology config |
-| 5 | TBC slave node reboot discovery | tbc-serial | 2 | infra_other | medium | Cascade from SynchronizedBeforeSuite failure | Fix T-BC topology config |
-| 6 | DualNICBCHA phc2sys secondary failover | dualnicbcha-serial | 3 | infra_other | medium | Daemon log read timeout | Check log subsystem, retry |
-
-## Action Items
-1. **Lab team:** Inspect GNSS antenna/receiver on `cnfdf32.telco5gran.eng.rdu2.redhat.com`; confirm clockClass 6/7 in ts2phc logs before rerunning tgm suite (unblocks 3 failures).
-2. **Lab team:** Diagnose T-BC topology discovery failure — verify T-BC node PtpConfig and hardware meet test prerequisites (unblocks 2 failures).
-3. **Lab team:** Check linuxptp daemon log responsiveness on DualNICBCHA node; retry the dualnicbcha test if transient.
-
-## Open Questions
-None. All root causes are consistent lab/hardware failures within a single combined suite analysis. No serial-passed/parallel-failed paradox observed. No cross-suite contradictions. No code changes identified as contributing.
-
-
----
-
-&lt;!-- SUITE_DETAILS_START --&gt;
-## Per-Suite Details
-
-
-### all+dualnicbcha+tbc+tgm
-
----
-
-### Suite: all+dualnicbcha+tbc+tgm — 6 failures
-
-**TL;DR:** Three distinct lab/hardware problems drove all 6 failures: the T-GM node lost GPS lock (FREERUN, clockClass 248), no T-BC topology could be discovered, and the DualNICBCHA test timed out reading daemon logs.
-
-**Suite Issue Class:** infra_other
-
-**Suite Severity:** MEDIUM
-
----
-
-**Root Cause Groups:**
-
-**Group 1: T-GM node stuck in FREERUN — GNSS not locking** (3 tests)
-- Tests: `[tgm-serial] WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss`, `[tgm-serial] WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED`, `[tgm-serial] WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery`
-- Evidence:
-  - `[FAILED] Timed out waiting for clock class 7` — `ptp.go:4061 @ 08/06/26 08:30:51`
-  - `[FAILED] Timed out waiting for state FREERUN and ClockClass 248` — `ptp.go:4185 @ 08/06/26 08:34:01`
-  - `[FAILED] expected a metric [7.000000] but got map[/cluster/node/cnfdf32.telco5gran.eng.rdu2.redhat.com/ens7fx/master/metric:248]` — `ptp.go:4157`
-- Root Cause: Node `cnfdf32` (the T-GM) was stuck in FREERUN (clockClass 248 = no GNSS lock) throughout the entire tgm suite run (08:27–08:35). The holdover test expected the T-GM to already be LOCKED (clockClass ≤ 7) before triggering a GNSS loss; the ts2phc termination test expected to observe a FREERUN→LOCKED recovery cycle; the events test expected to see clockClass 7 events. All three require a functioning GNSS receiver on cnfdf32, which was not providing lock. The bc-serial, dualnicbc, and dualfollower suites passed because they do not depend on GNSS hardware.
-- Breaking PR/Commit: Unknown — this is a lab hardware condition (GNSS antenna/receiver on cnfdf32), not a code change.
-- Flake? Possible — GNSS lock loss in a lab is an intermittent infra condition, but no historical data is available in this run to confirm recurrence.
-- Fix: Verify the GNSS antenna/re
-
-_(truncated — see per-suite analysis for full details)_
-
-&lt;!-- SUITE_DETAILS_END --&gt;</div></details>
-  </td>
-  <td class="col-date">2026-08-06</td>
-  <td class="col-date">2026-08-09</td>
-  <td class="col-tests"><ul><li>[SynchronizedBeforeSuite]</li><li>[It] [dualnicbcha-serial] PTP e2e tests PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails [Serial]</li><li>[It] [tbc-serial] PTP e2e tests PTP Reboot discovery The slave node is rebooted and discovered and in sync [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED [Serial]</li><li>[It] [tgm-serial] PTP e2e tests WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [Serial]</li></ul></td>
-  <td class="col-jobs"><ul><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2086332022917173248" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-09)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2085244632978952192" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-08)</span></li><li><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2085244632978952192" target="_blank">4.22-e2e-telco5g-ptp</a> <span class="date">(2026-08-06)</span></li></ul></td>
 </tr>
 <tr id="503edaa7c58bebe5">
   <td class="col-rc">

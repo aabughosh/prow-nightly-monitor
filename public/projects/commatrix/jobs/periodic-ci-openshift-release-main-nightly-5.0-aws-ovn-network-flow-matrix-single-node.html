@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-aws-ovn-network-flow-matrix-single-node</code></h1>
-  <div class="meta">Generated: 2026-08-11T08:16:12.723381+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-11T19:14:04.204297+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -46,7 +46,7 @@
 <div class="nav">
   <a href="../index.html#periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node">Back to Dashboard</a>
   <span style="color:#30363d">|</span>
-  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2086799959075590144" target="_blank">View in Prow</a>
+  <a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-aws-ovn-network-flow-matrix-single-node/2087162311105056768" target="_blank">View in Prow</a>
   <span style="color:#30363d">|</span>
   <a href="../issues.html">Known Issues</a>
 </div>
@@ -62,7 +62,7 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">90m</div>
+    <div class="info-value">67m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
@@ -70,11 +70,11 @@
   </div>
   <div class="info-card">
     <div class="info-label">Severity</div>
-    <div class="info-value"><span class="badge" style="background:#d29922">MEDIUM</span></div>
+    <div class="info-value"><span class="badge" style="background:#f0883e">HIGH</span></div>
   </div>
   <div class="info-card">
     <div class="info-label">Run Date</div>
-    <div class="info-value" style="font-size:12px">2026-08-10</div>
+    <div class="info-value" style="font-size:12px">2026-08-11</div>
   </div>
 </div>
 
@@ -86,35 +86,52 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Test fails because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> binds TCP/33045 on the SNO node and the test's known-service filter does not exclude it.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Stale <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> communication matrix documents 7 ports no longer open on OCP 5.0 SNO clusters.</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_regression</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — crio port 33045 not filtered as known service (1 test)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[It] should validate the communication matrix ports match the node's open ports</code></div>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Stale matrix entries: ports removed/changed in OCP 5.0 SNO (4 ports)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">should validate the communication matrix ports match the node's open ports</code></div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_regression | <strong>Confidence:</strong> high</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix-diff-ss</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,33045,,crio,,,master,false</code> (in ss, absent from EPS matrix)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail(fmt.Sprintf("the following ports are used but don't have an endpointslice: \n %s", missingEPSMat))</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[FAIL] Validation [It] should validate the communication matrix ports match the node's open ports /tmp/secret/commatrix/test/e2e/validation_test.go:161</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> binds TCP/33045 on the SNO node (visible in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ss-generated-matrix.csv</code>). <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> has no Kubernetes EndpointSlice, so it appears in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">missingEPSMat</code> (ports open on node without EPS backing). Port 33045 is above the NodePort ceiling (32767) so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> does not catch it. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> (in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go:221</code>) only skips <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dnsmasq</code>, and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dig</code> — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> is not listed. All other <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Missing</code> ports are correctly disposed of: rpc.statd via <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code>, and the ovnkube NodePort allocations (30613, 31434, 32546) via the NodePort dynamic range 30000–32767.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Candidate (unverified): <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">1fec55d</code> / PR #400 (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">shirmoran/remove-linux-dynamic-range</code>) removed Linux ephemeral port ranges (~32768+) from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code>; previously port 33045 fell inside that range and was silently filtered. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">scripts/check_backport.py</code> tool and a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> remote ref are not present in this clone, so branch presence cannot be confirmed.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — TCP/33045 is deterministically open on every OCP 5.0 SNO boot; the failure is reproducible.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go</code> (same pattern as the existing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> skip). Optionally add a comment explaining that crio binds a random TCP port for its stream/gRPC health endpoint that has no EndpointSlice.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,80 ... router,master,false</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,443</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,8798 ... machine-config-daemon</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,9192 ... machine-approver</code> (doc-diff-commatrix, lines 5–22)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The checked-in matrix on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> still documents TCP 80/443 (router), TCP 8798 (MCD metrics, superseded by port 9001/kube-rbac-proxy), and TCP 9192 (machine-approver, absent in SNO). None of these are open on the OCP 5.0 SNO node. The commatrix auto-generator no longer produces them, confirming they are stale in the documentation source file.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — requires inspecting the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> branch CSV history. Recent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">d057bb8</code> (etcd 2381) and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">3b1985e</code> (expand EPS entries) are <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>-only and unverified on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — these ports are structurally absent in SNO OCP 5.0 (not timing-sensitive).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Remove TCP 80, 443, 8798, and 9192 from the matrix CSV/docs in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>; cherry-pick from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> if they were already cleaned up there.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group B — Matrix entries present but services not listening (3 ports)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">should validate the communication matrix ports match the node's open ports</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_regression | <strong>Confidence:</strong> medium</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">+ Ingress,TCP,9099 ... cluster-version-operator</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">+ Ingress,TCP,9443 ... cloud-controller-manager-operator</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">+ Ingress,TCP,10258 ... aws-cloud-controller-manager</code> (matrix-diff-ss, lines 10–26)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The ss-generated matrix (actual open ports) does not include TCP 9099 (CVO), 9443 (CCM operator), or 10258 (AWS CCM). These services changed ports or stopped exposing these endpoints in OCP 5.0. The documented matrix was not updated to match.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — likely OCP 5.0 component port changes not reflected in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> matrix docs.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — consistently absent from ss output.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Verify whether each service is still deployed and on what port on OCP 5.0; update or remove the three entries from the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> matrix accordingly.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group C — Ephemeral crio port open but no EndpointSlice (1 port)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">should validate the communication matrix ports match the node's open ports</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_flake | <strong>Confidence:</strong> medium</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Port 36311: LISTEN ... users:(("crio",pid=4189,fd=12))</code> (ss-port-analysis.txt line 1); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Range: Linux ephemeral port 36311 (range 32768-60999)</code> (investigation-summary.txt line 16)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> crio has opened ephemeral TCP port 36311 (in the Linux dynamic range 32768–60999); the port number changes per boot. The test flags it because no EndpointSlice backs it, but it's not a K8s service port. This is a host-level socket that escapes documentation.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — ephemeral crio socket behavior; not tied to a specific commit.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — port number changes every reboot; may not always fall in a range that triggers the check.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Exclude crio ephemeral ports from the EndpointSlice validation, or add a static matrix entry annotated <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Optional:true</code> covering crio's ephemeral range.</div>
 <br>
 <h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
 <tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">should validate communication matrix ports match open ports</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">crio TCP/33045 not excluded by <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code></td><td style="border:1px solid #30363d;padding:6px 8px">Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> skip in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code></td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">validate matrix ports match open ports (TCP 80, 443, 8798, 9192)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Stale matrix docs ports removed in OCP 5.0 SNO</td><td style="border:1px solid #30363d;padding:6px 8px">Remove 4 stale entries from release-5.0 matrix CSV</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">validate matrix ports match open ports (TCP 9099, 9443, 10258)</td><td style="border:1px solid #30363d;padding:6px 8px">B</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">medium</td><td style="border:1px solid #30363d;padding:6px 8px">OCP 5.0 services changed/removed ports not reflected in matrix</td><td style="border:1px solid #30363d;padding:6px 8px">Audit services on OCP 5.0; update or remove 3 entries</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">validate matrix ports match open ports (TCP 36311 crio)</td><td style="border:1px solid #30363d;padding:6px 8px">C</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">medium</td><td style="border:1px solid #30363d;padding:6px 8px">crio ephemeral host socket has no EndpointSlice backing</td><td style="border:1px solid #30363d;padding:6px 8px">Skip or mark optional ephemeral crio ports in test</td></tr>
 </table>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test/e2e/validation_test.go:226</code> add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">if cd.Service == "crio" { continue }</code> inside <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code>, identical to the existing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> block.</div>
-<div style="padding-left:16px;margin:2px 0">2. Investigate whether the Linux ephemeral-range removal (PR #400) should have included a corresponding expansion of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices</code> to cover other host services (crio, kubelet-internal) that bind above port 32767 but below the traditional Linux ephemeral floor.</div>
+<div style="padding-left:16px;margin:2px 0">1. Update the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> branch matrix CSV: remove stale entries TCP 80, 443, 8798, 9192 and verify/correct TCP 9099, 9443, 10258 against what OCP 5.0 SNO actually exposes — this clears 7 of the 8 mismatches.</div>
+<div style="padding-left:16px;margin:2px 0">2. Exclude Linux ephemeral-range (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">32768–60999</code>) host ports (like crio's TCP 36311) from the EndpointSlice validation or add them as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Optional:true</code> static entries in the matrix to prevent flaky failures caused by OS-assigned port numbers.</div>
 </div>
 
 <div class="footer">
