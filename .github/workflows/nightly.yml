@@ -1,0 +1,169 @@
+name: Nightly Prow Monitor
+
+on:
+  schedule:
+    # Run daily at 22:00 UTC (01:00 Israel time)
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+    inputs:
+      projects:
+        description: 'Projects to run (space-separated, or "all")'
+        default: 'all'
+        type: string
+      skip_ai:
+        description: 'Skip AI analysis'
+        default: false
+        type: boolean
+      force_reanalyze:
+        description: 'Force re-analyze all issues'
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install requests anthropic[vertex] google-auth
+
+      - name: Write Vertex AI credentials
+        env:
+          VERTEX_SA_JSON: ${{ secrets.VERTEX_SA_JSON }}
+        run: |
+          echo "$VERTEX_SA_JSON" > /tmp/vertex-sa.json
+
+      - name: Determine projects
+        id: projects
+        run: |
+          if [ "${{ github.event.inputs.projects }}" = "" ] || [ "${{ github.event.inputs.projects }}" = "all" ]; then
+            echo "list=commatrix ptp-operator" >> $GITHUB_OUTPUT
+          else
+            echo "list=${{ github.event.inputs.projects }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run monitor for each project
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/vertex-sa.json
+          VERTEX_PROJECT: ${{ secrets.VERTEX_PROJECT || 'itpc-ca-48013775ee' }}
+          VERTEX_REGION: ${{ secrets.VERTEX_REGION || 'us-east5' }}
+          VERTEX_MODEL: ${{ secrets.VERTEX_MODEL || 'claude-sonnet-4-6' }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          REPO_DIR="${GITHUB_WORKSPACE}"
+          PROJECT_LIST="${{ steps.projects.outputs.list }}"
+
+          for PROJECT_NAME in $PROJECT_LIST; do
+            echo "=== Processing project: $PROJECT_NAME ==="
+
+            # Read project config
+            JOB_FILTER=$(python3 -c "
+          import json
+          cfg = json.load(open('projects.json'))
+          p = cfg.get('$PROJECT_NAME', {})
+          print(p.get('job_filter', ''))
+          ")
+            MIN_VERSION=$(python3 -c "
+          import json
+          cfg = json.load(open('projects.json'))
+          p = cfg.get('$PROJECT_NAME', {})
+          print(p.get('min_version', ''))
+          ")
+            TARGET_REPO=$(python3 -c "
+          import json
+          cfg = json.load(open('projects.json'))
+          p = cfg.get('$PROJECT_NAME', {})
+          print(p.get('target_repo', ''))
+          ")
+            UPSTREAM_REPO=$(python3 -c "
+          import json
+          cfg = json.load(open('projects.json'))
+          p = cfg.get('$PROJECT_NAME', {})
+          print(p.get('upstream_repo', ''))
+          ")
+
+            export JOB_FILTER MIN_VERSION TARGET_REPO UPSTREAM_REPO
+            export OUTPUT_DIR="${REPO_DIR}/public/projects/${PROJECT_NAME}"
+            export INVESTIGATE_DIR="/tmp/ci-investigate-${PROJECT_NAME}"
+            export PROJECT_NAME
+
+            echo "  JOB_FILTER=$JOB_FILTER"
+            echo "  MIN_VERSION=$MIN_VERSION"
+            echo "  OUTPUT_DIR=$OUTPUT_DIR"
+
+            mkdir -p "$OUTPUT_DIR"
+
+            # Step 1: Fetch Prow data (no AI)
+            echo "  Fetching Prow data..."
+            SKIP_AI=true python3 -u monitor.py
+
+            # Step 2: AI analysis (unless skipped)
+            if [ "${{ github.event.inputs.skip_ai }}" != "true" ]; then
+              echo "  Running AI analysis..."
+              FORCE_REANALYZE="${{ github.event.inputs.force_reanalyze || 'false' }}" \
+                python3 -u inject_api.py
+            else
+              echo "  AI analysis skipped"
+            fi
+
+            # Step 3: Re-render dashboard with AI results
+            echo "  Re-rendering dashboard..."
+            RENDER_ONLY=true python3 -u monitor.py
+
+            echo "  Done with $PROJECT_NAME"
+          done
+
+      - name: Generate job pages
+        run: |
+          python3 generate_job_pages.py
+
+      - name: Generate project index
+        run: |
+          python3 -c "
+          import json, os
+          from pathlib import Path
+          projects = json.load(open('projects.json'))
+          out_dir = Path('public')
+          # Generate a simple index page listing all projects
+          html = '<html><head><title>Prow AI Analysis</title></head><body>'
+          html += '<h1>Prow Nightly Monitor</h1><ul>'
+          for name in projects:
+              proj_dir = out_dir / 'projects' / name
+              if proj_dir.exists():
+                  html += f'<li><a href=\"projects/{name}/index.html\">{name}</a></li>'
+          html += '</ul></body></html>'
+          (out_dir / 'index.html').write_text(html)
+          print(f'Generated project index with {len(projects)} projects')
+          "
+
+      - name: Commit and push results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/ docs/ || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "dashboard: $(date +%Y-%m-%d) nightly results (all projects)"
+            git push
+          fi
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f /tmp/vertex-sa.json
