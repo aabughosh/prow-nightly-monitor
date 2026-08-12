@@ -1,15 +1,114 @@
 stages:
+  - monitor
   - pages
 
+variables:
+  VERTEX_PROJECT: "itpc-ca-48013775ee"
+  VERTEX_REGION: "us-east5"
+  VERTEX_MODEL: "claude-sonnet-4-6"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+
+# ── Nightly monitor: fetch data + AI analysis + generate dashboards ──
+nightly-monitor:
+  image: python:3.12-slim
+  stage: monitor
+  tags:
+    - itup-alm-x86
+  cache:
+    key: pip-cache
+    paths:
+      - .pip-cache/
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git > /dev/null 2>&1
+    - pip install --quiet requests anthropic[vertex] google-auth
+    - echo "$VERTEX_SA_JSON" > /tmp/vertex-sa.json
+    - export GOOGLE_APPLICATION_CREDENTIALS=/tmp/vertex-sa.json
+  script:
+    - |
+      REPO_DIR="$CI_PROJECT_DIR"
+      PROJECT_LIST="${PROJECTS:-commatrix ptp-operator}"
+
+      for PROJECT_NAME in $PROJECT_LIST; do
+        echo "=== Processing project: $PROJECT_NAME ==="
+
+        JOB_FILTER=$(python3 -c "
+      import json
+      cfg = json.load(open('projects.json'))
+      p = cfg.get('$PROJECT_NAME', {})
+      print(p.get('job_filter', ''))
+      ")
+        MIN_VERSION=$(python3 -c "
+      import json
+      cfg = json.load(open('projects.json'))
+      p = cfg.get('$PROJECT_NAME', {})
+      print(p.get('min_version', ''))
+      ")
+        TARGET_REPO=$(python3 -c "
+      import json
+      cfg = json.load(open('projects.json'))
+      p = cfg.get('$PROJECT_NAME', {})
+      print(p.get('target_repo', ''))
+      ")
+        UPSTREAM_REPO=$(python3 -c "
+      import json
+      cfg = json.load(open('projects.json'))
+      p = cfg.get('$PROJECT_NAME', {})
+      print(p.get('upstream_repo', ''))
+      ")
+
+        export JOB_FILTER MIN_VERSION TARGET_REPO UPSTREAM_REPO PROJECT_NAME
+        export OUTPUT_DIR="${REPO_DIR}/public/projects/${PROJECT_NAME}"
+        export INVESTIGATE_DIR="/tmp/ci-investigate-${PROJECT_NAME}"
+        export REPO_DIR
+
+        echo "  JOB_FILTER=$JOB_FILTER"
+        echo "  MIN_VERSION=$MIN_VERSION"
+
+        mkdir -p "$OUTPUT_DIR"
+
+        echo "  Fetching Prow data..."
+        SKIP_AI=true python3 -u monitor.py
+
+        if [ "${SKIP_AI:-false}" != "true" ]; then
+          echo "  Running AI analysis..."
+          FORCE_REANALYZE="${FORCE_REANALYZE:-false}" python3 -u inject_api.py
+        else
+          echo "  AI analysis skipped"
+        fi
+
+        echo "  Re-rendering dashboard..."
+        RENDER_ONLY=true python3 -u monitor.py
+
+        echo "  Done with $PROJECT_NAME"
+      done
+
+      echo "=== Generating job pages ==="
+      python3 generate_job_pages.py
+
+  after_script:
+    - rm -f /tmp/vertex-sa.json
+  artifacts:
+    paths:
+      - public/
+    expire_in: 30 days
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "trigger"
+
+# ── Deploy to GitLab Pages ──
 pages:
   image: alpine:latest
   stage: pages
   tags:
     - itup-alm-x86
   script:
-    - echo "Deploying AI analysis to GitLab Pages"
+    - echo "Deploying to GitLab Pages"
+    - ls -la public/ | head -5
   artifacts:
     paths:
       - public
   rules:
     - if: $CI_COMMIT_REF_NAME == "main"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
