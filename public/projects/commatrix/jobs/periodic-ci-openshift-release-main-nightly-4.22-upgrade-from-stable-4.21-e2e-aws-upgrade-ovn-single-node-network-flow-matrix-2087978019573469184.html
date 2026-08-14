@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.22-upgrade-from-stable-4.21-e2e-aws-upgrade-ovn-single-node-network-flow-matrix</code></h1>
-  <div class="meta">Generated: 2026-08-13T22:39:41.546427+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-14T22:18:06.815761+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">pending</div>
+    <div class="info-value" style="color:#f85149">failure</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,13 +62,16 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">running...</div>
+    <div class="info-value">275m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
   </div>
-  
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
+  </div>
   <div class="info-card">
     <div class="info-label">Run Date</div>
     <div class="info-value" style="font-size:12px">2026-08-13</div>
@@ -81,7 +84,37 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> E2E upgrade job failed due to a single azure-file storage test blocking the suite exit.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_flake</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Azure-file storage test flake (1 test)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[sig-storage] In-tree Volumes [Driver: azure-file] [Testpattern: Dynamic PV (block volmode)] volumes should store data</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_flake | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Blocking test failures: * [sig-storage] In-tree Volumes [Driver: azure-file] [Testpattern: Dynamic PV (block volmode)] volumes should store data</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Suite run returned error: 1 blocking fail, 0 informing fail, 1936 pass, 0 flaky, 2091 skip (1h59m48s)</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Container test exited with code 1, reason Error</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> A single azure-file in-tree storage test failed in the standard e2e suite run (step <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code>), causing the container to exit with code 1. The commatrix-specific nftables test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests__finished.json</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true,"result":"SUCCESS"</code>) fully passed — the project under test is not broken. The azure-file failure on AWS is unrelated to OVN/network-flow-matrix and is a known cross-cloud flake (azure-file driver tested on AWS SNO).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — not a commatrix change; azure-file is an upstream OCP test.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — azure-file tests on AWS are cross-cloud and inherently environment-mismatched; 1936 other tests passed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retry the job. If recurrent, file a Jira against sig-storage to mark the azure-file/AWS combination as non-blocking or skip it on AWS SNO variants.</div>
+<br>
+<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">[sig-storage] azure-file Dynamic PV block volmode</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Azure-file in-tree test failed on AWS SNO; unrelated to commatrix/OVN</td><td style="border:1px solid #30363d;padding:6px 8px">Retry; consider skipping azure-file on AWS</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the job</strong> — commatrix nftables tests passed (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true</code>); the sole blocker is an azure-file flake unrelated to this project.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Investigate azure-file test on AWS SNO</strong> — if this recurs across multiple nightly runs, raise with sig-storage to either skip the azure-file driver tests on AWS or move them to informing-only for SNO upgrade jobs.</div>
 </div>
 
 <div class="footer">
