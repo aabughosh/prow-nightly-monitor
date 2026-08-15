@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.1-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-08-14T22:24:03.257571+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-15T22:22:37.108641+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -86,35 +86,35 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CI infra failed to resolve OCP 5.1 <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">initial</code> release tag (404 from release stream).</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> CI infrastructure failed to resolve OCP 5.1 <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">initial</code> release tag (404 from release stream).</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
 <p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Release Stream 404 for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">initial</code> tag (1 job)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> (no test-level failures; job aborted before cluster provisioning)</div>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Release Stream 404 for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">initial</code> tag (1 job failure)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> N/A (job failed before any tests ran)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Requesting a release from https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/5.1.0-0.nightly/latest?rel=1</code></div>
 <div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">server responded with 404: no tags exist within the release that satisfy the request</code></div>
 <div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Reporting job state 'failed' with reason 'resolving_inputs:resolving_release'</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The CI operator successfully resolved the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">latest</code> nightly (5.1.0-0.nightly-2026-08-10-000554), but then requested <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">?rel=1</code> (the previous/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">initial</code> release, one build older) and received a 404. This means no second qualifying nightly tag existed in the 5.1.0-0.nightly stream at that moment — the stream had only one accepted tag, making it impossible to satisfy the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">initial</code> (prior) release requirement. This is a transient CI infrastructure condition, not a code defect.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change involved; release stream temporarily had insufficient tags.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — this is a known transient condition when nightly streams are sparse or a release is newly bootstrapped; the job will likely pass once a second accepted nightly tag is published.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Re-trigger the job after a new 5.1 nightly is accepted (typically within 24 hours). If this recurs persistently, check whether the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">initial</code> release tag is actually required for this job config or can be removed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The ci-operator successfully resolved the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">latest</code> 5.1.0-0.nightly release (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">5.1.0-0.nightly-2026-08-10-000554</code>) but then failed to resolve <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release:initial</code> by querying <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">?rel=1</code> (one release prior to latest). The release stream returned HTTP 404, meaning no nightly payload older than the current latest satisfies the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rel=1</code> offset — likely because only one nightly exists in the stream at that moment. This is a CI infrastructure/release stream availability issue, not a code defect.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change responsible; transient release stream state.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — this type of "no prior nightly tag available" 404 is a known transient condition when the release stream is sparse or being rebuilt.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Re-trigger the job; if recurring, investigate whether the 5.1.0-0.nightly stream is producing regular payloads and whether the job config should use <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">?rel=0</code> or remove the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">initial</code> release requirement.</div>
 <br>
 <h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
 <tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">(entire job)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">5.1 nightly stream returned 404 for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">?rel=1</code> (no second tag available)</td><td style="border:1px solid #30363d;padding:6px 8px">Re-trigger after next nightly is accepted</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">(entire job)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">404 from release stream: no prior nightly tag for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release:initial</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">?rel=1</code>)</td><td style="border:1px solid #30363d;padding:6px 8px">Re-trigger; verify nightly 5.1 stream health</td></tr>
 </table>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Re-trigger the job</strong> once a new 5.1.0-0.nightly build is accepted (stream needs ≥2 tags for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">initial</code> resolution).</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Investigate job config</strong> — confirm whether <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release:initial</code> is genuinely required for this PTP e2e job; if not, remove the dependency to prevent recurrence when the stream is sparse.</div>
+<div style="padding-left:16px;margin:2px 0">1. Re-trigger the job — this is almost certainly a transient release stream availability issue (sparse nightly payload history causing <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">?rel=1</code> to return 404).</div>
+<div style="padding-left:16px;margin:2px 0">2. If failures persist, check the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">5.1.0-0.nightly</code> release stream on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">amd64.ocp.releases.ci.openshift.org</code> to confirm regular nightly builds are being produced for OCP 5.1.</div>
 </div>
 
 <div class="footer">
