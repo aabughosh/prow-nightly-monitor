@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.21-upgrade-from-stable-4.20-e2e-aws-upgrade-ovn-single-node-network-flow-matrix</code></h1>
-  <div class="meta">Generated: 2026-08-18T22:19:51.442603+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-19T22:21:31.566218+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">pending</div>
+    <div class="info-value" style="color:#f85149">failure</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,13 +62,16 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">running...</div>
+    <div class="info-value">271m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
   </div>
-  
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
+  </div>
   <div class="info-card">
     <div class="info-label">Run Date</div>
     <div class="info-value" style="font-size:12px">2026-08-18</div>
@@ -81,7 +84,47 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> CI job failed due to a MonitorTest failure in the e2e suite, not a commatrix test failure.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — MonitorTest Failure in e2e suite (1 failure)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">aws-ovn-network-flow-matrix-single-node-single-node-e2e-test</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Suite run returned error: failed due to a MonitorTest failure</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error: error running a test suite: failed due to a MonitorTest failure</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests__finished.json: {"passed":true,"result":"SUCCESS"}</code> — commatrix tests themselves PASSED</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The commatrix e2e tests (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">finished.json</code> shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true,"result":"SUCCESS"</code>) completed successfully. The step failure was caused by the surrounding <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> framework reporting a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">MonitorTest</code> failure — a CI infrastructure-level monitoring check, not a commatrix test regression. The three informational test failures noted (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">sig-node Probe configuration</code>) are explicitly marked as non-blocking.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no commatrix code change implicated; this is a CI framework/monitor issue.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — MonitorTest failures in CI infrastructure are commonly transient; commatrix artifacts show all port validation and nftables checks completed with artifacts generated normally.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retry the job. If recurring, investigate the MonitorTest framework for the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> step on 4.21 nightly builds separately from commatrix.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group B — Documentation diff: stale port TCP/8798 (informational)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> doc-diff-commatrix check</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_regression | <strong>Confidence:</strong> medium</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,8798,openshift-machine-config-operator,machine-config-daemon,machine-config-daemon,machine-config-daemon,master,false</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">doc-diff-commatrix</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Port 8798 (machine-config-daemon) exists in the documented matrix but is NOT found in actual ss output (raw-ss-tcp shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">127.0.0.1:8797</code> not 8798), indicating a stale entry in the docs. This is a product-level documentation issue for OCP 4.21, not a CI infra issue.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — requires checking release-4.21 commatrix docs or MCD port changes.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no — consistently reproducible from ss data.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Remove TCP/8798 from the documented communication matrix for OCP 4.21, or verify if MCD changed its metrics port from 8798→8797.</div>
+<br>
+<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">single-node-e2e-test step</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">CI MonitorTest framework failure; commatrix tests passed</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">doc-diff TCP/8798</td><td style="border:1px solid #30363d;padding:6px 8px">B</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">medium</td><td style="border:1px solid #30363d;padding:6px 8px">Stale MCD port 8798 in documented matrix (actual is 8797)</td><td style="border:1px solid #30363d;padding:6px 8px">Remove 8798 from docs</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the periodic job</strong> — the commatrix tests themselves passed (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">finished.json: "passed":true</code>); the failure is in the CI e2e monitor wrapper, likely transient.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Remove TCP/8798</strong> from the release-4.21 documented communication matrix (or confirm MCD port change to 8797) to prevent future doc-diff failures.</div>
 </div>
 
 <div class="footer">
