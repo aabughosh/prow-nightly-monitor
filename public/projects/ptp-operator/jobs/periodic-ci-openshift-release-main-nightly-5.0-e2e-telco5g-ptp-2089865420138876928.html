@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-08-19T22:27:40.936547+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-20T22:29:59.233709+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -86,38 +86,37 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Builder pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman</code> vanished mid-run, causing PTP operator build to fail before tests ran.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Builder pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman</code> disappeared mid-run (NotFound), aborting PTP operator image build before tests started.</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
 <p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Builder Pod Disappeared (0 test failures; pre-test infra failure)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> (none — failure occurred before any PTP tests executed)</div>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Builder Pod Evicted/Deleted During Image Build (0 test failures — pre-test failure)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> N/A (failure occurred in setup/build phase, no PTP tests ran)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">+ run_status=Running   # iterations 2-6, pod was running</p>
-<p style="margin:4px 0">Error from server (NotFound): pods "podman" not found   # iteration 6, pod gone</p>
-<p style="margin:4px 0">+ run_status=          # empty status triggers exit 1</p>
+<p style="margin:4px 0">Error from server (NotFound): pods "podman" not found</p>
+<p style="margin:4px 0">+ run_status=</p>
 <p style="margin:4px 0">error: failed to execute wrapped command: exit status 1</p>
 <p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The build script launches a privileged <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman</code> pod in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> to build and push PTP operator images. The pod transitioned from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Running</code> to absent (not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Succeeded</code>, not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Failed</code>) — Kubernetes evicted or deleted it, leaving <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">run_status</code> empty, which the script misinterprets as an error and exits with code 1. The PTP operator was never deployed, so no tests could run.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change; this is an infra-level pod eviction/deletion event.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — pod disappearing without a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Failed</code> phase is a transient infra event (eviction, node pressure, OOM). No pattern across multiple runs shown.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retry the job. If recurrent, add pod event/reason logging (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc describe pod podman</code>) before the status check loop exits, and handle the "NotFound with no terminal phase" case explicitly (treat as failure with diagnostics rather than silent exit).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman</code> builder pod in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> was created and transitioned through <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Pending → Running</code> across 5 poll iterations (~60s), then vanished with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NotFound</code> on the 6th check. The pod was neither <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Succeeded</code> nor <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Failed</code> — it was externally evicted or deleted, likely by a node pressure event or cluster-level resource reclamation. The polling loop (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">max_iterations=120, sleep=10</code>) detected the missing pod and exited with code 1, killing the test step before any PTP operator image was pushed or any PTP e2e tests executed. No PTP hardware availability issue was involved — the failure happened before the test framework could enumerate NICs.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change; this is an infra/environment event.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — pod disappearance during build is non-deterministic; transient node pressure or cluster eviction on the shared CI runner.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retry the job. If recurring, investigate node resource pressure on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf30-32</code> workers at ~02:04Z or add pod restart/retry logic in the builder pod polling loop.</div>
 <br>
 <h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
 <tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">(pre-test build stage)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Builder pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman</code> disappeared (NotFound) before image push completed</td><td style="border:1px solid #30363d;padding:6px 8px">Retry; add pod eviction diagnostics</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">(build phase — no e2e tests ran)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Builder pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman</code> disappeared (NotFound) during image build poll loop</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job; investigate node eviction at ~02:04Z</td></tr>
 </table>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the job</strong> — this is a transient infra failure (pod evicted/deleted mid-build); no code change needed.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Improve build script resilience</strong> — capture <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc describe pod podman</code> on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NotFound</code> to distinguish eviction from success/failure, and explicitly fail with a diagnostic message rather than empty <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">run_status</code>.</div>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the periodic job</strong> — this is a transient infra failure; the builder pod was evicted before PTP images were pushed, so no tests ran at all.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Add resilience to builder pod polling</strong> — if <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NotFound</code> is detected, distinguish between eviction (re-submit) vs. normal completion; consider adding pod anti-eviction annotations or resource guarantees for the build namespace.</div>
 </div>
 
 <div class="footer">
