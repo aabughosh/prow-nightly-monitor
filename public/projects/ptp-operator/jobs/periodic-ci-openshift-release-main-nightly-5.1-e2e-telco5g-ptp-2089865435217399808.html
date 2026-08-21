@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.1-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-08-20T22:29:59.233709+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-21T22:34:00.692283+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -84,83 +84,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> All 7 failures are timeout flakes caused by PTP sync recovery exceeding wait windows on lab hardware.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_flake</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Causes (7 failures across 1 suites)</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">4/7 failures — OsClockSyncState / PHC recovery timeout</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc+dualnicbc+dualnicbcha+tbc+tgm | <strong>Evidence:</strong> PROVEN (414s runtime to error, near-full timeout budget consumed)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> BC and DualNIC BC tests waited the full ~400s for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OsClockSyncState</code> to return to LOCKED after upstream link cut but hardware/linuxptp-daemon recovered too slowly; other BC tests in the same run passed, confirming no code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Investigate lab PHC recovery latency and extend test timeout or add retry logic if hardware is consistently slow.</div>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">1/7 failures — DualNICBCHA phc2sys failover timeout</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc+dualnicbc+dualnicbcha+tbc+tgm | <strong>Evidence:</strong> HYPOTHESIS (no detailed XML; behavior consistent with Group 1 PHC latency pattern)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> phc2sys failover to secondary ptp4l was not observed within timeout; slow interface flap or event propagation on lab hardware likely prevented secondary takeover detection.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Validate linuxptp-daemon HA event latency and lab NIC/switch port flap speed on release-5.1 image.</div>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">1/7 failures — TBC slave post-reboot resync timeout</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc+dualnicbc+dualnicbcha+tbc+tgm | <strong>Evidence:</strong> PROVEN (error result on tbc label; bc-serial variant skipped as QE-covered)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> TBC slave node did not complete PTP re-sync within the test's wait window after reboot, indicating slow node boot or delayed daemon restart on lab infrastructure.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Increase post-reboot resync wait budget or add polling retry to tolerate variable node boot times.</div>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">1/7 failures — TGM/remaining timeout (unclassified)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc+dualnicbc+dualnicbcha+tbc+tgm | <strong>Evidence:</strong> HYPOTHESIS (suite truncation; consistent timeout pattern across all groups)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> Remaining failure follows the same timeout-class pattern seen across all groups, attributable to lab timing instability.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Apply same timeout/retry remediation as Groups 1–3.</div>
-<br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
-<br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState FREERUN recovery (bc-serial)</td><td style="border:1px solid #30363d;padding:6px 8px">bc+...</td><td style="border:1px solid #30363d;padding:6px 8px">PHC recovery timeout</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">PHC re-lock exceeded ~400s timeout on lab node</td><td style="border:1px solid #30363d;padding:6px 8px">Extend timeout / add retry</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState FREERUN recovery (dualnicbc-serial)</td><td style="border:1px solid #30363d;padding:6px 8px">bc+...</td><td style="border:1px solid #30363d;padding:6px 8px">PHC recovery timeout</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">Same PHC latency issue on DualNIC node</td><td style="border:1px solid #30363d;padding:6px 8px">Extend timeout / add retry</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">DualNICBCHA phc2sys secondary failover</td><td style="border:1px solid #30363d;padding:6px 8px">bc+...</td><td style="border:1px solid #30363d;padding:6px 8px">HA failover timeout</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">MEDIUM</td><td style="border:1px solid #30363d;padding:6px 8px">Slow interface flap delayed secondary ptp4l takeover</td><td style="border:1px solid #30363d;padding:6px 8px">Check lab NIC flap speed</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">TBC slave reboot & resync</td><td style="border:1px solid #30363d;padding:6px 8px">bc+...</td><td style="border:1px solid #30363d;padding:6px 8px">Post-reboot resync timeout</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">Node boot too slow for fixed resync wait window</td><td style="border:1px solid #30363d;padding:6px 8px">Increase post-reboot wait budget</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">5–7</td><td style="border:1px solid #30363d;padding:6px 8px">TGM/remaining (3)</td><td style="border:1px solid #30363d;padding:6px 8px">bc+...</td><td style="border:1px solid #30363d;padding:6px 8px">Timeout (unclassified)</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Consistent lab timing instability pattern</td><td style="border:1px solid #30363d;padding:6px 8px">Apply timeout/retry remediation</td></tr>
-</table>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Audit lab PHC recovery latency</strong> across all nodes and extend OsClockSyncState recovery timeouts from ~400s to a validated ceiling, or add retry loops, to eliminate the dominant flake class (4+ failures).</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Review post-reboot resync and HA failover wait budgets</strong> for TBC and DualNICBCHA tests, and instrument linuxptp-daemon HA event timing to confirm lab NIC/switch flap speed is within expected bounds.</div>
-<br>
-<br>
-<hr style="border:none;border-top:1px solid #21262d;margin:12px 0"><div style="margin-top:16px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:8px"><div style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Per-Suite Analysis</div><a href="#suite-bc+dualnicbc+dualnicbcha+tbc+tgm" style="display:inline-block;padding:4px 12px;background:#1f6feb33;border:1px solid #1f6feb;border-radius:16px;font-size:12px;font-weight:600;color:#58a6ff;text-decoration:none;margin:3px 2px">bc+dualnicbc+dualnicbcha+tbc+tgm</a></div><div style="margin-top:16px;border-top:1px solid #30363d;padding-top:12px"><h3 style="color:#f0f6fc;font-size:15px;margin-bottom:8px">Per-Suite Details</h3><div id="suite-bc+dualnicbc+dualnicbcha+tbc+tgm" style="margin-top:12px;scroll-margin-top:20px"><details style="background:#0d1117;border:1px solid #30363d;border-radius:8px;overflow:hidden"><summary style="cursor:pointer;padding:10px 16px;background:#161b22;font-size:14px;font-weight:600;color:#58a6ff;border-bottom:1px solid #30363d">&#9654; bc+dualnicbc+dualnicbcha+tbc+tgm (7 failures)</summary><div style="padding:12px 16px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: bc+dualnicbc+dualnicbcha+tbc+tgm — 7 failures</h4>
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> All 7 failures are timeout-class errors where PTP sync state recovery, GNSS holdover, and reboot tests exceeded their wait windows, consistent with infra-level timing instability rather than a code regression.</p>
-<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_flake</p>
-<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
-<br>
-<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
-<br>
-<p style="margin:4px 0"><strong>Group 1: OsClockSyncState FREERUN recovery timeout</strong> (2 tests)</p>
-<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-serial] OsClockSyncState goes FREERUN on BC upstream loss and recovers to LOCKED</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbc-serial] OsClockSyncState goes FREERUN on BC upstream loss and recovers to LOCKED</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"time": 414.175490719, "result": "error"</code> (bc ran 414s, nearly full timeout); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"time": 400+s, "result": "error"</code> (dualnicbc similarly)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: Both BC and DualNIC BC tests consumed their full timeout budget (~400s) waiting for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OsClockSyncState</code> to return to LOCKED after upstream link cut. The test ran to completion but the clock never re-locked within the allowed window, indicating the hardware/linuxptp-daemon on the lab node took longer than expected to recover — consistent with intermittent lab timing instability, not a code change. No <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.1</code> commits in evidence implicate a behavioral change.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Unknown</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Flake? yes — 414s duration to error is a classic timeout flake; other BC tests in same run (e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">BC clock class recovers to Locked</code>, 101s, passed) confirm the stack is otherwise healthy.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Fix: Investigate lab node PHC recovery latency; consider extending timeout or adding retry in test if lab hardware is consistently slow.</div>
-<br>
-<p style="margin:4px 0"><strong>Group 2: DualNICBCHA phc2sys failover</strong> (1 test)</p>
-<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-serial] DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"result": "error"</code> with no detailed XML snippet present in provided truncated files; test is topology-specific to HA dual-NIC config.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The phc2sys failover test failed to observe the switch to the sec</div>
-<br>
-<p style="margin:4px 0">_(truncated)_</p></div></details></div></div>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">

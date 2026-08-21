@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.1-e2e-telco5g-ptp-upstream</code></h1>
-  <div class="meta">Generated: 2026-08-20T22:29:59.233709+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-21T22:34:00.692283+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -84,39 +84,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Builder pod vanished mid-run (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NotFound</code>) causing image build failure before any PTP tests ran.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Builder Pod Disappeared During Image Build (0 tests ran)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> N/A — failure occurred in pre-test image build phase</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Error from server (NotFound): pods "podman" not found</p>
-<p style="margin:4px 0">+ run_status=</p>
-<p style="margin:4px 0">error: failed to execute wrapped command: exit status 1</p>
-<p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The script launched a privileged <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman</code> builder pod in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace to build PTP operator/daemon/cloud-event-proxy images from upstream <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code>. The pod transitioned <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Pending → Running</code> (iterations 1–6, ~60s) and then disappeared entirely — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc get pod podman</code> returned <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NotFound</code>. The pod was neither <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Succeeded</code> nor <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Failed</code> from the script's perspective, so the empty <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">run_status</code> caused the script to exit 1. No PTP tests were ever reached.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — infra-level pod eviction/OOM kill, not a code change</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — pod disappearance mid-run is non-deterministic; likely a node pressure eviction or transient cluster issue on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5gran.eng.rdu2.redhat.com</code> hardware cluster</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retry the job. If recurring, add pod eviction detection (check <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc get events</code> for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Evicted</code>/<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OOMKilled</code>) and explicit error handling when <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">run_status</code> is empty.</div>
-<br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
-<br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">(all — no tests ran)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Builder pod <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">podman</code> vanished (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">NotFound</code>) during image build loop</td><td style="border:1px solid #30363d;padding:6px 8px">Retry; add pod-gone detection in build script</td></tr>
-</table>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the job</strong> — this is a transient infra failure; the builder pod was evicted/killed before image build completed, no code regression is indicated.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Improve builder pod monitoring</strong> — add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc describe pod podman</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc get events</code> output when <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">run_status</code> is empty so future occurrences can distinguish eviction vs. OOMKill vs. node failure.</div>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">
