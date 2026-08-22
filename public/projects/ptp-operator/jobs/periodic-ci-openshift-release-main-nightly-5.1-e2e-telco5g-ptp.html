@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.1-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-08-21T22:34:00.692283+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-22T22:24:05.361645+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -86,7 +86,7 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> was stuck terminating, blocking builder pod creation and failing the test step.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> stuck in Terminating state blocked builder pod creation, causing immediate test failure.</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
 <p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
@@ -102,21 +102,21 @@
 <p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": pods "podman" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
 <p style="margin:4px 0">Step e2e-telco5g-ptp-telco5g-ptp-tests failed after 11s.</p>
 <p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script first attempts <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> (which returned "NotFound" and continued), then immediately tries to create the namespace and apply resources into it. The namespace was still in a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Terminating</code> state from a prior run or concurrent cleanup, so Kubernetes rejected all new object creation with Forbidden errors. This is a transient infra race condition, not a code defect.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change; prior run left namespace stuck terminating.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — namespace termination timing is non-deterministic; the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete ... || true</code> pattern does not wait for full deletion before proceeding.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a wait loop after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> to confirm the namespace is fully gone before creating it again (e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc wait --for=delete namespace/openshift-ptp --timeout=120s</code>). Retry the job in the interim.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script attempted to delete and recreate the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace at the start of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build_images</code>. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> returned "NotFound" (clean state), but the subsequent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> to create RBAC/pods failed with "namespace is being terminated" — indicating a residual namespace from a prior run was still finalizing when the new job began. All three resources (Role, RoleBinding, Pod) were rejected, causing immediate exit code 1 after only 11 seconds.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a transient infrastructure timing issue, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — namespace termination delay is a known transient condition; the prior run's cleanup had not completed before this job started.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a pre-flight wait loop to confirm the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace is fully gone (or does not exist) before attempting creation. Alternatively, retry the job; the condition is transient.</div>
 <br>
 <h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
 <tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> stuck terminating; new resources forbidden</td><td style="border:1px solid #30363d;padding:6px 8px">Wait for namespace deletion before re-creating</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace stuck Terminating from prior run blocked all resource creation</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job or add namespace-termination wait in setup script</td></tr>
 </table>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the job</strong> — this is a transient namespace termination race; a clean retry will likely succeed.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Fix the cleanup script</strong> — add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc wait --for=delete namespace/openshift-ptp --timeout=120s || true</code> after the delete call to prevent the race condition in future runs (fix needed in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">main</code> test scripts, which are what this job executes).</div>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Short-term:</strong> Retry the job — the namespace termination is transient and the next run should succeed with a clean state.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Long-term:</strong> Add a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kubectl wait</code> / polling loop in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build_images</code> function to confirm namespace is fully deleted before proceeding with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code>, preventing recurrence when jobs run back-to-back on shared infrastructure.</div>
 </div>
 
 <div class="footer">
