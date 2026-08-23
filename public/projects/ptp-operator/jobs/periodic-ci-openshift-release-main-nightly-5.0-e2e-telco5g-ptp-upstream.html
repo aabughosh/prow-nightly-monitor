@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-e2e-telco5g-ptp-upstream</code></h1>
-  <div class="meta">Generated: 2026-08-22T22:24:05.361645+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-23T22:20:48.324699+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -86,39 +86,37 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CI infra failure — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> conflict on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pull-secret</code> during namespace re-creation aborted the test step.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> CI job failed due to a Kubernetes resource conflict when applying pull-secret during PTP operator deployment.</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
 <p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Pull-secret apply conflict during namespace recreation (0 test failures; step abort) (1 step)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">e2e-telco5g-ptp-upstream-telco5g-ptp-tests</code> (step-level abort, no PTP test executed)</div>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Pull-Secret Resource Conflict During Namespace Setup (1 failure)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> e2e-telco5g-ptp-upstream-telco5g-ptp-tests</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">+ oc delete namespace openshift-ptp</p>
-<p style="margin:4px 0">namespace "openshift-ptp" deleted</p>
-<p style="margin:4px 0">+ oc apply --namespace=openshift-ptp -f -</p>
-<p style="margin:4px 0">Error from server (Conflict): ... Operation cannot be fulfilled on secrets "pull-secret":</p>
-<p style="margin:4px 0">the object has been modified; please apply your changes to the latest version and try again</p>
+<p style="margin:4px 0">Error from server (Conflict): error when applying patch:</p>
+<p style="margin:4px 0">Name: "pull-secret", Namespace: "openshift-ptp"</p>
+<p style="margin:4px 0">for: "STDIN": error when patching "STDIN": Operation cannot be fulfilled on secrets "pull-secret": the object has been modified; please apply your changes to the latest version and try again</p>
 <p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build_images</code> function deletes and recreates the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace, then immediately tries to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pull-secret</code> copied from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-config</code>. A race condition occurred where Kubernetes had already written metadata to the newly-created secret (resourceVersion <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">39209</code>, timestamp <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-08-21T00:18:38Z</code>) between the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">get</code> and the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">apply</code>, causing a conflict error. Because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set -o errexit</code> is active, the script exits with code 1 immediately. No PTP tests ever ran.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a transient timing/race condition in the CI script, not a code regression. No recent commits to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> are implicated.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — this is a classic <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> optimistic-concurrency race; it is non-deterministic and not reproducible on every run.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Replace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create --dry-run=client -o yaml | oc apply -f -</code> using a retry loop, or use <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create secret</code> with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">--save-config</code> and retry on conflict. Alternatively, use <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kubectl replace --force</code> after checking for existence.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script deleted and recreated the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace, then attempted <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> of the pull-secret. A concurrent actor (likely a controller or previous namespace finalizer still reconciling) modified the secret between the GET and PATCH, causing an optimistic concurrency conflict (resourceVersion mismatch). This is a transient race condition in the test environment, not a code defect. No PTP tests were ever reached — the job failed in setup after only 40 seconds.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — not a code regression; transient infra race.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — this is a classic optimistic-lock conflict that is environment/timing-dependent and not reproducible deterministically.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retry the job. Optionally harden the deployment script to use <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create or-replace</code> / retry logic on conflict errors when applying the pull-secret, rather than bare <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code>.</div>
 <br>
 <h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
 <tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">telco5g-ptp-tests step</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Race condition on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply pull-secret</code> after namespace deletion</td><td style="border:1px solid #30363d;padding:6px 8px">Retry <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> on conflict or use <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create</code> with retry</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-upstream-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Pull-secret <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> failed with resource version conflict during namespace re-creation</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job; add conflict-retry logic in deploy script</td></tr>
 </table>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Add retry logic</strong> around the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply --namespace=openshift-ptp -f -</code> (pull-secret copy) in the CI test script to handle <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Conflict</code> errors from Kubernetes optimistic concurrency — this prevents the entire job from aborting before any PTP tests run.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Retry the job</strong> immediately; no code change in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptp-operator</code> or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> is needed. This is a transient infra race and not related to PTP hardware availability or any merged PR.</div>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the job</strong> — this is a transient optimistic-lock conflict with no code change required; no PTP tests executed.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Harden the deploy script</strong> — replace bare <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> for pull-secret with a retry loop or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create --dry-run | oc replace --force</code> pattern to tolerate concurrent modifications during namespace setup.</div>
 </div>
 
 <div class="footer">
