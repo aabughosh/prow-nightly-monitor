@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-e2e-telco5g-ptp-upstream</code></h1>
-  <div class="meta">Generated: 2026-08-23T22:20:48.324699+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-24T22:30:40.294940+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -86,37 +86,37 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CI job failed due to a Kubernetes resource conflict when applying pull-secret during PTP operator deployment.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> PROJECT TESTS PASSED — CI framework MonitorTest failed due to intentional node reboot during nftables test.</p>
 <br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Pull-Secret Resource Conflict During Namespace Setup (1 failure)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> e2e-telco5g-ptp-upstream-telco5g-ptp-tests</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: MonitorTest failure triggered by intentional node reboot</strong> (affects: single-node-e2e-test CI step)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Error from server (Conflict): error when applying patch:</p>
-<p style="margin:4px 0">Name: "pull-secret", Namespace: "openshift-ptp"</p>
-<p style="margin:4px 0">for: "STDIN": error when patching "STDIN": Operation cannot be fulfilled on secrets "pull-secret": the object has been modified; please apply your changes to the latest version and try again</p>
+<p style="margin:4px 0">Suite run returned error: failed due to a MonitorTest failure</p>
+<p style="margin:4px 0">error: error running a test suite: failed due to a MonitorTest failure</p>
+<p style="margin:4px 0">Step aws-ovn-network-flow-matrix-single-node-single-node-e2e-test failed after 1h53m54s.</p>
+<p style="margin:4px 0">2026/06/25 13:56:11 Waiting for node ip-10-0-69-209.ec2.internal to be in NotReady state</p>
+<p style="margin:4px 0">2026/06/25 13:56:27 Node ip-10-0-69-209.ec2.internal is NotReady</p>
 <p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script deleted and recreated the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace, then attempted <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> of the pull-secret. A concurrent actor (likely a controller or previous namespace finalizer still reconciling) modified the secret between the GET and PATCH, causing an optimistic concurrency conflict (resourceVersion mismatch). This is a transient race condition in the test environment, not a code defect. No PTP tests were ever reached — the job failed in setup after only 40 seconds.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — not a code regression; transient infra race.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — this is a classic optimistic-lock conflict that is environment/timing-dependent and not reproducible deterministically.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retry the job. Optionally harden the deployment script to use <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create or-replace</code> / retry logic on conflict errors when applying the pull-secret, rather than bare <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code>.</div>
+<p style="margin:4px 0">And from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">network-flow-matrix-tests__finished.json</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true,"result":"SUCCESS"</code></p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The commatrix nftables e2e test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">nftables_test.go:85</code>) intentionally applies a MachineConfig that reboots the node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ip-10-0-69-209.ec2.internal</code>) at ~13:56 UTC to validate nftables rules after reboot. The commatrix test step completed successfully at 14:01:38 UTC. The subsequent <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> CI step runs OpenShift's generic e2e suite with built-in MonitorTests that observe the cluster throughout the entire job — these monitors recorded the node-not-ready event from the commatrix-triggered reboot and flagged it as a MonitorTest failure. The first domino is the reboot event recorded by the CI monitor, not a commatrix bug.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a known interaction between the commatrix nftables reboot and the openshift-tests MonitorTest framework.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — the commatrix tests always perform this intentional reboot; whether it triggers a MonitorTest failure depends on monitor timing and thresholds.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> step's MonitorTest should be configured to tolerate or exclude node-not-ready events that occur during the commatrix nftables test window. Alternatively, the job config should suppress MonitorTest node-reboot alerts for this specific job.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">single-node-e2e-test</code> (CI framework MonitorTest); commatrix's own 3 e2e specs all PASSED.</div>
 <br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-upstream-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Pull-secret <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> failed with resource version conflict during namespace re-creation</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job; add conflict-retry logic in deploy script</td></tr>
-</table>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group. The only failure is from the CI framework's MonitorTest, caused by a node reboot that is a deliberate part of the commatrix nftables validation test.</p>
 <br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the job</strong> — this is a transient optimistic-lock conflict with no code change required; no PTP tests executed.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Harden the deploy script</strong> — replace bare <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> for pull-secret with a retry loop or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create --dry-run | oc replace --force</code> pattern to tolerate concurrent modifications during namespace setup.</div>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.21 (nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.21.0-0.nightly-2026-06-25-024321</code>): commatrix tests pass; MonitorTest collision with intentional reboot is the sole failure.</p>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (release image, 190 components imported); <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci/telco-runner:latest</code> (test runner)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
 </div>
 
 <div class="footer">
