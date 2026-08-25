@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.1-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-08-24T22:30:40.294940+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-25T22:30:52.935274+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -86,7 +86,7 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> stuck in Terminating state blocked all resource creation during test setup.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> was still terminating when the test tried to recreate it, blocking all resource creation.</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
 <p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
@@ -100,22 +100,23 @@
 <p style="margin:4px 0">```</p>
 <p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": roles.rbac.authorization.k8s.io "privileged-rights" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
 <p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": pods "podman" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">error: failed to execute wrapped command: exit status 1</p>
 <p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script attempted to delete and recreate the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> + <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create namespace openshift-ptp</code>), but the namespace from a prior run was still in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Terminating</code> state when the apply of RBAC roles and the builder pod was attempted. Kubernetes rejects all resource creation into a terminating namespace, causing immediate exit status 1. This is a transient infra timing issue — the pre-step cluster setup took ~1h55m, suggesting residual state from a previous job on the same cluster.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change involved; this is an environment state issue.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — namespace termination timing is non-deterministic; a retry would likely succeed if the namespace fully clears.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a wait loop after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> to confirm the namespace is fully gone before proceeding with creation (e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc wait --for=delete namespace/openshift-ptp --timeout=300s</code>). The script already has a <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">retry_with_timeout</code> helper that could be applied here.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script deleted the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code>) and immediately attempted to create new resources (Role, RoleBinding, Pod) in it. Kubernetes had not finished finalizing the namespace deletion, so all <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> calls were rejected with "being terminated." The step failed after only 11 seconds — far too fast for any real test to run.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a timing/infra race, not a code regression. No code change on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.1</code> is implicated.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — this is a transient race condition between namespace deletion and recreation; a retry with a proper wait-for-namespace-gone loop would avoid it.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a wait loop after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> in the build script to confirm the namespace is fully gone (e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc wait --for=delete namespace/openshift-ptp --timeout=120s</code>) before attempting to recreate resources in it.</div>
 <br>
 <h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
 <tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace stuck Terminating, blocking all resource creation</td><td style="border:1px solid #30363d;padding:6px 8px">Wait for namespace deletion before recreating</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace still terminating when resources were re-created</td><td style="border:1px solid #30363d;padding:6px 8px">Wait for namespace deletion to complete before re-creating</td></tr>
 </table>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc wait --for=delete namespace/openshift-ptp --timeout=300s</code></strong> after the delete call in the build script before creating the namespace and applying resources — this is the direct fix for the root cause.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Retry this job</strong> — this is a transient state issue; the failure is not caused by any code change on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.1</code> and no cherry-pick is needed.</div>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc wait --for=delete namespace/openshift-ptp</code></strong> after the delete call in the build/deploy script to eliminate the terminating-namespace race — this is the direct cause of this failure.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Retry this job</strong> — it is a transient infra timing issue with no evidence of a code regression on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.1</code>; a single retry will likely succeed.</div>
 </div>
 
 <div class="footer">
