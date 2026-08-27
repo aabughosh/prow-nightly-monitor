@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prow Nightly Monitor — e2e-telco5g-ptp</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e1e4e8; min-height: 100vh; }
+
+  .header { background: linear-gradient(135deg, #161b22 0%, #1a1e2e 50%, #2d1b4e 100%); padding: 20px 32px; border-bottom: 1px solid #30363d; }
+  .header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; }
+  .header h1 code { background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 6px; font-size: 16px; }
+  .header .meta { color: #8b949e; font-size: 12px; margin-top: 4px; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px 32px; }
+
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; text-align: center; }
+  .stat-num { font-size: 32px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+  .green { color: #3fb950; }
+  .red { color: #f85149; }
+  .blue { color: #58a6ff; }
+  .yellow { color: #d29922; }
+
+  .categories { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .cat-card { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; background: #161b22; border: 1px solid #30363d; cursor: pointer; transition: all 0.2s; min-width: 130px; }
+  .cat-card:hover { border-color: #58a6ff; transform: translateY(-1px); }
+  .cat-card .cat-count { font-size: 22px; font-weight: 700; }
+  .cat-card .cat-name { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; }
+  .cat-card.matrix { border-left: 4px solid #f0883e; }
+  .cat-card.matrix .cat-count { color: #f0883e; }
+  .cat-card.test { border-left: 4px solid #f85149; }
+  .cat-card.test .cat-count { color: #f85149; }
+  .cat-card.infra { border-left: 4px solid #d29922; }
+  .cat-card.infra .cat-count { color: #d29922; }
+  .cat-card.build { border-left: 4px solid #da3633; }
+  .cat-card.build .cat-count { color: #da3633; }
+  .cat-card.unknown { border-left: 4px solid #484f58; }
+  .cat-card.unknown .cat-count { color: #8b949e; }
+
+  .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 12px 16px; background: #161b22; border-radius: 10px; border: 1px solid #30363d; }
+  .filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+  .filter-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 5px 12px; border-radius: 16px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+  .filter-btn:hover { background: #30363d; border-color: #58a6ff; }
+  .filter-btn.active { background: #388bfd26; border-color: #58a6ff; color: #58a6ff; }
+  .filter-sep { width: 1px; height: 20px; background: #30363d; margin: 0 6px; }
+
+  table { width: 100%; border-collapse: separate; border-spacing: 0; background: #161b22; border-radius: 10px; overflow: hidden; border: 1px solid #30363d; }
+  th { background: #1c2128; color: #8b949e; padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; border-bottom: 1px solid #30363d; }
+  td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: top; }
+  tr:hover { background: #1c2128; }
+  tr:target { background: #1f3a5f; outline: 2px solid #58a6ff; outline-offset: -2px; }
+  tr.row-success td { opacity: 0.7; }
+  tr.row-success:hover td { opacity: 1; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  details { margin-top: 6px; }
+  summary { cursor: pointer; color: #58a6ff; font-size: 12px; padding: 4px 0; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '\25B6  '; font-size: 9px; color: #8b949e; }
+  details[open] > summary::before { content: '\25BC  '; }
+  details[open] summary { margin-bottom: 6px; }
+  details > div { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px; font-size: 12px; color: #c9d1d9; margin-top: 4px; max-height: 500px; overflow-y: auto; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: white; }
+  .badge-infra { background: #d29922; }
+  .badge-test { background: #f85149; }
+  .badge-build { background: #da3633; }
+  .badge-matrix { background: #f0883e; }
+  .badge-error { background: #8b949e; }
+  .badge-unknown { background: #484f58; }
+  .badge-fix { background: #3fb950; }
+  .sev-critical { background: #f85149; color: white; }
+  .sev-high { background: #f0883e; color: white; }
+  .sev-medium { background: #d29922; color: white; }
+  .sev-low { background: #8b949e; color: white; }
+  .version-badge { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 5px; }
+
+  .fix-box { background: #0d1117; border: 1px solid #238636; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+  .fix-box-title { font-size: 10px; font-weight: 600; color: #3fb950; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .fix-box-content { font-size: 11px; color: #c9d1d9; font-family: 'SF Mono', 'Fira Code', monospace; line-height: 1.4; white-space: pre-wrap; }
+
+  .test-name { color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .test-file { color: #58a6ff; font-size: 11px; }
+  .test-msg { color: #8b949e; font-size: 11px; margin-top: 2px; }
+
+  code { background: #21262d; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; }
+
+  .footer { margin-top: 32px; padding: 16px; text-align: center; color: #484f58; font-size: 11px; border-top: 1px solid #21262d; }
+  .footer a { color: #58a6ff; }
+
+  @media (max-width: 768px) {
+    .stats { grid-template-columns: repeat(3, 1fr); }
+    .categories { flex-direction: column; }
+    .container { padding: 12px; }
+    .header { padding: 12px; }
+    table { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Prow Nightly Monitor — <code>e2e-telco5g-ptp</code></h1>
+  <div class="meta">Last updated: 2026-08-27 02:41 UTC | AI: disabled | <a href="../../history.html" style="color:#8b949e">Run History</a></div>
+</div>
+
+<div class="container">
+
+<div class="stats">
+  <div class="stat"><div class="stat-num">6</div><div class="stat-label">Total Jobs</div></div>
+  <div class="stat"><div class="stat-num green">0</div><div class="stat-label">Passed</div></div>
+  <div class="stat"><div class="stat-num red">5</div><div class="stat-label">Failed</div></div>
+  <div class="stat"><div class="stat-num blue">1</div><div class="stat-label">Pending</div></div>
+  <div class="stat"><div class="stat-num red">0%</div><div class="stat-label">Pass Rate</div></div>
+</div>
+
+<div class="categories"><div class="cat-card infra" onclick="filterCategory('infra')"><div class="cat-count">4</div><div class="cat-name">Infra</div></div><div class="cat-card test" onclick="filterCategory('test_failure')"><div class="cat-count">1</div><div class="cat-name">Test Failure</div></div><div class="cat-card" onclick="filterCategory('')" style="border-left:4px solid #58a6ff"><div class="cat-count" style="color:#58a6ff">5</div><div class="cat-name">All</div></div></div>
+
+
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:20px;margin-bottom:24px">
+      <h2 style="font-size:16px;color:#f0f6fc;margin-bottom:16px">Trend (last 14 days)</h2>
+      <div style="display:flex;align-items:flex-end;gap:4px;margin-bottom:24px;padding:12px;background:#0d1117;border-radius:8px">
+        <a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/8</div><div style="width:28px;background:#f85149;height:87px;border-radius:3px 3px 0 0" title="7 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-13</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/8</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="8 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-14</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-15</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-16</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-17</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-18</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-19</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-20</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/7</div><div style="width:28px;background:#f85149;height:85px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-21</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-22</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-23</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/7</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="7 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-24</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/7</div><div style="width:28px;background:#f85149;height:85px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-25</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:83px;border-radius:3px 3px 0 0" title="5 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-27</div></a>
+      </div>
+      <h3 style="font-size:14px;color:#8b949e;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Daily Status by Version</h3>
+      <div style="display:flex;gap:16px;margin-bottom:12px;font-size:11px;color:#8b949e">
+        <span><span style="display:inline-block;width:10px;height:10px;background:#3fb950;border-radius:50%;margin-right:4px"></span>All passed</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#f85149;border-radius:50%;margin-right:4px"></span>Has failures</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin-right:4px"></span>No data</span>
+        <span style="color:#484f58">← Each dot = one day (newest on right)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">5.1</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-13: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-14: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-15: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-16: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-17: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-18: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-19: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-20: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-21: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-22: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-23: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-24: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-25: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-27: 2 failed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">5.0</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-13: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-14: 3 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-15: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-16: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-17: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-18: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-19: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-20: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-21: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-22: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-23: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-24: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-25: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-27: 2 failed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.22</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-13: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-14: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-15: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-16: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-17: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-18: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-19: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-20: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-21: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-22: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-23: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-24: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-25: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-27: 1 failed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.20</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-13: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-14: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-15: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-16: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-17: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-18: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-19: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-20: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-21: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-22: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-23: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-24: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-25: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-08-27: no data"></span></div></div>
+    </div>
+
+<div class="filters">
+  <span class="filter-label">Version</span>
+  <button class="filter-btn active" onclick="filterVersion('', this)">All</button>
+  <button class="filter-btn" onclick="filterVersion('4.20', this)">4.20</button> <button class="filter-btn" onclick="filterVersion('4.22', this)">4.22</button> <button class="filter-btn" onclick="filterVersion('5.0', this)">5.0</button> <button class="filter-btn" onclick="filterVersion('5.1', this)">5.1</button>
+  <div class="filter-sep"></div>
+  <span class="filter-label">Status</span>
+  <button class="filter-btn active" onclick="filterState('', this)">All</button>
+  <button class="filter-btn" onclick="filterState('failure', this)">Failed</button>
+  <button class="filter-btn" onclick="filterState('success', this)">Passed</button>
+  <button class="filter-btn" onclick="filterState('pending', this)">Running</button>
+</div>
+
+<table id="jobsTable">
+<thead>
+<tr>
+  <th>Status</th>
+  <th>Ver</th>
+  <th>Job</th>
+  <th>Dur</th>
+  <th>Summary</th>
+  <th>Analysis</th>
+  <th>Started</th>
+</tr>
+</thead>
+<tbody>
+<tr id="periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp" class="row-pending" data-state="pending" data-category=""><td>⏳ pending</td><td><span class="version-badge">4.20</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2092764615329976320" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp">4.20-e2e-telco5g-ptp</a></td><td>running...</td><td style="max-width:300px"></td><td></td><td>2026-08-27T00:01</td></tr>
+<tr class="group-header"><td colspan="7" style="padding:12px 8px 4px;font-weight:700;font-size:13px;color:#484f58;border-bottom:1px solid #484f5830">❓ infra</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">4.22</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2092130289521266688" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp">4.22-e2e-telco5g-ptp</a></td><td>302m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#484f58;color:white">unknown</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#f0883e;color:white">HIGH</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">Six tests across four suites failed with result "error" (not "failure"), indicating test infrastructure/timeout issues rather than assertion failures, spanning hardware-dependent scenarios (dual-follower port failover, dual-NIC HA, node reboot, T-GM GNSS/holdover).</div><div style="font-size:10px;color:#8b949e;margin-top:2px">6 failed tests</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> All 6 tests errored (not failed) across four hardware-dependent PTP sub-suites, indicating lab infrastructure or runtime panics.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> unknown</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Causes (6 failures across 1 suites)</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">6/6 failures — Hardware-scenario Ginkgo errors across all PTP sub-suites</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> dualfollower+dualnicbcha+tbc+tgm | <strong>Evidence:</strong> HYPOTHESIS</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> All 6 tests produced <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"result": "error"</code> (Ginkgo panic/unrecovered runtime error) rather than <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"result": "failure"</code> (assertion), across scenarios requiring live lab hardware (GNSS, dual-NIC HA, rebootable nodes); truncated logs prevent confirmation of exact panic messages.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Possibly — hardware-dependent failover and GNSS holdover tests are historically environment-sensitive.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retrieve full <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code> and pod logs per sub-suite to identify the panic source; re-run to distinguish flake from a regression in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> linuxptp-daemon image.</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">Dual follower can sync when one follower port goes down</td><td style="border:1px solid #30363d;padding:6px 8px">dualfollower</td><td style="border:1px solid #30363d;padding:6px 8px">HW-scenario error</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Ginkgo error after 325s; port failover left bad state or timeout</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect full failure-log, re-run</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha</td><td style="border:1px solid #30363d;padding:6px 8px">HW-scenario error</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Ginkgo panic on NIC HA failover scenario</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect full failure-log, re-run</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">The slave node is rebooted and discovered and in sync</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">HW-scenario error</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Ginkgo panic during node reboot/resync</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect full failure-log, re-run</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">Testing WPC T-GM holdover through connection loss</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW-scenario error</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Ginkgo panic on GNSS/holdover hardware</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect full failure-log, re-run</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">5</td><td style="border:1px solid #30363d;padding:6px 8px">Continuously terminating ts2phc triggers FREERUN then recovers to LOCKED</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW-scenario error</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Ginkgo panic on ts2phc termination scenario</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect full failure-log, re-run</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">6</td><td style="border:1px solid #30363d;padding:6px 8px">Testing T-GM Events on GNSS reboot and recovery</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW-scenario error</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Ginkgo panic on GNSS reboot/recovery</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect full failure-log, re-run</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. Retrieve untruncated <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code> and linuxptp-daemon pod logs for all four sub-suites to identify the exact panic/error message and determine if a code regression or lab outage caused the errors.</div>
+<div style="padding-left:16px;margin:2px 0">2. Re-run the full suite against stable lab hardware; if failures recur consistently, file a bug against the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> linuxptp-daemon image targeting the specific failing scenario.</div>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_START --></p>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Per-Suite Details</h3>
+<br>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">dualfollower+dualnicbcha+tbc+tgm</h4>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualfollower+dualnicbcha+tbc+tgm — 6 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Six tests across four suites failed with result "error" (not "failure"), indicating test infrastructure/timeout issues rather than assertion failures, spanning hardware-dependent scenarios (dual-follower port failover, dual-NIC HA, node reboot, T-GM GNSS/holdover).</p>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> unknown</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: Hardware-scenario test errors across all four sub-suites</strong> (6 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualfollower-serial] Dual follower can sync when one follower port goes down</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-serial] DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tbc-serial] The slave node is rebooted and discovered and in sync</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] Testing WPC T-GM holdover through connection loss</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] Testing T-GM Events on GNSS reboot and recovery</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[dualfollower-serial] PTP e2e tests PTP ClockSync Dual follower can sync when one follower port goes down [Serial]": {"time": 325.103060617, "result": "error"}</code> — ran for 325 s before erroring. All 6 results are <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"result": "error"</code> (Ginkgo panic/infrastructure error), not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"result": "failure"</code> (assertion). The dualfollower test consumed its full timeout budget; the other files were skipped from evidence context, preventing direct log inspection.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: All six failing tests require specific lab hardware configurations (dual-follower NICs, dual-NIC HA BC, rebootable slave node, WPC T-GM with live GNSS). The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"error"</code> result classification in Ginkgo indicates a panic or unrecovered runtime error (e.g., nil-pointer on missing hardware role, unavailable node, or lab connectivity loss) rather than a clean assertion failure. The dualfollower test's 325 s runtime followed by error strongly suggests it reached an irrecoverable state mid-test (port manipulation left the interface in</div>
+<br>
+<p style="margin:4px 0">_(truncated)_</p>
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_END --></p></div></details></div></td><td>2026-08-25T06:01</td></tr>
+<tr class="group-header"><td colspan="7" style="padding:12px 8px 4px;font-weight:700;font-size:13px;color:#f0883e;border-bottom:1px solid #f0883e30">⚠️ Test Failures</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp" class="row-failure" data-state="failure" data-category="test_failure"><td>❌ failure</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2092402014817357824" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp">5.0-e2e-telco5g-ptp</a></td><td>4m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">infra_other</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#d29922;color:white">MEDIUM</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">CI cluster setup aborted because an `/home/kni/abort` file existed on the target host, blocking kubeconfig retrieval.</div></td><td><span class="badge badge-test">TEST</span> <span class="badge sev-medium">MEDIUM</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> CI cluster setup aborted because an <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> file existed on the target host, blocking kubeconfig retrieval.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Abort File Present on Baremetal Host (1 failure)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> e2e-telco5g-ptp-telco5g-ptp-cluster-setup (pre-step)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"path": "/home/kni/abort"</code> — abort file exists with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"exists": true</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"failed_when_result": true</code> — playbook task <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Check if abort file exists</code> fails intentionally</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ERROR: kubeconfig not found at /tmp/secret/kubeconfig after fetch-kubeconfig</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The Ansible playbook <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> checks for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> on host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.8.34.218</code> (cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ptpcimno</code>) at task line 12. The file was present (size 2 bytes, created at timestamp ~1787692847), causing a deliberate <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failed_when</code> abort. Because cluster setup never completed, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fetch-kubeconfig.yml</code> could not place a kubeconfig at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/tmp/secret/kubeconfig</code>, failing the entire pre-phase. The cluster itself was healthy (all nodes Ready, OCP 4.22.0-0.nightly-2026-08-24-174733), so this is purely a leftover abort-sentinel file from a prior run or manual intervention on the baremetal lab host.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a lab/infra state issue, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — the abort file is a persistent infra artifact; the job will keep failing until it is removed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> SSH to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.8.34.218</code> as user <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kni</code> and remove <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code>. Investigate why the abort file was placed there (prior failed install, manual hold) before re-running.</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">telco5g-ptp-cluster-setup</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> sentinel file blocked cluster setup on host 10.8.34.218</td><td style="border:1px solid #30363d;padding:6px 8px">Remove <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> on the lab host</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Immediate:</strong> Remove <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">/home/kni/abort</code> from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">10.8.34.218</code> (user <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kni</code>) — this is blocking every run until cleared.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Follow-up:</strong> Determine who/what created the abort file and add alerting or auto-cleanup so stale abort files don't silently block CI runs.</div></div></details></div></td><td>2026-08-26T00:00</td></tr>
+<tr class="group-header"><td colspan="7" style="padding:12px 8px 4px;font-weight:700;font-size:13px;color:#484f58;border-bottom:1px solid #484f5830">❓ infra</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2092492581664460800" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream">5.0-e2e-telco5g-ptp-upstream</a></td><td>217m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#484f58;color:white">unknown</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#f0883e;color:white">HIGH</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">All 5 failures are reported as `result: error` in the JSON summary but the provided XML evidence files are truncated/skipped before reaching the dualnicbcha, tbc, and tgm test sections, leaving no verbatim failure messages available for root-cause attribution.</div><div style="font-size:10px;color:#8b949e;margin-top:2px">5 failed tests</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> All 5 tests errored (not failed) across dualnicbcha/tbc/tgm suites; root cause unconfirmable due to truncated artifacts.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> unknown</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Causes (5 failures across 1 suites)</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">5/5 failures — Infrastructure-level error with no retrievable evidence</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> dualnicbcha+tbc+tgm | <strong>Evidence:</strong> HYPOTHESIS</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> All 5 tests report <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> (Ginkgo panic/infra abort, not assertion failure); the 3 tgm tests involve GNSS/ts2phc hardware, suggesting a possible GM hardware or signal-loss condition, but no failure messages are available because all relevant XML/log artifacts were truncated before analysis.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown (latest commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9b766f3</code> is a sync merge; no code regression confirmed)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Unknown — tgm GNSS tests are historically environment-sensitive; prior run history not provided.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retrieve <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code> and per-suite XML artifacts from the Prow job and inspect for panic messages or BeforeSuite aborts before attributing to code or hardware regression.</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">phc2sys switches to secondary ptp4l when primary interface fails</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha</td><td style="border:1px solid #30363d;padding:6px 8px">Missing evidence</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Error-level abort; no log available</td><td style="border:1px solid #30363d;padding:6px 8px">Retrieve failure-log.txt</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">Slave node rebooted and discovered and in sync</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">Missing evidence</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Error-level abort; no log available</td><td style="border:1px solid #30363d;padding:6px 8px">Retrieve failure-log.txt</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">Testing WPC T-GM holdover through connection loss</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">Missing evidence</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Possible GNSS/hardware signal loss</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect tgm XML artifact</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">Continuously terminating ts2phc triggers FREERUN then LOCKED</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">Missing evidence</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Possible GNSS/hardware signal loss</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect tgm XML artifact</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">5</td><td style="border:1px solid #30363d;padding:6px 8px">Testing T-GM Events on GNSS reboot and recovery</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">Missing evidence</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Possible GNSS/hardware signal loss</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect tgm XML artifact</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Retrieve truncated artifacts</strong>: Pull <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">junit-failures.txt</code>, and per-suite XMLs (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results_dualnicbc.xml</code>) from the Prow job storage to identify the actual panic or infra error before any code change is made.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Audit tgm hardware/GNSS signal</strong>: Given 3/5 failures are tgm GNSS-related and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> indicates an abort, verify GM hardware lock status and ts2phc signal availability on the testbed for this nightly run.</div>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_START --></p>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Per-Suite Details</h3>
+<br>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">dualnicbcha+tbc+tgm</h4>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualnicbcha+tbc+tgm — 5 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> All 5 failures are reported as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> in the JSON summary but the provided XML evidence files are truncated/skipped before reaching the dualnicbcha, tbc, and tgm test sections, leaving no verbatim failure messages available for root-cause attribution.</p>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> unknown</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: Missing failure evidence — all 5 errored tests</strong> (5 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-serial] phc2sys switches to secondary ptp4l when primary interface fails</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tbc-serial] The slave node is rebooted and discovered and in sync</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] Testing WPC T-GM holdover through connection loss</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial] Testing T-GM Events on GNSS reboot and recovery</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"error": 5</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results.json</code>; all five tests show <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> (not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fail</code>). The XML files containing these suites (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results_dualnicbc.xml</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results_dualfollower.xml</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build-log.txt</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">junit-failures.txt</code>) are marked <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">(skipped — context limit reached)</code> and were not provided.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The five tests span three hardware-topology suites (dualnicbcha, tbc, tgm) with no shared <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">BeforeSuite</code> failure visible in the provided data. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> (vs. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fail</code>) in Ginkgo typically means a panic or infrastructure-level abort rather than an assertion failure, but without the actual failure log from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code> or the per-suite XML no specific line, panic message, or missing resource can be cited. The tgm tests (3 of 5) all involve GNSS/ts2phc hardware interaction, suggesting a possible GM hardware or signal-loss infrastructure issue on the test bed, but this cannot be confirmed from the truncated evidence.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Unknown — most recent commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9b766f3</code> is a sync merge; no cherry-pick to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> is evidenced.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Flake? Unknown — prior run histor</div>
+<br>
+<p style="margin:4px 0">_(truncated)_</p>
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_END --></p></div></details></div></td><td>2026-08-26T06:01</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">5.1</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp/2091677435606077440" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp">5.1-e2e-telco5g-ptp</a></td><td>129m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">infra_other</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">LOW</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">Namespace `openshift-ptp` stuck in Terminating state blocked all resource creation during test setup.</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> stuck in Terminating state blocked all resource creation during test setup.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Namespace Terminating Race Condition (1 failure)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> e2e-telco5g-ptp-telco5g-ptp-tests</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": roles.rbac.authorization.k8s.io "privileged-rights" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": rolebindings.rbac.authorization.k8s.io "privileged-rights" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": pods "podman" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script deletes the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace at the start (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code>) and immediately tries to recreate resources into it. The namespace was still in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Terminating</code> state when the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply -f -</code> was issued, preventing any new resource creation. The script does not wait for full deletion before proceeding.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure/timing race, not a code regression. No relevant commits in the provided git log.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — transient timing race; the deletion of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> from a prior run or the same run's setup phase did not complete before the next create attempt.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a wait loop after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> to confirm the namespace is fully gone before proceeding (e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc wait --for=delete namespace/openshift-ptp --timeout=300s</code>).</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace stuck Terminating blocked resource creation</td><td style="border:1px solid #30363d;padding:6px 8px">Wait for namespace deletion before recreating resources</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Add namespace deletion guard:</strong> In the test setup script, after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code>, add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc wait --for=delete namespace/openshift-ptp --timeout=300s || true</code> before proceeding to create new content — this eliminates the Terminating race condition.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Retry this job run:</strong> Since this is a transient infra timing issue with no code regression involved, a simple retry is sufficient to confirm flakiness and unblock CI.</div></div></details></div></td><td>2026-08-24T00:01</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">5.1</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream/2091767859188338688" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream">5.1-e2e-telco5g-ptp-upstream</a></td><td>17m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">infra_other</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">LOW</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">Namespace `openshift-ptp` stuck in Terminating state blocked all resource creation during test setup.</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> stuck in Terminating state blocked all resource creation during test setup.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Namespace Terminating Race Condition (1 failure)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> e2e-telco5g-ptp-telco5g-ptp-tests</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": roles.rbac.authorization.k8s.io "privileged-rights" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": rolebindings.rbac.authorization.k8s.io "privileged-rights" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": pods "podman" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script deletes the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace at the start (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code>) and immediately tries to recreate resources into it. The namespace was still in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Terminating</code> state when the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply -f -</code> was issued, preventing any new resource creation. The script does not wait for full deletion before proceeding.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure/timing race, not a code regression. No relevant commits in the provided git log.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — transient timing race; the deletion of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> from a prior run or the same run's setup phase did not complete before the next create attempt.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a wait loop after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> to confirm the namespace is fully gone before proceeding (e.g., <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc wait --for=delete namespace/openshift-ptp --timeout=300s</code>).</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace stuck Terminating blocked resource creation</td><td style="border:1px solid #30363d;padding:6px 8px">Wait for namespace deletion before recreating resources</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Add namespace deletion guard:</strong> In the test setup script, after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code>, add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc wait --for=delete namespace/openshift-ptp --timeout=300s || true</code> before proceeding to create new content — this eliminates the Terminating race condition.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Retry this job run:</strong> Since this is a transient infra timing issue with no code regression involved, a simple retry is sufficient to confirm flakiness and unblock CI.</div></div></details></div></td><td>2026-08-24T06:01</td></tr>
+</tbody>
+</table>
+
+<div class="footer">
+  <a href="https://github.com/aabughosh/prow-nightly-monitor">prow-nightly-monitor</a> |
+  Data from <a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*">Prow</a> |
+  <a href="../../issues.html">Known Issues</a> |
+  <a href="../../history.html">Run History</a> |
+  <a href="claude-report.html">Claude Report</a>
+</div>
+
+</div>
+
+<script>
+function filterVersion(v, btn) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    const version = row.cells[1].textContent.trim();
+    row.style.display = (!v || version === v) ? '' : 'none';
+  });
+  if (btn) {
+    btn.closest('.filters').querySelectorAll('.filter-btn').forEach(b => {
+      if (b.onclick && b.onclick.toString().includes('filterVersion'))
+        b.classList.remove('active');
+    });
+    btn.classList.add('active');
+  }
+}
+function filterState(s, btn) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    const state = row.dataset.state || '';
+    row.style.display = (!s || state === s) ? '' : 'none';
+  });
+  if (btn) {
+    btn.closest('.filters').querySelectorAll('.filter-btn').forEach(b => {
+      if (b.onclick && b.onclick.toString().includes('filterState'))
+        b.classList.remove('active');
+    });
+    btn.classList.add('active');
+  }
+}
+function filterCategory(cat) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    if (!cat) { row.style.display = ''; return; }
+    const rowCat = row.dataset.category || '';
+    const state = row.dataset.state || '';
+    if (state !== 'failure' && state !== 'error') { row.style.display = 'none'; return; }
+    row.style.display = (rowCat === cat) ? '' : 'none';
+  });
+}
+</script>
+</body>
+</html>
