@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prow Nightly Monitor — e2e-telco5g-ptp</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #e1e4e8; min-height: 100vh; }
+
+  .header { background: linear-gradient(135deg, #161b22 0%, #1a1e2e 50%, #2d1b4e 100%); padding: 20px 32px; border-bottom: 1px solid #30363d; }
+  .header h1 { font-size: 20px; font-weight: 600; color: #f0f6fc; }
+  .header h1 code { background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 6px; font-size: 16px; }
+  .header .meta { color: #8b949e; font-size: 12px; margin-top: 4px; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px 32px; }
+
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; text-align: center; }
+  .stat-num { font-size: 32px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+  .green { color: #3fb950; }
+  .red { color: #f85149; }
+  .blue { color: #58a6ff; }
+  .yellow { color: #d29922; }
+
+  .categories { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .cat-card { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 8px; background: #161b22; border: 1px solid #30363d; cursor: pointer; transition: all 0.2s; min-width: 130px; }
+  .cat-card:hover { border-color: #58a6ff; transform: translateY(-1px); }
+  .cat-card .cat-count { font-size: 22px; font-weight: 700; }
+  .cat-card .cat-name { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; }
+  .cat-card.matrix { border-left: 4px solid #f0883e; }
+  .cat-card.matrix .cat-count { color: #f0883e; }
+  .cat-card.test { border-left: 4px solid #f85149; }
+  .cat-card.test .cat-count { color: #f85149; }
+  .cat-card.infra { border-left: 4px solid #d29922; }
+  .cat-card.infra .cat-count { color: #d29922; }
+  .cat-card.build { border-left: 4px solid #da3633; }
+  .cat-card.build .cat-count { color: #da3633; }
+  .cat-card.unknown { border-left: 4px solid #484f58; }
+  .cat-card.unknown .cat-count { color: #8b949e; }
+
+  .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 12px 16px; background: #161b22; border-radius: 10px; border: 1px solid #30363d; }
+  .filter-label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-right: 4px; }
+  .filter-btn { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 5px 12px; border-radius: 16px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+  .filter-btn:hover { background: #30363d; border-color: #58a6ff; }
+  .filter-btn.active { background: #388bfd26; border-color: #58a6ff; color: #58a6ff; }
+  .filter-sep { width: 1px; height: 20px; background: #30363d; margin: 0 6px; }
+
+  table { width: 100%; border-collapse: separate; border-spacing: 0; background: #161b22; border-radius: 10px; overflow: hidden; border: 1px solid #30363d; }
+  th { background: #1c2128; color: #8b949e; padding: 10px 14px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; border-bottom: 1px solid #30363d; }
+  td { padding: 10px 14px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: top; }
+  tr:hover { background: #1c2128; }
+  tr:target { background: #1f3a5f; outline: 2px solid #58a6ff; outline-offset: -2px; }
+  tr.row-success td { opacity: 0.7; }
+  tr.row-success:hover td { opacity: 1; }
+  a { color: #58a6ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  details { margin-top: 6px; }
+  summary { cursor: pointer; color: #58a6ff; font-size: 12px; padding: 4px 0; list-style: none; }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: '\25B6  '; font-size: 9px; color: #8b949e; }
+  details[open] > summary::before { content: '\25BC  '; }
+  details[open] summary { margin-bottom: 6px; }
+  details > div { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px; font-size: 12px; color: #c9d1d9; margin-top: 4px; max-height: 500px; overflow-y: auto; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; color: white; }
+  .badge-infra { background: #d29922; }
+  .badge-test { background: #f85149; }
+  .badge-build { background: #da3633; }
+  .badge-matrix { background: #f0883e; }
+  .badge-error { background: #8b949e; }
+  .badge-unknown { background: #484f58; }
+  .badge-fix { background: #3fb950; }
+  .sev-critical { background: #f85149; color: white; }
+  .sev-high { background: #f0883e; color: white; }
+  .sev-medium { background: #d29922; color: white; }
+  .sev-low { background: #8b949e; color: white; }
+  .version-badge { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 5px; }
+
+  .fix-box { background: #0d1117; border: 1px solid #238636; border-radius: 6px; padding: 8px 10px; margin-top: 6px; }
+  .fix-box-title { font-size: 10px; font-weight: 600; color: #3fb950; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .fix-box-content { font-size: 11px; color: #c9d1d9; font-family: 'SF Mono', 'Fira Code', monospace; line-height: 1.4; white-space: pre-wrap; }
+
+  .test-name { color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .test-file { color: #58a6ff; font-size: 11px; }
+  .test-msg { color: #8b949e; font-size: 11px; margin-top: 2px; }
+
+  code { background: #21262d; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #f0883e; font-family: 'SF Mono', 'Fira Code', monospace; }
+
+  .footer { margin-top: 32px; padding: 16px; text-align: center; color: #484f58; font-size: 11px; border-top: 1px solid #21262d; }
+  .footer a { color: #58a6ff; }
+
+  @media (max-width: 768px) {
+    .stats { grid-template-columns: repeat(3, 1fr); }
+    .categories { flex-direction: column; }
+    .container { padding: 12px; }
+    .header { padding: 12px; }
+    table { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Prow Nightly Monitor — <code>e2e-telco5g-ptp</code></h1>
+  <div class="meta">Last updated: 2026-08-28 06:06 UTC | AI: disabled | <a href="../../history.html" style="color:#8b949e">Run History</a></div>
+</div>
+
+<div class="container">
+
+<div class="stats">
+  <div class="stat"><div class="stat-num">6</div><div class="stat-label">Total Jobs</div></div>
+  <div class="stat"><div class="stat-num green">0</div><div class="stat-label">Passed</div></div>
+  <div class="stat"><div class="stat-num red">6</div><div class="stat-label">Failed</div></div>
+  <div class="stat"><div class="stat-num blue">0</div><div class="stat-label">Pending</div></div>
+  <div class="stat"><div class="stat-num red">0%</div><div class="stat-label">Pass Rate</div></div>
+</div>
+
+<div class="categories"><div class="cat-card infra" onclick="filterCategory('infra')"><div class="cat-count">6</div><div class="cat-name">Infra</div></div><div class="cat-card" onclick="filterCategory('')" style="border-left:4px solid #58a6ff"><div class="cat-count" style="color:#58a6ff">6</div><div class="cat-name">All</div></div></div>
+
+
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:12px;padding:20px;margin-bottom:24px">
+      <h2 style="font-size:16px;color:#f0f6fc;margin-bottom:16px">Trend (last 14 days)</h2>
+      <div style="display:flex;align-items:flex-end;gap:4px;margin-bottom:24px;padding:12px;background:#0d1117;border-radius:8px">
+        <a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/8</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="8 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-14</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-15</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-16</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-17</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-18</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-19</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-20</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/7</div><div style="width:28px;background:#f85149;height:85px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-21</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-22</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-23</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/7</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="7 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-24</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/7</div><div style="width:28px;background:#f85149;height:85px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-25</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:83px;border-radius:3px 3px 0 0" title="5 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-27</div></a><a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*" target="_blank" style="text-decoration:none;text-align:center;flex:1;min-width:40px"><div style="height:80px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center"><div style="font-size:10px;color:#8b949e;margin-bottom:2px">0/6</div><div style="width:28px;background:#f85149;height:100px;border-radius:3px 3px 0 0" title="6 failed"></div><div style="width:28px;background:#3fb950;height:2px;border-radius:0 0 3px 3px" title="0 passed"></div></div><div style="font-size:10px;color:#484f58;margin-top:6px">08-28</div></a>
+      </div>
+      <h3 style="font-size:14px;color:#8b949e;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">Daily Status by Version</h3>
+      <div style="display:flex;gap:16px;margin-bottom:12px;font-size:11px;color:#8b949e">
+        <span><span style="display:inline-block;width:10px;height:10px;background:#3fb950;border-radius:50%;margin-right:4px"></span>All passed</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#f85149;border-radius:50%;margin-right:4px"></span>Has failures</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin-right:4px"></span>No data</span>
+        <span style="color:#484f58">← Each dot = one day (newest on right)</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">5.1</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-14: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-15: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-16: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-17: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-18: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-19: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-20: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-21: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-22: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-23: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-24: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-25: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-27: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-28: 2 failed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">5.0</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-14: 3 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-15: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-16: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-17: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-18: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-19: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-20: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-21: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-22: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-23: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-24: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-25: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-27: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-28: 2 failed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.22</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-14: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-15: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-16: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-17: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-18: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-19: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-20: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-21: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-22: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-23: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-24: 2 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-25: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-27: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-28: 1 failed"></span></div></div><div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #21262d"><span class="version-badge" style="min-width:50px;text-align:center">4.20</span><div><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-14: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-15: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-16: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-17: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-18: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-19: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-20: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-21: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-22: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-23: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-24: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-25: 1 failed"></span><span style="display:inline-block;width:14px;height:14px;background:#21262d;border:1px solid #30363d;border-radius:50%;margin:0 2px" title="2026-08-27: no data"></span><span style="display:inline-block;width:14px;height:14px;background:#f85149;border-radius:50%;margin:0 2px" title="2026-08-28: 1 failed"></span></div></div>
+    </div>
+
+<div class="filters">
+  <span class="filter-label">Version</span>
+  <button class="filter-btn active" onclick="filterVersion('', this)">All</button>
+  <button class="filter-btn" onclick="filterVersion('4.20', this)">4.20</button> <button class="filter-btn" onclick="filterVersion('4.22', this)">4.22</button> <button class="filter-btn" onclick="filterVersion('5.0', this)">5.0</button> <button class="filter-btn" onclick="filterVersion('5.1', this)">5.1</button>
+  <div class="filter-sep"></div>
+  <span class="filter-label">Status</span>
+  <button class="filter-btn active" onclick="filterState('', this)">All</button>
+  <button class="filter-btn" onclick="filterState('failure', this)">Failed</button>
+  <button class="filter-btn" onclick="filterState('success', this)">Passed</button>
+  <button class="filter-btn" onclick="filterState('pending', this)">Running</button>
+</div>
+
+<table id="jobsTable">
+<thead>
+<tr>
+  <th>Status</th>
+  <th>Ver</th>
+  <th>Job</th>
+  <th>Dur</th>
+  <th>Summary</th>
+  <th>Analysis</th>
+  <th>Started</th>
+</tr>
+</thead>
+<tbody>
+<tr class="group-header"><td colspan="7" style="padding:12px 8px 4px;font-weight:700;font-size:13px;color:#484f58;border-bottom:1px solid #484f5830">❓ infra</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">4.20</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp/2092764615329976320" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.20-e2e-telco5g-ptp">4.20-e2e-telco5g-ptp</a></td><td>282m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">infra_other</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#d29922;color:white">MEDIUM</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">Both failed tests report `result: error` in the JSON summary but the provided XML evidence shows the same-named tests in other suites (bc-serial, dualfollower-serial) as **skipped** — the dualnicbcha and tbc suite XML files were truncated/not provided, so no direct error logs are available for root-cause determination.</div><div style="font-size:10px;color:#8b949e;margin-top:2px">6 failed tests</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> All 6 failures stem from missing or unstable hardware topology in the telco5g-ptp periodic CI environment.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Causes (6 failures across 2 suites)</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">4/6 failures — WPC T-GM/GNSS hardware absent from CI lab</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> tgm | <strong>Evidence:</strong> PROVEN</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> The tgm-serial suite's BeforeSuite/BeforeEach cannot locate a WPC Grand Master/GNSS node, yielding <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error</code> instead of the graceful <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">skip</code> seen in bc-serial and dualfollower-serial suites.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown — no code regression implicated; only commit is upstream sync <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9b766f3</code>.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — consistent infra gap.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Provision a WPC T-GM/GNSS node in the periodic lab slot, or add a suite-level skip guard in tgm matching the bc-serial pattern.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">2/6 failures — dualnicbcha/tbc topology environment instability (artifact evidence truncated)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> dualnicbcha+tbc | <strong>Evidence:</strong> HYPOTHESIS</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> Both tests report <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error</code> (not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fail</code>), suggesting a setup crash or infra abort; analogous tests skip in other suites, confirming topology-specificity, but XML artifacts were truncated so exact cause is unconfirmed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Insufficient evidence — possible infra instability.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retrieve full <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results_dualnicbcha.xml</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results_tbc.xml</code> artifacts to obtain actual error/panic message, then triage.</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">PTP ClockSync apply match rule based on nodeLabel</td><td style="border:1px solid #30363d;padding:6px 8px">tgm-serial</td><td style="border:1px solid #30363d;padding:6px 8px">Missing WPC GM HW</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC T-GM node provisioned in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision hardware</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">WPC GM GNSS signal loss / holdover through connection loss</td><td style="border:1px solid #30363d;padding:6px 8px">tgm-serial</td><td style="border:1px solid #30363d;padding:6px 8px">Missing WPC GM HW</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC T-GM node provisioned in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision hardware</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">WPC GM ts2phc termination / FREERUN event recovery</td><td style="border:1px solid #30363d;padding:6px 8px">tgm-serial</td><td style="border:1px solid #30363d;padding:6px 8px">Missing WPC GM HW</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC T-GM node provisioned in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision hardware</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">WPC GM Events (V2) GNSS reboot and recovery</td><td style="border:1px solid #30363d;padding:6px 8px">tgm-serial</td><td style="border:1px solid #30363d;padding:6px 8px">Missing WPC GM HW</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC T-GM node provisioned in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision hardware</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">5</td><td style="border:1px solid #30363d;padding:6px 8px">DualNICBCHA phc2sys switches to secondary ptp4l on primary failure</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha-serial</td><td style="border:1px solid #30363d;padding:6px 8px">Infra/setup crash</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Suite-level error, artifact truncated, cause unknown</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect full dualnicbcha XML artifact</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">6</td><td style="border:1px solid #30363d;padding:6px 8px">Slave node rebooted and discovered and in sync</td><td style="border:1px solid #30363d;padding:6px 8px">tbc-serial</td><td style="border:1px solid #30363d;padding:6px 8px">Infra/setup crash</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Suite-level error, artifact truncated, cause unknown</td><td style="border:1px solid #30363d;padding:6px 8px">Inspect full tbc XML artifact</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Provision a WPC T-GM/GNSS-capable node</strong> in the telco5g-ptp periodic CI lab slot (or add a tgm-suite-level skip guard mirroring bc-serial) to resolve all 4 tgm failures deterministically.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Retrieve and inspect</strong> the complete <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results_dualnicbcha.xml</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results_tbc.xml</code> artifacts (or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code>) to obtain the actual error/panic message for the 2 remaining unknown failures before further triage.</div>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_START --></p>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Per-Suite Details</h3>
+<br>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">tgm</h4>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: tgm — 4 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> All 4 tgm-serial test failures are due to the tgm test suite being run against a hardware environment that lacks a WPC Grand Master / GNSS device, causing these GM-specific tests to report "error" while the equivalent tests in bc-serial and dualfollower-serial correctly skip.</p>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: tgm-serial tests failing due to missing WPC GM hardware</strong> (4 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP ClockSync PTP daemon apply match rule based on nodeLabel [tgm-serial]</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [tgm-serial]</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED [tgm-serial]</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [tgm-serial]</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: In <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results.json</code>, the identical tests under <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-serial]</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualfollower-serial]</code> all have <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"result": "skip"</code> with near-zero execution time (e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"time": 0.000420671</code>), confirming the skip path fires when WPC GM hardware is absent. The tgm suite reports <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"result": "error"</code> for these same tests, meaning the tgm BeforeSuite/setup does not reach the skip guard and instead panics or hits an unrecoverable precondition failure. The overall xml shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failures="37" errors="0"</code> at suite level but the json reports 6 <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error</code> results, consistent with tgm-suite-level setup errors propagating into individual test cases.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tgm-serial]</code> suite requires a WPC T-GM node with a GNSS receiver. The CI lab environment used in this run does not have that hardware provisioned. Unlike <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-serial]</code> which gracefully skips these WPC GM tests via an early label/env-var check, the tgm suite's <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">BeforeSuite</code> or <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">BeforeEach</code> attempts to locate/configure the GM node and fails with an error rather than a skip, causing all dependent tests to be reported as errors. This is an envir</div>
+<br>
+<p style="margin:4px 0">_(truncated)_</p>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">dualnicbcha+tbc</h4>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualnicbcha+tbc — 2 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Both failed tests report <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> in the JSON summary but the provided XML evidence shows the same-named tests in other suites (bc-serial, dualfollower-serial) as <strong>skipped</strong> — the dualnicbcha and tbc suite XML files were truncated/not provided, so no direct error logs are available for root-cause determination.</p>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> unknown</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: Missing dualnicbcha/tbc suite artifacts</strong> (2 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-serial] PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tbc-serial] PTP Reboot discovery The slave node is rebooted and discovered and in sync</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results.json: "result": "error"</code> for both; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results_dualfollower.xml: (skipped — context limit reached)</code>; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-ptp-tests__test_results_dualnicbc.xml: (skipped — context limit reached)</code> — the specific dualnicbcha and tbc XML files were cut off before the failing test cases could be read.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The two tests are recorded as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error</code> (not <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fail</code>) in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results.json</code>, which typically indicates a panic, setup crash, or infrastructure-level abort rather than an assertion failure. The dualnicbcha and tbc suite XML artifacts were truncated in the provided evidence, so the precise error message and stack trace cannot be quoted. The analogous tests in other suites (bc-serial, dualfollower-serial) are <strong>skipped</strong> with reasons like "covered by QE" or "not applicable for this topology", confirming these tests only run in dualnicbcha/tbc topology — making them environment-specific. No code change in the single visible commit (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9b766f3</code>, an upstream sync from 2026-07-21) is identifiable as a trigger.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Unknown</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Flake? Insufficient evidence — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error</code> status (vs <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">fail</code>) and topology-specific nature suggest possible infra/environment instability rather than a deterministic regression, but cannot confir</div>
+<br>
+<p style="margin:4px 0">_(truncated)_</p>
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_END --></p></div></details></div></td><td>2026-08-27T00:01</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">4.22</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp/2092855007257825280" target="_blank" title="periodic-ci-openshift-release-main-nightly-4.22-e2e-telco5g-ptp">4.22-e2e-telco5g-ptp</a></td><td>358m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">infra_other</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#f0883e;color:white">HIGH</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">The TBC suite's `SynchronizedBeforeSuite` cannot find a T-BC hardware solution ("no T-BC solution found for TBC"), causing cascade failures across tbc and bc suites, while the dualnicbcha suite suffers a separate log-stream timeout during HA phc2sys failover.</div><div style="font-size:10px;color:#8b949e;margin-top:2px">8 failed tests</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> T-GM GPS lock failure and T-BC topology discovery failure each cascade to block entire test suites.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Causes (8 failures across 2 suites)</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">4/8 failures — T-GM GPS/GNSS not achieving LOCK (ClockClass 248/FREERUN)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> tgm | <strong>Evidence:</strong> PROVEN</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> Node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code> persistently reports ClockClass 248 (FREERUN) instead of ClockClass 6/7; all four tgm tests fail with the same symptom indicating a hardware/infra condition, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Restore GNSS signal lock on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code> (check antenna, ts2phc pod, WPC card health) or replace the node in lab inventory.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">3/8 failures — T-BC topology discovery failure cascading to tbc and bc suites</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc+dualnicbcha+tbc+all | <strong>Evidence:</strong> PROVEN</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">SynchronizedBeforeSuite</code> exits with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"no T-BC solution found for TBC"</code> before any test runs; the bc suite subsequently hits suite timeout, likely due to shared cluster state left dirty by the setup failure.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Verify T-BC node/interface labels on the test cluster and restore the expected topology so solution discovery succeeds.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">1/8 failures — dualnicbcha phc2sys HA log-stream context deadline exceeded</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc+dualnicbcha+tbc+all | <strong>Evidence:</strong> PROVEN</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> After primary interface failure, the expected phc2sys failover log line never appears within the deadline; either the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> linuxptp-daemon image suppressed the log message or the HA failover itself did not occur.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Inspect <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> linuxptp-daemon image changelog for phc2sys HA log changes and verify failover behavior in isolation.</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">PTP daemon apply match rule based on nodeLabel</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">GPS/FREERUN</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">T-GM node stuck in ClockClass 248</td><td style="border:1px solid #30363d;padding:6px 8px">Restore GNSS lock on cnfdf32</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">WPC T-GM holdover through connection loss</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">GPS/FREERUN</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">T-GM never reached ClockClass 6 to enter holdover</td><td style="border:1px solid #30363d;padding:6px 8px">Restore GNSS lock on cnfdf32</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">Continuously terminating ts2phc triggers FREERUN</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">GPS/FREERUN</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">T-GM in FREERUN before test; no recovery possible</td><td style="border:1px solid #30363d;padding:6px 8px">Restore GNSS lock on cnfdf32</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">T-GM Events on GNSS reboot and recovery</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">GPS/FREERUN</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">Metric reports ClockClass 248 throughout</td><td style="border:1px solid #30363d;padding:6px 8px">Restore GNSS lock on cnfdf32</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">5</td><td style="border:1px solid #30363d;padding:6px 8px">[SynchronizedBeforeSuite]: Could not create ptp config</td><td style="border:1px solid #30363d;padding:6px 8px">bc+dualnicbcha+tbc+all</td><td style="border:1px solid #30363d;padding:6px 8px">TBC discovery</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No T-BC solution found; hard setup failure</td><td style="border:1px solid #30363d;padding:6px 8px">Fix T-BC topology labels on cluster</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">6</td><td style="border:1px solid #30363d;padding:6px 8px">[tbc-serial] slave node rebooted and discovered</td><td style="border:1px solid #30363d;padding:6px 8px">bc+dualnicbcha+tbc+all</td><td style="border:1px solid #30363d;padding:6px 8px">TBC discovery</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">Suite never initialized; cascaded from BeforeSuite</td><td style="border:1px solid #30363d;padding:6px 8px">Fix T-BC topology labels on cluster</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">7</td><td style="border:1px solid #30363d;padding:6px 8px">[bc-serial] OsClockSyncState FREERUN on BC upstream loss</td><td style="border:1px solid #30363d;padding:6px 8px">bc+dualnicbcha+tbc+all</td><td style="border:1px solid #30363d;padding:6px 8px">TBC discovery</td><td style="border:1px solid #30363d;padding:6px 8px">infra_other</td><td style="border:1px solid #30363d;padding:6px 8px">MEDIUM</td><td style="border:1px solid #30363d;padding:6px 8px">Suite timeout from dirty cluster state post-TBC failure</td><td style="border:1px solid #30363d;padding:6px 8px">Fix T-BC topology labels on cluster</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">8</td><td style="border:1px solid #30363d;padding:6px 8px">[dualnicbcha-serial] phc2sys switches to secondary ptp4l</td><td style="border:1px solid #30363d;padding:6px 8px">bc+dualnicbcha+tbc+all</td><td style="border:1px solid #30363d;padding:6px 8px">phc2sys HA</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">MEDIUM</td><td style="border:1px solid #30363d;padding:6px 8px">Expected HA log line absent; failover may not occur</td><td style="border:1px solid #30363d;padding:6px 8px">Audit release-4.22 linuxptp-daemon phc2sys HA behavior</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Restore GNSS lock on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code></strong> — unblocks all 4 tgm tests immediately; check antenna, ts2phc pod, and WPC card health, or reprovision the node.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Fix T-BC topology discovery on the test cluster</strong> — restore correct node/interface labels so <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">SynchronizedBeforeSuite</code> succeeds and unblocks 3 tbc/bc tests.</div>
+<div style="padding-left:16px;margin:2px 0">3. <strong>Investigate phc2sys HA failover in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code></strong> — compare linuxptp-daemon image logs to confirm expected log regex still emitted and HA failover actually triggers.</div>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_START --></p>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Per-Suite Details</h3>
+<br>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">tgm</h4>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: tgm — 4 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> The T-GM node is not achieving GPS LOCK (stuck in FREERUN/ClockClass 248 instead of expected ClockClass 6/7), causing all four tgm-serial tests to fail due to missing or incorrect clock state.</p>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_failure</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: T-GM GPS/GNSS clock not achieving LOCK state</strong> (4 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP ClockSync PTP daemon apply match rule based on nodeLabel</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence:</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"cannot find valid test profile name"</code> — clock-under-test profile lookup fails because the T-GM node never reaches a valid locked state from which a profile can be identified.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"Timed out waiting for clock class 7"</code> — holdover test expects ClockClass 7 (holdover) after GNSS loss, but the GM was never in ClockClass 6 (LOCKED) to begin with.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"expected a metric [7.000000] but got map[…/metric:248]"</code> — metric endpoint reports ClockClass 248 (FREERUN) instead of ClockClass 7, confirming the T-GM is persistently stuck in FREERUN on node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32.telco5gran.eng.rdu2.redhat.com</code>.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The T-GM hardware node (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdf32</code>) is not achieving GPS LOCK before the test suite runs. ClockClass 248 (FREERUN) is reported consistently across all four tests, meaning ts2phc/GNSS is not providing a valid timing source. This is an infrastructure/hardware condition — either the GNSS antenna signal is lost, the WPC card is misconfigured, or ts2phc failed to start correctly on that node. All four failures cascade from this single precondition failure.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Unknown — no code change implicated; the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> production image is unchanged and other suites (bc, dualnicbc, dualfollower) pass normally.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Flake?</div>
+<br>
+<p style="margin:4px 0">_(truncated)_</p>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">bc+dualnicbcha+tbc+all</h4>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: bc+dualnicbcha+tbc+all — 4 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> The TBC suite's <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">SynchronizedBeforeSuite</code> cannot find a T-BC hardware solution ("no T-BC solution found for TBC"), causing cascade failures across tbc and bc suites, while the dualnicbcha suite suffers a separate log-stream timeout during HA phc2sys failover.</p>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_failure</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: TBC topology discovery failure</strong> (3 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tbc-serial] PTP Reboot discovery The slave node is rebooted and discovered and in sync</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[SynchronizedBeforeSuite]: Could not create a ptp config</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-serial] PTP Outage recovery OsClockSyncState goes FREERUN on BC upstream loss and recovers to LOCKED</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">no T-BC solution found for TBC</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Could not create a ptp config, err=no T-BC solution found for TBC</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">SpecialSuiteFailureReason: Suite Timeout Elapsed</code> (bc XML, SuiteSucceeded=false)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">SynchronizedBeforeSuite</code> for the TBC test run fails to discover a valid T-BC topology on the test cluster, returning <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"no T-BC solution found for TBC"</code>. This is a hard setup failure that prevents any TBC test from running. The bc suite subsequently hits its suite timeout (3636s elapsed, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Suite Timeout Elapsed</code>), likely because a shared cluster resource or PTP config left in a bad state by the TBC setup failure caused the bc outage-recovery test to stall indefinitely waiting for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OsClockSyncState</code> to transition.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Unknown — no relevant <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.22</code> commit visible; likely a lab/hardware topology change (missing T-BC capable node or interface labeling regression on the cluster).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Flake? No — deterministic setup failure: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">SynchronizedBeforeSuite</code> exits with a hard error before any test runs.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Fix: Verify that the test cluster nodes have the required T-BC hardware topology (correct interface labels/annotations) that the solution-finder expects; restore missing node/interface or fix the topology detection logic in `re</div>
+<br>
+<p style="margin:4px 0">_(truncated)_</p>
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_END --></p></div></details></div></td><td>2026-08-27T06:01</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp/2093127159819276288" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp">5.0-e2e-telco5g-ptp</a></td><td>276m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#f85149;color:white">test_regression</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#f0883e;color:white">HIGH</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">The BC/DualNICBC "OsClockSyncState FREERUN recovery" tests timed out at ~412s waiting for state recovery, the DualNICBCHA phc2sys switchover test failed, and the TBC reboot test errored — all consistent with a product-side regression in OsClockSyncState recovery behavior on `release-5.0` images.</div><div style="font-size:10px;color:#8b949e;margin-top:2px">8 failed tests</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> 4 tgm tests fail due to missing WPC/GM hardware; 4 bc/ha/tbc tests fail due to OsClockSyncState regression in release-5.0.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_regression</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Causes (8 failures across 2 suites)</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">4/8 failures — Missing WPC T-GM hardware in CI lab environment</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> tgm | <strong>Evidence:</strong> PROVEN (all 4 tgm tests <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code>; equivalent bc/dualfollower variants show <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: skip</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> The CI cluster lacks WPC Grand Master / GNSS hardware required by tgm-serial tests; tests error rather than skip gracefully at prerequisite checks.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown (environment gap, not a code regression)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a BeforeSuite skip guard in the tgm suite to skip gracefully when no GM/WPC node is detected, or provision WPC T-GM hardware in the lab slot.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">3/8 failures — OsClockSyncState FREERUN recovery regression in release-5.0</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc+dualnicbc+dualnicbcha+tbc | <strong>Evidence:</strong> PROVEN (bc and dualnicbc both exhaust ~412s timeout; clockClass recovery test passes in same run, isolating fault to OsClockSyncState path)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OsClockSyncState</code> fails to transition back from FREERUN to LOCKED after upstream link restoration on BC/DualNICBC topologies; phc2sys HA switchover in dualnicbcha also fails, likely related to the same state-machine defect.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown (most recent commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9b766f3</code>, upstream-sync 2026-07-21)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Investigate and fix the OsClockSyncState/phc2sys state-machine in the release-5.0 linuxptp-daemon image.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">1/8 failures — TBC reboot test error (subset of Group 2)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc+dualnicbc+dualnicbcha+tbc | <strong>Evidence:</strong> HYPOTHESIS (reported as error; details sparse; consistent with same OsClockSyncState regression environment)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> TBC reboot recovery test errored, likely reflecting the same recovery-state regression affecting bc/dualnicbc suites.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Resolve OsClockSyncState regression in release-5.0; re-run TBC test to confirm.</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">PTP daemon apply match rule based on nodeLabel</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW missing</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC GM node in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision HW</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">WPC T-GM holdover through connection loss</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW missing</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC GM node in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision HW</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">ts2phc termination triggers FREERUN then recovers</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW missing</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC GM node in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision HW</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">T-GM Events on GNSS reboot and recovery</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW missing</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC GM node in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision HW</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">5</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState FREERUN recovery on BC upstream loss</td><td style="border:1px solid #30363d;padding:6px 8px">bc</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState regression</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">LOCKED state not restored after link-up in release-5.0</td><td style="border:1px solid #30363d;padding:6px 8px">Fix OsClockSyncState state machine</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">6</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState FREERUN recovery on DualNICBC upstream loss</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbc</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState regression</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">LOCKED state not restored after link-up in release-5.0</td><td style="border:1px solid #30363d;padding:6px 8px">Fix OsClockSyncState state machine</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">7</td><td style="border:1px solid #30363d;padding:6px 8px">DualNICBCHA phc2sys switches to secondary on primary failure</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState regression</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">MEDIUM</td><td style="border:1px solid #30363d;padding:6px 8px">phc2sys HA failover broken, likely same regression</td><td style="border:1px solid #30363d;padding:6px 8px">Fix phc2sys HA failover in release-5.0</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">8</td><td style="border:1px solid #30363d;padding:6px 8px">TBC reboot recovery test</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState regression</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Probable same OsClockSyncState regression</td><td style="border:1px solid #30363d;padding:6px 8px">Resolve regression and rerun</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Fix OsClockSyncState/phc2sys state-machine regression in release-5.0 linuxptp-daemon</strong> — resolves 3–4 failures (bc, dualnicbc, dualnicbcha, tbc) and is the highest-severity product defect.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Add a BeforeSuite skip guard in the tgm suite</strong> to skip gracefully when no WPC GM/GNSS node is detected, preventing misleading <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error</code> results when hardware is absent.</div>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_START --></p>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Per-Suite Details</h3>
+<br>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">tgm</h4>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: tgm — 4 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> All 4 tgm-serial test failures are due to the tgm suite running against a non-GM/WPC hardware environment — the tests are skipped in bc/dualfollower/dualnicbc suites and show <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> only in the tgm suite where the required WPC T-GM hardware/GNSS prerequisites are absent.</p>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_failure</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: WPC T-GM hardware/environment prerequisite not satisfied</strong> (4 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP ClockSync PTP daemon apply match rule based on nodeLabel [tgm-serial]</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [tgm-serial]</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED [tgm-serial]</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [tgm-serial]</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[It] [tgm-serial] ... Testing WPC T-GM holdover through connection loss": {"result": "error"}</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[It] [tgm-serial] ... PTP daemon apply match rule based on nodeLabel": {"result": "error"}</code> — all 4 tgm tests report <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results.json</code>. The equivalent bc/dualfollower/dualnicbc variants of the WPC GM tests all show <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: skip</code> (e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[bc-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover": {"result": "skip"}</code>), confirming the lab cluster does not have WPC T-GM hardware; the tgm suite requires it and errors rather than skips.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The tgm-serial suite requires a WPC Grand Master node with functional GNSS hardware and ts2phc. The CI cluster used for this job does not have WPC/GM-capable hardware provisioned, causing these tests to error out at prerequisite checks rather than skip gracefully (as the bc/dualfollower suites do). This is an environment/lab configuration issue, not a code regression in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Unknown — no code change implicated; hardware not available in this lab slot.</div>
+<p style="margin:4px 0">-</p>
+<br>
+<p style="margin:4px 0">_(truncated)_</p>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">bc+dualnicbc+dualnicbcha+tbc</h4>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: bc+dualnicbc+dualnicbcha+tbc — 4 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> The BC/DualNICBC "OsClockSyncState FREERUN recovery" tests timed out at ~412s waiting for state recovery, the DualNICBCHA phc2sys switchover test failed, and the TBC reboot test errored — all consistent with a product-side regression in OsClockSyncState recovery behavior on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> images.</p>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_failure</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: OsClockSyncState FREERUN recovery timeout</strong> (2 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-serial] PTP Outage recovery OsClockSyncState goes FREERUN on BC upstream loss and recovers to LOCKED</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbc-serial] PTP Outage recovery OsClockSyncState goes FREERUN on BC upstream loss and recovers to LOCKED</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[It] [bc-serial] PTP e2e tests PTP Outage recovery OsClockSyncState goes FREERUN on BC upstream loss and recovers to LOCKED [Serial]": {"time": 412.5755741, "result": "error"}</code> — test ran for full ~412s (near timeout ceiling) then errored rather than skipped or passed. The preceding BC outage test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">BC clock class recovers to Locked after upstream link outage</code>) passed at 101s, confirming the link-up/down mechanism works but OsClockSyncState specifically does not return to LOCKED within the test window.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> linuxptp-daemon image appears to have a regression where <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OsClockSyncState</code> does not transition back from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FREERUN</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LOCKED</code> within the expected timeout after upstream link restoration on BC configurations. This is a product behavior failure, not a test or infra issue — the parallel clockClass recovery test passes, isolating the fault to the OsClockSyncState reporting/transition path.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Unknown — no cherry-pick evidence in provided git log; most recent commit is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9b766f3</code> (upstream-sync 2026-07-21).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Flake? No — both BC and DualNICBC variants fail identically with full timeout exhaustion (~412s), indicating a consistent behavioral defect.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Fix: Investigate the `re</div>
+<br>
+<p style="margin:4px 0">_(truncated)_</p>
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_END --></p></div></details></div></td><td>2026-08-28T00:01</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">5.0</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream/2092492581664460800" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.0-e2e-telco5g-ptp-upstream">5.0-e2e-telco5g-ptp-upstream</a></td><td>217m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#f85149;color:white">test_regression</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#f0883e;color:white">HIGH</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">The BC/DualNICBC "OsClockSyncState FREERUN recovery" tests timed out at ~412s waiting for state recovery, the DualNICBCHA phc2sys switchover test failed, and the TBC reboot test errored — all consistent with a product-side regression in OsClockSyncState recovery behavior on `release-5.0` images.</div><div style="font-size:10px;color:#8b949e;margin-top:2px">5 failed tests</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> 4 tgm tests fail due to missing WPC/GM hardware; 4 bc/ha/tbc tests fail due to OsClockSyncState regression in release-5.0.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_regression</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Causes (8 failures across 2 suites)</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">4/8 failures — Missing WPC T-GM hardware in CI lab environment</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> tgm | <strong>Evidence:</strong> PROVEN (all 4 tgm tests <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code>; equivalent bc/dualfollower variants show <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: skip</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> The CI cluster lacks WPC Grand Master / GNSS hardware required by tgm-serial tests; tests error rather than skip gracefully at prerequisite checks.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown (environment gap, not a code regression)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a BeforeSuite skip guard in the tgm suite to skip gracefully when no GM/WPC node is detected, or provision WPC T-GM hardware in the lab slot.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">3/8 failures — OsClockSyncState FREERUN recovery regression in release-5.0</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc+dualnicbc+dualnicbcha+tbc | <strong>Evidence:</strong> PROVEN (bc and dualnicbc both exhaust ~412s timeout; clockClass recovery test passes in same run, isolating fault to OsClockSyncState path)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OsClockSyncState</code> fails to transition back from FREERUN to LOCKED after upstream link restoration on BC/DualNICBC topologies; phc2sys HA switchover in dualnicbcha also fails, likely related to the same state-machine defect.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown (most recent commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9b766f3</code>, upstream-sync 2026-07-21)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Investigate and fix the OsClockSyncState/phc2sys state-machine in the release-5.0 linuxptp-daemon image.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">1/8 failures — TBC reboot test error (subset of Group 2)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> bc+dualnicbc+dualnicbcha+tbc | <strong>Evidence:</strong> HYPOTHESIS (reported as error; details sparse; consistent with same OsClockSyncState regression environment)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> TBC reboot recovery test errored, likely reflecting the same recovery-state regression affecting bc/dualnicbc suites.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Resolve OsClockSyncState regression in release-5.0; re-run TBC test to confirm.</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">PTP daemon apply match rule based on nodeLabel</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW missing</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC GM node in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision HW</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">WPC T-GM holdover through connection loss</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW missing</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC GM node in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision HW</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">ts2phc termination triggers FREERUN then recovers</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW missing</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC GM node in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision HW</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">T-GM Events on GNSS reboot and recovery</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">HW missing</td><td style="border:1px solid #30363d;padding:6px 8px">test_failure</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">No WPC GM node in CI lab</td><td style="border:1px solid #30363d;padding:6px 8px">Add skip guard or provision HW</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">5</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState FREERUN recovery on BC upstream loss</td><td style="border:1px solid #30363d;padding:6px 8px">bc</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState regression</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">LOCKED state not restored after link-up in release-5.0</td><td style="border:1px solid #30363d;padding:6px 8px">Fix OsClockSyncState state machine</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">6</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState FREERUN recovery on DualNICBC upstream loss</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbc</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState regression</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">HIGH</td><td style="border:1px solid #30363d;padding:6px 8px">LOCKED state not restored after link-up in release-5.0</td><td style="border:1px solid #30363d;padding:6px 8px">Fix OsClockSyncState state machine</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">7</td><td style="border:1px solid #30363d;padding:6px 8px">DualNICBCHA phc2sys switches to secondary on primary failure</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState regression</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">MEDIUM</td><td style="border:1px solid #30363d;padding:6px 8px">phc2sys HA failover broken, likely same regression</td><td style="border:1px solid #30363d;padding:6px 8px">Fix phc2sys HA failover in release-5.0</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">8</td><td style="border:1px solid #30363d;padding:6px 8px">TBC reboot recovery test</td><td style="border:1px solid #30363d;padding:6px 8px">tbc</td><td style="border:1px solid #30363d;padding:6px 8px">OsClockSyncState regression</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Probable same OsClockSyncState regression</td><td style="border:1px solid #30363d;padding:6px 8px">Resolve regression and rerun</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Fix OsClockSyncState/phc2sys state-machine regression in release-5.0 linuxptp-daemon</strong> — resolves 3–4 failures (bc, dualnicbc, dualnicbcha, tbc) and is the highest-severity product defect.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Add a BeforeSuite skip guard in the tgm suite</strong> to skip gracefully when no WPC GM/GNSS node is detected, preventing misleading <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error</code> results when hardware is absent.</div>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_START --></p>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Per-Suite Details</h3>
+<br>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">tgm</h4>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: tgm — 4 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> All 4 tgm-serial test failures are due to the tgm suite running against a non-GM/WPC hardware environment — the tests are skipped in bc/dualfollower/dualnicbc suites and show <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> only in the tgm suite where the required WPC T-GM hardware/GNSS prerequisites are absent.</p>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_failure</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: WPC T-GM hardware/environment prerequisite not satisfied</strong> (4 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP ClockSync PTP daemon apply match rule based on nodeLabel [tgm-serial]</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [tgm-serial]</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM ts2phc termination tests Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED [tgm-serial]</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">WPC GM Events verification (V2) Testing T-GM Events on GNSS reboot and recovery [tgm-serial]</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[It] [tgm-serial] ... Testing WPC T-GM holdover through connection loss": {"result": "error"}</code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[It] [tgm-serial] ... PTP daemon apply match rule based on nodeLabel": {"result": "error"}</code> — all 4 tgm tests report <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results.json</code>. The equivalent bc/dualfollower/dualnicbc variants of the WPC GM tests all show <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: skip</code> (e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[bc-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover": {"result": "skip"}</code>), confirming the lab cluster does not have WPC T-GM hardware; the tgm suite requires it and errors rather than skips.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The tgm-serial suite requires a WPC Grand Master node with functional GNSS hardware and ts2phc. The CI cluster used for this job does not have WPC/GM-capable hardware provisioned, causing these tests to error out at prerequisite checks rather than skip gracefully (as the bc/dualfollower suites do). This is an environment/lab configuration issue, not a code regression in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Unknown — no code change implicated; hardware not available in this lab slot.</div>
+<p style="margin:4px 0">-</p>
+<br>
+<p style="margin:4px 0">_(truncated)_</p>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">bc+dualnicbc+dualnicbcha+tbc</h4>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: bc+dualnicbc+dualnicbcha+tbc — 4 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> The BC/DualNICBC "OsClockSyncState FREERUN recovery" tests timed out at ~412s waiting for state recovery, the DualNICBCHA phc2sys switchover test failed, and the TBC reboot test errored — all consistent with a product-side regression in OsClockSyncState recovery behavior on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> images.</p>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> test_failure</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> HIGH</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: OsClockSyncState FREERUN recovery timeout</strong> (2 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[bc-serial] PTP Outage recovery OsClockSyncState goes FREERUN on BC upstream loss and recovers to LOCKED</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbc-serial] PTP Outage recovery OsClockSyncState goes FREERUN on BC upstream loss and recovers to LOCKED</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[It] [bc-serial] PTP e2e tests PTP Outage recovery OsClockSyncState goes FREERUN on BC upstream loss and recovers to LOCKED [Serial]": {"time": 412.5755741, "result": "error"}</code> — test ran for full ~412s (near timeout ceiling) then errored rather than skipped or passed. The preceding BC outage test (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">BC clock class recovers to Locked after upstream link outage</code>) passed at 101s, confirming the link-up/down mechanism works but OsClockSyncState specifically does not return to LOCKED within the test window.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> linuxptp-daemon image appears to have a regression where <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">OsClockSyncState</code> does not transition back from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FREERUN</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LOCKED</code> within the expected timeout after upstream link restoration on BC configurations. This is a product behavior failure, not a test or infra issue — the parallel clockClass recovery test passes, isolating the fault to the OsClockSyncState reporting/transition path.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Unknown — no cherry-pick evidence in provided git log; most recent commit is <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9b766f3</code> (upstream-sync 2026-07-21).</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Flake? No — both BC and DualNICBC variants fail identically with full timeout exhaustion (~412s), indicating a consistent behavioral defect.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Fix: Investigate the `re</div>
+<br>
+<p style="margin:4px 0">_(truncated)_</p>
+<br>
+<p style="margin:4px 0"><!-- SUITE_DETAILS_END --></p></div></details></div></td><td>2026-08-26T06:01</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">5.1</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp/2091677435606077440" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp">5.1-e2e-telco5g-ptp</a></td><td>129m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">infra_other</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">LOW</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">Namespace `openshift-ptp` stuck in terminating state blocked builder pod creation, causing immediate test failure.</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> stuck in terminating state blocked builder pod creation, causing immediate test failure.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Namespace Terminating State (all tests)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> e2e-telco5g-ptp-telco5g-ptp-tests (entire suite; no individual tests reached execution)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": roles.rbac.authorization.k8s.io "privileged-rights" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": pods "podman" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">error: failed to execute wrapped command: exit status 1</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script attempted to delete and recreate the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace to deploy a fresh builder pod. However, the namespace was already stuck in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Terminating</code> state (from a prior run or leftover resource), preventing any new RBAC roles, role bindings, or pods from being created. The build step failed after only 11 seconds — before any PTP images were built or any PTP tests were executed. This is consistent with a stale namespace from a previous CI run not fully cleaning up.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change involved; this is an infrastructure/environment state issue.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — namespace termination stuck state is a known transient infrastructure condition; prior runs on the same cluster can leave namespaces lingering.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Ensure pre-cleanup of the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace with a forced finalization step (e.g., patching out finalizers) before attempting deletion, or add a wait/retry loop after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> to confirm full termination before proceeding.</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace stuck Terminating; new resources forbidden</td><td style="border:1px solid #30363d;padding:6px 8px">Force-finalize namespace before recreating</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Add a namespace termination guard</strong> in the build/deploy script: after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code>, wait for full deletion (poll until 404) and force-remove finalizers if stuck, before calling <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create namespace</code>.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Retry this job</strong> — the failure is transient and unrelated to any code change in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.1</code>; no code fix is required for this specific run.</div></div></details></div></td><td>2026-08-24T00:01</td></tr>
+<tr id="periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream" class="row-failure" data-state="failure" data-category="infra"><td>❌ failure</td><td><span class="version-badge">5.1</span></td><td><a href="https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream/2091767859188338688" target="_blank" title="periodic-ci-openshift-release-main-nightly-5.1-e2e-telco5g-ptp-upstream">5.1-e2e-telco5g-ptp-upstream</a></td><td>17m</td><td style="max-width:300px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">infra_other</span> <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;background:#8b949e;color:white">LOW</span><div style="margin-top:4px;font-size:12px;color:#e1e4e8;line-height:1.4">Namespace `openshift-ptp` stuck in terminating state blocked builder pod creation, causing immediate test failure.</div></td><td><span class="badge badge-infra">INFRA</span> <span class="badge sev-low">LOW</span><div style="margin-top:4px;font-size:11px;color:#f85149;font-weight:600">🆕 New issue</div><div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap"><details><summary>Full AI Analysis</summary><div style="line-height:1.5;color:#c9d1d9;padding:8px 12px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> stuck in terminating state blocked builder pod creation, causing immediate test failure.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Namespace Terminating State (all tests)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> e2e-telco5g-ptp-telco5g-ptp-tests (entire suite; no individual tests reached execution)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": roles.rbac.authorization.k8s.io "privileged-rights" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": pods "podman" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
+<p style="margin:4px 0">error: failed to execute wrapped command: exit status 1</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script attempted to delete and recreate the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace to deploy a fresh builder pod. However, the namespace was already stuck in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Terminating</code> state (from a prior run or leftover resource), preventing any new RBAC roles, role bindings, or pods from being created. The build step failed after only 11 seconds — before any PTP images were built or any PTP tests were executed. This is consistent with a stale namespace from a previous CI run not fully cleaning up.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change involved; this is an infrastructure/environment state issue.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — namespace termination stuck state is a known transient infrastructure condition; prior runs on the same cluster can leave namespaces lingering.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Ensure pre-cleanup of the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace with a forced finalization step (e.g., patching out finalizers) before attempting deletion, or add a wait/retry loop after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> to confirm full termination before proceeding.</div>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace stuck Terminating; new resources forbidden</td><td style="border:1px solid #30363d;padding:6px 8px">Force-finalize namespace before recreating</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Add a namespace termination guard</strong> in the build/deploy script: after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code>, wait for full deletion (poll until 404) and force-remove finalizers if stuck, before calling <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create namespace</code>.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Retry this job</strong> — the failure is transient and unrelated to any code change in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.1</code>; no code fix is required for this specific run.</div></div></details></div></td><td>2026-08-24T06:01</td></tr>
+</tbody>
+</table>
+
+<div class="footer">
+  <a href="https://github.com/aabughosh/prow-nightly-monitor">prow-nightly-monitor</a> |
+  Data from <a href="https://prow.ci.openshift.org/?type=periodic&job=*e2e-telco5g-ptp*">Prow</a> |
+  <a href="../../issues.html">Known Issues</a> |
+  <a href="../../history.html">Run History</a> |
+  <a href="claude-report.html">Claude Report</a>
+</div>
+
+</div>
+
+<script>
+function filterVersion(v, btn) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    const version = row.cells[1].textContent.trim();
+    row.style.display = (!v || version === v) ? '' : 'none';
+  });
+  if (btn) {
+    btn.closest('.filters').querySelectorAll('.filter-btn').forEach(b => {
+      if (b.onclick && b.onclick.toString().includes('filterVersion'))
+        b.classList.remove('active');
+    });
+    btn.classList.add('active');
+  }
+}
+function filterState(s, btn) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    const state = row.dataset.state || '';
+    row.style.display = (!s || state === s) ? '' : 'none';
+  });
+  if (btn) {
+    btn.closest('.filters').querySelectorAll('.filter-btn').forEach(b => {
+      if (b.onclick && b.onclick.toString().includes('filterState'))
+        b.classList.remove('active');
+    });
+    btn.classList.add('active');
+  }
+}
+function filterCategory(cat) {
+  document.querySelectorAll('#jobsTable tbody tr').forEach(row => {
+    if (!cat) { row.style.display = ''; return; }
+    const rowCat = row.dataset.category || '';
+    const state = row.dataset.state || '';
+    if (state !== 'failure' && state !== 'error') { row.style.display = 'none'; return; }
+    row.style.display = (rowCat === cat) ? '' : 'none';
+  });
+}
+</script>
+</body>
+</html>

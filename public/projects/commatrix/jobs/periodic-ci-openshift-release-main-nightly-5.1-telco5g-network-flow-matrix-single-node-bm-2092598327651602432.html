@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.1-telco5g-network-flow-matrix-single-node-bm</code></h1>
-  <div class="meta">Generated: 2026-08-27T02:37:00.442900+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-28T06:01:03.484972+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -88,39 +88,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> SNO cluster failed to become ready during setup; API server unreachable due to infrastructure/network issue.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — SNO Cluster API Unreachable During Setup (all failures)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-sno-setup</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-log-gather</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-must-gather</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">gather-audit-logs</code>, all retry attempts of "Run oc command to check if cluster is ready"</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 192.168.17.115:6443: connect: no route to host</code> (failure-log.txt)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"telco5g-sno-setup" failed after 2h35m4s ... Container test exited with code 2</code> (junit-failures.txt)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-sno-setup__finished.json: {"passed":false,"result":"FAILURE"}</code> — setup step itself failed</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The SNO cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu8</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">api.cnfdu8.upstreamci.bos2.lab:6443</code>, IP <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.115</code>) never became reachable after the OCP 5.1 nightly installation attempt. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc</code> readiness checks exhausted all retries with "no route to host" (not a TLS failure, meaning the network path to port 6443 was completely absent). The setup Ansible playbook ran for ~2.5 hours before failing, indicating the cluster installation itself stalled or the API VIP/node never came up. All downstream failures (log-gather, must-gather, audit-logs) are cascading consequences of this single infrastructure failure.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — nightly image <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">5.1.0-0.nightly-2026-08-25-043742</code> is the candidate; no commatrix repo commit is implicated. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-jobs-router__finished.json</code> shows <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true</code>, confirming the router/pre step was fine.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Possibly yes — bare-metal SNO provisioning failures are common transient infra issues. No code change in commatrix repo is involved (last commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">870b213</code> is a Konflux/mintmaker dependency bump, unrelated).</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retry the job to determine if this is a transient bare-metal provisioning flake. If recurring, investigate the bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu8</code> / network routing to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.115:6443</code> in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">upstreamci.bos2.lab</code> environment.</div>
-<br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
-<br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">telco5g-sno-setup (all oc-ready retries)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">SNO API server never reachable: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">no route to host</code> on port 6443</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job; investigate BM host cnfdu8 network</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">telco5g-log-gather</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Cascade: no cluster to gather logs from</td><td style="border:1px solid #30363d;padding:6px 8px">Resolved if Group A resolved</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">gather-must-gather / gather-audit-logs</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Cascade: TLS handshake timeout — cluster API still down at gather time</td><td style="border:1px solid #30363d;padding:6px 8px">Resolved if Group A resolved</td></tr>
-</table>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the periodic job</strong> — this has all hallmarks of a transient bare-metal SNO provisioning failure (network unreachable, not a test logic failure); no commatrix code change is implicated.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Investigate BM host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu8</code></strong> — check whether the node booted, the API VIP (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.115</code>) was assigned, and routing from the bastion to port 6443 is intact; escalate to the telco5g lab-ops team if the host is unhealthy.</div>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">

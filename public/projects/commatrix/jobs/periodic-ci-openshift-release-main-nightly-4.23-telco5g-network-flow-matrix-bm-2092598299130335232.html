@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.23-telco5g-network-flow-matrix-bm</code></h1>
-  <div class="meta">Generated: 2026-08-27T02:37:00.442900+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-28T06:01:03.484972+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -90,39 +90,36 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Cluster installation timed out waiting for OCP 4.23 to finish installing on bare-metal hardware.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> OCP 4.21 bare-metal cluster install timed out; commatrix tests never ran.</p>
 <br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Cluster Installation Timeout / Never Completed (all failed tests)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> RETRYING: Try to grab file to see install finished (150–146 retries left), Run multi-stage test pre phase, telco5g-cluster-setup container test, telco5g-log-gather container test, gather-must-gather, gather-audit-logs</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: OCP Cluster Installation Timeout</strong> (affects all 5 reported tests)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"telco5g-network-flow-matrix-bm-telco5g-cluster-setup" failed after 2h43m34s (failed containers: test): ContainerFailed</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ClusterVersion: Installing "" for <unknown>: <unknown></code> / <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error getting cluster version: Unauthorized</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error: You must be logged in to the server (Unauthorized)</code> — OC client never got valid kubeconfig</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The bare-metal cluster setup step (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code>) ran for 2h43m and exhausted all retries waiting for an install-complete sentinel file on the bastion host (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu20</code>). The OCP 4.23 nightly installer never finished (or never wrote the file), so no kubeconfig was produced. Every subsequent step (log-gather, must-gather, audit-logs) then failed immediately with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Unauthorized</code> because there was no valid cluster to connect to. This is a hardware/infrastructure provisioning failure, not a test code regression.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change implicated; this is an infra provisioning failure on cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu20</code>.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Possibly yes — bare-metal telco clusters are known to have intermittent provisioning failures; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-jobs-router</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-release-cluster</code> both reported <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"passed":true</code>, indicating the infrastructure pipeline itself is healthy but this specific install run stalled.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Re-run the periodic job to determine if this is a one-off provisioning flake. If it recurs, investigate the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu20</code> bastion/installer node for stuck KCLI/kcli-plan processes or hardware issues with the 4.23 nightly image <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.23.0-0.nightly-2026-08-25-215343</code>.</div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">"telco5g-network-flow-matrix-bm-telco5g-cluster-setup" failed after 2h43m43s (failed containers: test): ContainerFailed … Container test exited with code 2</p>
+<p style="margin:4px 0">ClusterVersion: Installing "" for <unknown>: <unknown></p>
+<p style="margin:4px 0">Unable to connect to the server: net/http: TLS handshake timeout</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The Ansible <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ocp-install.yml</code> playbook on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-cluster-setup</code> step polled for an install-finished marker file on bare-metal host <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>. The OCP 4.21 installer never completed within the allowed window, so the loop exhausted all 150 retries and exited with code 2 after 2h43m. Because the cluster API (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">https://XXXXXXXXXXXX:64428</code>) was never reachable, every downstream step (log-gather, must-gather, gather-extra, gather-audit-logs) failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">net/http: TLS handshake timeout</code>. No commatrix tests ever executed.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an infrastructure event, not a code regression.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — bare-metal cluster install timeouts are intermittent CI infrastructure flakes unrelated to the commatrix codebase.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Re-trigger the job. If the timeout recurs consistently on the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code> bare-metal node, investigate the provisioner/kcli installer or the node's hardware/network state; the CI pool may have a degraded host.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> All five "RETRYING: Try to grab file to see install finished (N retries left)" entries — these are sequential retry counts of the same polling loop, not distinct test failures.</div>
 <br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">RETRYING: install finished (150–146 retries)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">OCP 4.23 cluster never finished installing on cnfdu20 BM</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job; inspect cnfdu20 installer node</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">Run multi-stage pre phase (cluster-setup)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">cluster-setup container timed out after 2h43m</td><td style="border:1px solid #30363d;padding:6px 8px">Same as above</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">telco5g-log-gather</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">No kubeconfig → Unauthorized</td><td style="border:1px solid #30363d;padding:6px 8px">Downstream of install failure</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">gather-must-gather</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">No kubeconfig → Unauthorized</td><td style="border:1px solid #30363d;padding:6px 8px">Downstream of install failure</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">5</td><td style="border:1px solid #30363d;padding:6px 8px">gather-audit-logs</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">No kubeconfig → Unauthorized</td><td style="border:1px solid #30363d;padding:6px 8px">Downstream of install failure</td></tr>
-</table>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single group; all failures cascade from the one cluster install timeout.</p>
 <br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the periodic job</strong> — the router and release steps succeeded, pointing to a transient BM provisioning stall, not a code regression. A single retry will confirm flake vs. persistent infra failure.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Investigate cnfdu20 installer node</strong> — if retries continue to fail, check for a hung KCLI process, disk/network issue, or incompatibility with the specific 4.23 nightly (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">2026-08-25-215343</code>) that prevents install completion within the timeout window.</div>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong></p>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.21 (this run): cluster install timed out on bare-metal node <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu21</code>; commatrix tests never ran</div>
+<div style="padding-left:16px;margin:2px 0">&bull; 4.23: same root cause expected — OCP install timeout on bare-metal CI pool; commatrix code is not implicated on either version</div>
+<br>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.21.0-0.nightly-2026-06-25-024321</code> (190 images imported successfully; not the failure source)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW (infrastructure flake; project tests did not regress)</p>
 </div>
 
 <div class="footer">

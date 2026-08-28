@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.22-aws-ovn-network-flow-matrix</code></h1>
-  <div class="meta">Generated: 2026-08-27T02:37:00.442900+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-28T06:01:03.484972+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -87,40 +87,38 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> AWS us-west-1 region hit load balancer quota limit, blocking cluster installation.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> OCP 4.22 cluster installation failed on AWS; commatrix tests never ran.</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — AWS Load Balancer Quota Exhausted (6 tests)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> ipi-install-install, gather-audit-logs, gather-core-dump, gather-must-gather, gather-network, pre phase</div>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Cluster Installation Failure (2 tests)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">install should succeed: cluster creation</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">install should succeed: overall</code></div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TooManyLoadBalancers: The maximum number of load balancers has been reached</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Condition LoadBalancerReady has status: "False", reason: "LoadBalancerFailed"</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failed to create cluster: infrastructure was not ready within 15m0s</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The AWS account in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">us-west-1</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">aws-3</code> profile) exceeded the regional limit for Network Load Balancers. The installer's Cluster API provider attempted to create both internal (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-op-8jnb633v-09f4c-nvdqv-int</code>) and external (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-op-8jnb633v-09f4c-nvdqv-ext</code>) NLBs but was rejected with HTTP 400 <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TooManyLoadBalancers</code>. All subsequent gather steps failed because no cluster API endpoint was ever created (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">no such host</code>).</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is an AWS account quota/resource exhaustion issue, not a code change.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — transient quota contention from concurrent CI jobs in the same AWS region/account; deprovisioning succeeded and released resources.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retry the job; quota should free up after other CI clusters are deprovisioned. Long-term: request AWS LB quota increase for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">us-west-1</code>, or distribute CI load across additional regions/accounts.</div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">pod "ipi-install-install-stableinitial" failed after 1h2m25s (failed containers: test): ContainerFailed … Container test exited with code 6, reason Error</p>
+<p style="margin:4px 0">error getting cluster version: the server was unable to return a response in the time allotted (get clusterversions.config.openshift.io version)</p>
+<p style="margin:4px 0">ClusterVersion: Installing "" for <unknown>: <unknown> — clusteroperators are missing</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ipi-install-install-stableinitial</code> step (install OCP 4.22 stable as base before upgrade) ran for ~62 minutes and exited with installer exit code 6 (cluster not available). The API server was completely unresponsive at gather time — no ClusterVersion, no ClusterOperators — indicating the bootstrap/master node never achieved a ready state on AWS. All downstream gather steps (audit-logs, must-gather, extra, network) also failed with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">context deadline exceeded</code> because there was no API server to talk to. No image pull errors appear in the build log; commatrix project tests never started.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — pure AWS provisioning failure, no code change implicated</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Yes — OCP cluster install failures on AWS (exit code 6, unresponsive API) are a known transient infrastructure flake; no code regression evidence</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retry the job. If the failure recurs across multiple consecutive runs, investigate AWS quota/capacity in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">us-west-1</code> or check the 4.22 nightly image health.</div>
 <br>
 <h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
 <tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">ipi-install-install</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">AWS LB quota exhausted in us-west-1</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">gather-audit-logs</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">No cluster created, API unreachable</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">gather-core-dump</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">No cluster created, API unreachable</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">gather-must-gather</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">No cluster created, API unreachable</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">5</td><td style="border:1px solid #30363d;padding:6px 8px">gather-network</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">No cluster created, API unreachable</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">6</td><td style="border:1px solid #30363d;padding:6px 8px">pre phase overall</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Install step failed, cascaded to all steps</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">install should succeed: cluster creation</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">OCP 4.22 installer exit code 6; API server never came up</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">install should succeed: overall</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Cascade of cluster creation failure</td><td style="border:1px solid #30363d;padding:6px 8px">Retry job</td></tr>
 </table>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Retry the job</strong> — quota was released after deprovision succeeded; the failure is transient.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Monitor AWS LB quota</strong> in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">us-west-1</code> for the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">aws-3</code> CI account and request a limit increase if <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TooManyLoadBalancers</code> recurs frequently across nightly runs.</div>
+<div style="padding-left:16px;margin:2px 0">1. Retry the periodic job — this is a transient AWS provisioning failure (installer exit code 6, no API server response), not a commatrix regression.</div>
+<div style="padding-left:16px;margin:2px 0">2. If the job fails again on 4.22 install, check AWS <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">us-west-1</code> quota and the health of the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">4.22.0-0.nightly-2026-08-06-075052</code> release image via the release controller.</div>
 </div>
 
 <div class="footer">
