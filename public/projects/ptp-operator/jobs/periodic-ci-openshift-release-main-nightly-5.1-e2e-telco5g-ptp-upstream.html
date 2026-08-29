@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.1-e2e-telco5g-ptp-upstream</code></h1>
-  <div class="meta">Generated: 2026-08-28T06:06:38.628958+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-08-29T03:37:22.177218+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -86,37 +86,37 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> Namespace <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> stuck in terminating state blocked builder pod creation, causing immediate test failure.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> CI setup script failed because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pull-secret</code> already exists in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace, blocking PTP operator deployment.</p>
 <br>
 <p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_other</p>
 <p style="margin:4px 0"><strong>Overall Severity:</strong> LOW</p>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Namespace Terminating State (all tests)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> e2e-telco5g-ptp-telco5g-ptp-tests (entire suite; no individual tests reached execution)</div>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Secret AlreadyExists during namespace setup (all tests blocked) (0 test failures — pre-test infrastructure failure)</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> N/A — no tests ran; failure occurred during operator deployment setup</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
 <p style="margin:4px 0">```</p>
-<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": roles.rbac.authorization.k8s.io "privileged-rights" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
-<p style="margin:4px 0">Error from server (Forbidden): error when creating "STDIN": pods "podman" is forbidden: unable to create new content in namespace openshift-ptp because it is being terminated</p>
-<p style="margin:4px 0">error: failed to execute wrapped command: exit status 1</p>
+<p style="margin:4px 0">+ oc apply --namespace=openshift-ptp -f -</p>
+<p style="margin:4px 0">Error from server (AlreadyExists): error when creating "STDIN": secrets "pull-secret" already exists</p>
+<p style="margin:4px 0">{"error":"wrapped process failed: exit status 1",...,"severity":"error","time":"2026-08-24T06:04:58Z"}</p>
 <p style="margin:4px 0">```</p>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The test script attempted to delete and recreate the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace to deploy a fresh builder pod. However, the namespace was already stuck in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Terminating</code> state (from a prior run or leftover resource), preventing any new RBAC roles, role bindings, or pods from being created. The build step failed after only 11 seconds — before any PTP images were built or any PTP tests were executed. This is consistent with a stale namespace from a previous CI run not fully cleaning up.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change involved; this is an infrastructure/environment state issue.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — namespace termination stuck state is a known transient infrastructure condition; prior runs on the same cluster can leave namespaces lingering.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Ensure pre-cleanup of the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace with a forced finalization step (e.g., patching out finalizers) before attempting deletion, or add a wait/retry loop after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code> to confirm full termination before proceeding.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build_images</code> function deleted and recreated the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace, then attempted to copy the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pull-secret</code> from <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-config</code> using <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code>. Because <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> was piped through <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc get ... | oc apply</code>, and the secret apparently survived namespace deletion or was pre-existing, the apply hit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">AlreadyExists</code> and exited with code 1. With <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">set -o errexit</code> active, this immediately terminated the script before any PTP operator was deployed or any test ran.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a transient infrastructure/cluster state issue, not a code regression. No commits in the provided git log are relevant.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — this is a race/stale-state condition in namespace teardown; the namespace deletion may not have fully propagated before the secret was re-applied, or a prior run left residual state.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Change <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply --dry-run=client</code> first, or use <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete secret pull-secret --ignore-not-found</code> before the apply step. Alternatively, use <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">kubectl create ... --dry-run=client -o yaml | oc apply -f -</code> pattern to be idempotent.</div>
 <br>
 <h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
 <br>
 <table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
 <tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">e2e-telco5g-ptp-telco5g-ptp-tests</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> namespace stuck Terminating; new resources forbidden</td><td style="border:1px solid #30363d;padding:6px 8px">Force-finalize namespace before recreating</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">(all — pre-test)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">pull-secret</code> AlreadyExists in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-ptp</code> ns caused <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">exit status 1</code> before any test ran</td><td style="border:1px solid #30363d;padding:6px 8px">Make secret copy idempotent; retry job</td></tr>
 </table>
 <br>
 <h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Add a namespace termination guard</strong> in the build/deploy script: after <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete namespace openshift-ptp</code>, wait for full deletion (poll until 404) and force-remove finalizers if stuck, before calling <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc create namespace</code>.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Retry this job</strong> — the failure is transient and unrelated to any code change in <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.1</code>; no code fix is required for this specific run.</div>
+<div style="padding-left:16px;margin:2px 0">1. <strong>Short-term:</strong> Retry the job — this is a transient stale-state issue from a prior run's incomplete namespace cleanup.</div>
+<div style="padding-left:16px;margin:2px 0">2. <strong>Long-term:</strong> Fix the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">build_images</code> function in the test script to use <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> idempotently (e.g., add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc delete secret pull-secret -n openshift-ptp --ignore-not-found</code> before the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc apply</code> call) so partial cleanup from previous runs does not cause failures.</div>
 </div>
 
 <div class="footer">
