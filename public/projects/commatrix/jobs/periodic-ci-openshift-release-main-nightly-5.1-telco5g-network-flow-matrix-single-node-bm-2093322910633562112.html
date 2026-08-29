@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.1-telco5g-network-flow-matrix-single-node-bm</code></h1>
-  <div class="meta">Generated: 2026-08-29T03:32:31.756218+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-08-29T23:48:13.638075+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -87,48 +87,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CRI-O opens ephemeral TCP ports on node IPs that lack EndpointSlices, causing matrix validation failure.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_flake</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — CRI-O ephemeral ports missing EndpointSlices (1 test)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_flake | <strong>Confidence:</strong> high</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">FAILED] the following ports are used but don't have an endpointslice: Ingress,TCP,37105,,crio,,,master,false Ingress,TCP,38203,,crio,,,master,false Ingress,TCP,43937,,crio,,,master,false Ingress,TCP,33457,,crio,,,worker,false Ingress,TCP,35765,,crio,,,worker,false Ingress,TCP,42983,,crio,,,worker,false</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">raw-ss-tcp</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LISTEN 0 4096 192.168.17.170:35765 0.0.0.0:* users:(("crio",pid=7250,fd=11))</code> — CRI-O binding on node IP, not loopback</div>
-<div style="padding-left:16px;margin:2px 0">&bull; From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix-diff-ss</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,37105,,crio,,,master,false</code> — ports in ss output but not in matrix</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> CRI-O opens dynamic/ephemeral TCP ports (e.g., 33457, 35765, 37105, 38203, 42983, 43937) bound to node IPs across both master and worker nodes. These ports have no corresponding EndpointSlice, so the validation test fails the check at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code>. The port numbers are non-deterministic across runs (different every time), confirming this is transient/flaky behaviour from CRI-O's streaming server or similar internal mechanism.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — this is a CRI-O runtime behaviour in OCP 5.1, not a commatrix code regression</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes — port numbers differ each run (33457/35765/42983 on workers; 37105/38203/43937 on masters); dynamic ephemeral ports are non-reproducible</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Either suppress CRI-O ephemeral ports (loopback-only binding in CRI-O config), or update the test to exclude ports identified as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> with no namespace/service from the EndpointSlice requirement. A known-exception list or process-name filter for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> in the validation logic would resolve the flake.</div>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group B — Stale/undocumented matrix entries (warning, non-fatal context)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation generated communication matrix should be equal to documented communication matrix</code> (passed with warning)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_flake | <strong>Confidence:</strong> medium</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">level=warning msg="the following ports are documented but are not used:\nIngress,TCP,8798,...machine-config-daemon...\nIngress,TCP,9192,...machine-approver..."</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">doc-diff-commatrix</code>: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,8798,...master,false</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,9192,...master,false</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Ports 8798 (machine-config-daemon) and 9192 (machine-approver) are in the documented matrix but not active in OCP 5.1. These services may have changed ports or been removed. This produced a warning but did not fail the test.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — likely an OCP 5.1 component change</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> no — consistently stale entries</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Remove ports 8798 and 9192 from the documented communication matrix for OCP 5.1 (release-5.1 branch).</div>
-<br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
-<br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">should validate communication matrix ports match open ports</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">CRI-O opens dynamic ephemeral TCP ports on node IPs without EndpointSlices</td><td style="border:1px solid #30363d;padding:6px 8px">Filter CRI-O process ports from EndpointSlice requirement or enforce loopback binding</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">generated matrix should equal documented matrix (warning)</td><td style="border:1px solid #30363d;padding:6px 8px">B</td><td style="border:1px solid #30363d;padding:6px 8px">test_flake</td><td style="border:1px solid #30363d;padding:6px 8px">medium</td><td style="border:1px solid #30363d;padding:6px 8px">Ports 8798/9192 documented but no longer active in OCP 5.1</td><td style="border:1px solid #30363d;padding:6px 8px">Remove stale ports from release-5.1 documented matrix</td></tr>
-</table>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Fix test or CRI-O binding</strong>: Either configure CRI-O to bind ephemeral ports to loopback only, or add a test exemption for ports identified as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> process with no namespace/service — prevents recurrent flake on every nightly run.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Update documented matrix</strong>: Remove <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Ingress,TCP,8798</code> (machine-config-daemon) and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Ingress,TCP,9192</code> (machine-approver) from the OCP 5.1 documented matrix in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.1</code> branch of openshift-kni/commatrix.</div>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">
