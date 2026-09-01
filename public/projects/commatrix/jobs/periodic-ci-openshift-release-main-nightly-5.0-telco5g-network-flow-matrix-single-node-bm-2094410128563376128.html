@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.0-telco5g-network-flow-matrix-single-node-bm</code></h1>
-  <div class="meta">Generated: 2026-09-01T01:02:54.546818+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-09-01T23:43:40.404121+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -89,45 +89,36 @@
 <div class="analysis-box">
   <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> CRI-O opens ephemeral TCP port 40447 on node IP with no EndpointSlice, failing matrix validation.</p>
+<p style="margin:4px 0"><strong>TL;DR:</strong> CRI-O ephemeral port 44697 lacks an EndpointSlice and escapes dynamic-range filtering after PR #400 removed Linux ephemeral ranges.</p>
 <br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> test_regression</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
 <br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — CRI-O ephemeral port 40447 lacks EndpointSlice (1 test)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> operator_bug | <strong>Confidence:</strong> high</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Group 1: Ephemeral crio port passes EndpointSlice validation filter</strong> (affects Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TestE2e</code>)</div>
 <div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">LISTEN 0      4096   192.168.17.15:40447 0.0.0.0:* users:(("crio",pid=9170,fd=10))</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[FAILED] the following ports are used but don't have an endpointslice: Ingress,TCP,40447,,crio,,,master,false</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">- Ingress,TCP,40447,,crio,,,master,false</code> (matrix-diff-ss shows it's open but not in documented matrix)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> CRI-O (pid=9170) binds TCP port 40447 on the node's external IP (192.168.17.15), which falls in the Linux ephemeral range (32768-60999). This port is present in the ss-generated matrix but has no corresponding Kubernetes EndpointSlice, causing the validation test to fail at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code>. This is a product-side behavior in OCP 5.0 (release-5.0 images) where CRI-O opens a host-facing port without an associated service/endpointslice.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — behavior tied to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> OCP nightly <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">5.0.0-0.nightly-2026-08-30-014421</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No — port is consistently bound by CRI-O pid=9170 on the node IP; not random behavior.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Investigate why CRI-O binds port 40447 on the external node IP in OCP 5.0 and whether it should have an EndpointSlice. Either add a static exception in the commatrix for this CRI-O port pattern, or fix CRI-O to not bind on the external interface.</div>
+<p style="margin:4px 0">```</p>
+<p style="margin:4px 0">Fail: "the following ports are used but don't have an endpointslice: Ingress,TCP,44697,,crio,,,master,false"</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">raw-ss-tcp:</h2>
+<p style="margin:4px 0">LISTEN 0      4096   192.168.17.15:44697 0.0.0.0:* users:(("crio",pid=6365,fd=12))</p>
+<h2 style="color:#58a6ff;margin:16px 0 8px;font-size:17px">port-map.txt:</h2>
+<p style="margin:4px 0">PORT 44697: Issues: NO_ENDPOINTSLICE; Ephemeral range: YES</p>
+<p style="margin:4px 0">```</p>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> CRI-O binds a randomly-assigned OS ephemeral port (44697, within Linux range 32768–60999) to the node IP. The test at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:161</code> calls <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges(missingEPSMat, commatrix.DynamicRanges)</code> (line 159), but <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">commatrix.DynamicRanges</code> now only contains the Kubernetes NodePort service range — it no longer includes the Linux ephemeral range. Commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> (PR #400) explicitly removed Linux dynamic ranges from the generated matrix, so port 44697 is no longer excluded and triggers <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Fail()</code>. The 4 stale matrix entries (TCP 8798, 9192, 9443, UDP 68) are logged as warnings only and do not cause test failure.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">7d56343</code> — "Remove Linux Dynamic ranges from generated communication matrix" (PR #400, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">openshift-kni/commatrix</code>)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Is it a flake?</strong> Yes — the ephemeral port number changes on every crio restart/reboot, so the test may pass when crio happens to pick a port not in the matrix or a lower-numbered port.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suggested Fix:</strong> Either re-add the Linux ephemeral range (32768–60999) specifically to the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsInDynamicRanges</code> call at <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">validation_test.go:159</code>, or add <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">filterOutPortsOfKnownServices()</code> similar to how <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">rpc.statd</code> is already skipped.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Affected tests:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Validation [It] should validate the communication matrix ports match the node's open ports</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TestE2e</code></div>
 <br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group B — Stale matrix entries not in use (informational warnings, did not cause failure)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> N/A — warnings only, test passed for doc-diff check</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> test_regression | <strong>Confidence:</strong> high</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">level=warning msg="the following ports are documented but are not used:\nIngress,TCP,8798,...\nIngress,TCP,9192,..."</code>; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">level=warning msg="the following ports are not used: \n Ingress,TCP,9443,...\nIngress,UDP,68,..."</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> Four ports remain in the documented matrix (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">communication-matrix.csv</code> on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>) but are no longer active on the OCP 5.0 node: TCP/8798 (machine-config-daemon), TCP/9192 (machine-approver/kube-rbac-proxy), TCP/9443 (cloud-controller-manager), UDP/68 (NetworkManager). These are stale entries that should be removed from the matrix for <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code>.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> No</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Remove the four stale entries from the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> branch's documented communication matrix CSV.</div>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
 <br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
+<p style="margin:4px 0"><strong>Relation Between Groups:</strong> Single root cause — one group. The 4 stale matrix entries (TCP 8798/9192/9443, UDP 68) are pre-existing documentation drift and are not the failure trigger.</p>
 <br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px"><code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">should validate communication matrix ports match node's open ports</code></td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">operator_bug</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">CRI-O binds TCP/40447 on external node IP with no EndpointSlice</td><td style="border:1px solid #30363d;padding:6px 8px">Investigate CRI-O port binding or add static matrix exception</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">Stale matrix entries (8798, 9192, 9443, UDP/68)</td><td style="border:1px solid #30363d;padding:6px 8px">B</td><td style="border:1px solid #30363d;padding:6px 8px">test_regression</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">Documented ports no longer active in OCP 5.0</td><td style="border:1px solid #30363d;padding:6px 8px">Remove stale entries from release-5.0 matrix CSV</td></tr>
-</table>
+<p style="margin:4px 0"><strong>Per-Version Notes:</strong> OCP 4.23 nightly (4.23.0-0.nightly-2026-06-24-155843): single failure in the EPS validation test due to post-PR #400 filter regression.</p>
 <br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>[Highest priority]</strong> File a bug against CRI-O/OCP 5.0: determine why <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">crio</code> (pid=9170) listens on <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.15:40447</code> (external node IP) in OCP 5.0 nightly and whether an EndpointSlice should exist or the port should be excluded from validation.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>[Matrix cleanup]</strong> Remove stale entries <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TCP/8798</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TCP/9192</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">TCP/9443</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">UDP/68</code> from the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-5.0</code> branch of the commatrix documented CSV to eliminate recurring warnings and prevent future false failures.</div>
+<p style="margin:4px 0"><strong>Affected Images:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">registry.ci.openshift.org/ocp/release:4.23.0-0.nightly-2026-06-24-155843</code> (test runner, no operator image involved)</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">matrix_mismatch</code></p>
+<br>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
 </div>
 
 <div class="footer">

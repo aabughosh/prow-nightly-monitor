@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>4.20-e2e-telco5g-ptp</code></h1>
-  <div class="meta">Generated: 2026-09-01T01:08:07.517932+00:00 | Project: ptp-operator</div>
+  <div class="meta">Generated: 2026-09-01T23:48:50.048464+00:00 | Project: ptp-operator</div>
 </div>
 
 <div class="container">
@@ -54,7 +54,7 @@
 <div class="info-grid">
   <div class="info-card">
     <div class="info-label">Status</div>
-    <div class="info-value" style="color:#f85149">pending</div>
+    <div class="info-value" style="color:#f85149">failure</div>
   </div>
   <div class="info-card">
     <div class="info-label">Version</div>
@@ -62,13 +62,16 @@
   </div>
   <div class="info-card">
     <div class="info-label">Duration</div>
-    <div class="info-value">running...</div>
+    <div class="info-value">260m</div>
   </div>
   <div class="info-card">
     <div class="info-label">Category</div>
-    <div class="info-value"><span class="badge" style="background:#484f58">UNKNOWN</span></div>
+    <div class="info-value"><span class="badge" style="background:#d29922">INFRA</span></div>
   </div>
-  
+  <div class="info-card">
+    <div class="info-label">Severity</div>
+    <div class="info-value"><span class="badge" style="background:#8b949e">LOW</span></div>
+  </div>
   <div class="info-card">
     <div class="info-label">Run Date</div>
     <div class="info-value" style="font-size:12px">2026-09-01</div>
@@ -81,7 +84,81 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
+  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> All 6 failures are environment/hardware-dependent test errors lacking definitive log evidence across both suites.</p>
+<br>
+<p style="margin:4px 0"><strong>Overall Issue Class:</strong> unknown</p>
+<p style="margin:4px 0"><strong>Overall Severity:</strong> MEDIUM</p>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Causes (6 failures across 2 suites)</h3>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">4/6 failures — WPC T-GM/GNSS hardware unavailable or unhealthy in tgm suite</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> tgm | <strong>Evidence:</strong> HYPOTHESIS</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> Four tgm-serial tests targeting WPC Grand Master GPS/GNSS hardware errored rather than skipped, while identical tests skipped cleanly in bc/dualfollower/dualnicbc suites, indicating the GM node or GNSS signal was absent/misconfigured specifically for the tgm suite run.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown (most recent commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9b766f3</code> is an upstream sync; no tgm-specific code change identified)</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> yes</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Add a pre-flight guard that skips all WPC GM tests when the GM node is unlabeled, unreachable, or GNSS signal is inactive.</div>
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">2/6 failures — dualnicbcha+tbc suite errors with truncated/missing log artifacts</h4>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Suites:</strong> dualnicbcha+tbc | <strong>Evidence:</strong> HYPOTHESIS</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>What:</strong> Both dualnicbcha and tbc tests show <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> in JSON but their XML/log artifacts were context-truncated, making it impossible to identify a specific failure message or code path.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking change:</strong> Unknown</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Unknown — cannot confirm without full logs</div>
+<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Retrieve full <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-ptp-tests__test_results_dualnicbcha.xml</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code> to determine whether failures are hardware, environment, or product regression.</div>
+<br>
+<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
+<br>
+<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
+<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Suite</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">PTP daemon apply match rule based on nodeLabel</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">WPC GM hardware absent</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">GM node not labeled/reachable in tgm environment</td><td style="border:1px solid #30363d;padding:6px 8px">Pre-flight skip guard on GM node availability</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">Testing WPC T-GM holdover through connection loss</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">WPC GM hardware absent</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">GNSS signal/ts2phc unavailable in tgm suite run</td><td style="border:1px solid #30363d;padding:6px 8px">Pre-flight skip guard on GM node availability</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">Continuously terminating ts2phc triggers FREERUN event</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">WPC GM hardware absent</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">ts2phc not running or GM node unhealthy</td><td style="border:1px solid #30363d;padding:6px 8px">Pre-flight skip guard on GM node availability</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">4</td><td style="border:1px solid #30363d;padding:6px 8px">Testing T-GM Events on GNSS reboot and recovery</td><td style="border:1px solid #30363d;padding:6px 8px">tgm</td><td style="border:1px solid #30363d;padding:6px 8px">WPC GM hardware absent</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">GNSS reboot/recovery test requires live GNSS hardware</td><td style="border:1px solid #30363d;padding:6px 8px">Pre-flight skip guard on GM node availability</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">5</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha-serial phc2sys switches to secondary ptp4l</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha+tbc</td><td style="border:1px solid #30363d;padding:6px 8px">Missing artifacts</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Log artifacts truncated; error type undetermined</td><td style="border:1px solid #30363d;padding:6px 8px">Retrieve full dualnicbcha XML and failure logs</td></tr>
+<tr><td style="border:1px solid #30363d;padding:6px 8px">6</td><td style="border:1px solid #30363d;padding:6px 8px">tbc-serial slave node rebooted and in sync</td><td style="border:1px solid #30363d;padding:6px 8px">dualnicbcha+tbc</td><td style="border:1px solid #30363d;padding:6px 8px">Missing artifacts</td><td style="border:1px solid #30363d;padding:6px 8px">unknown</td><td style="border:1px solid #30363d;padding:6px 8px">LOW</td><td style="border:1px solid #30363d;padding:6px 8px">Log artifacts truncated; error type undetermined</td><td style="border:1px solid #30363d;padding:6px 8px">Retrieve full tbc XML and failure logs</td></tr>
+</table>
+<br>
+<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
+<div style="padding-left:16px;margin:2px 0">1. Verify WPC T-GM node health, GNSS signal, labeling, and ts2phc/gpsd state before tgm suite execution; add skip guards if hardware is absent.</div>
+<div style="padding-left:16px;margin:2px 0">2. Retrieve full <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-ptp-tests__test_results_dualnicbcha.xml</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code> artifacts to identify the dualnicbcha+tbc error root cause before classifying as flake or regression.</div>
+<br>
+<br>
+<hr style="border:none;border-top:1px solid #21262d;margin:12px 0"><div style="margin-top:16px;padding:12px 16px;background:#161b22;border:1px solid #30363d;border-radius:8px"><div style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Per-Suite Analysis</div><a href="#suite-tgm" style="display:inline-block;padding:4px 12px;background:#1f6feb33;border:1px solid #1f6feb;border-radius:16px;font-size:12px;font-weight:600;color:#58a6ff;text-decoration:none;margin:3px 2px">tgm</a> <a href="#suite-dualnicbcha+tbc" style="display:inline-block;padding:4px 12px;background:#1f6feb33;border:1px solid #1f6feb;border-radius:16px;font-size:12px;font-weight:600;color:#58a6ff;text-decoration:none;margin:3px 2px">dualnicbcha+tbc</a></div><div style="margin-top:16px;border-top:1px solid #30363d;padding-top:12px"><h3 style="color:#f0f6fc;font-size:15px;margin-bottom:8px">Per-Suite Details</h3><div id="suite-tgm" style="margin-top:12px;scroll-margin-top:20px"><details style="background:#0d1117;border:1px solid #30363d;border-radius:8px;overflow:hidden"><summary style="cursor:pointer;padding:10px 16px;background:#161b22;font-size:14px;font-weight:600;color:#58a6ff;border-bottom:1px solid #30363d">&#9654; tgm (4 failures)</summary><div style="padding:12px 16px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: tgm — 4 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> All 4 tgm-serial test failures are WPC T-GM/GNSS hardware-specific tests that require a Grand Master node with GPS/GNSS hardware, which is absent in the tgm suite's test environment — the same tests pass as skipped in bc/dualfollower/dualnicbc suites where the hardware is correctly identified as not present.</p>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> unknown</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: tgm-serial WPC GM and ClockSync tests require WPC GM hardware not available in environment</strong> (4 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">PTP daemon apply match rule based on nodeLabel</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Testing WPC T-GM holdover through connection loss</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Continuously terminating ts2phc triggers FREERUN event and then recovers to LOCKED</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">Testing T-GM Events on GNSS reboot and recovery</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: From <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results.json</code>: the identical tests in bc/dualfollower/dualnicbc suites report <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"result": "skip"</code> (e.g. <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"[It] [bc-serial] PTP e2e tests WPC GM GNSS signal loss tests Testing WPC T-GM holdover through connection loss [Serial]": {"time": 0.000422649, "result": "skip"}</code>), but the tgm-suite variants report <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"result": "error"</code>. The tgm suite is specifically intended to run against WPC Grand Master hardware with GNSS/GPS signal capability (ts2phc, gpsd). The provided XML/JSON evidence does not contain the tgm-suite testcase output itself (context truncated), preventing verbatim error message extraction.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The tgm suite targets WPC T-GM hardware nodes; the test environment for this job run either lacked a properly labeled/available WPC GM node with GNSS hardware, or the node entered an unexpected state (e.g., GNSS signal unavailable, ts2phc not running). The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">nodeLabel</code> match-rule test failing alongside the GNSS/ts2phc tests indicates the GM node itself was not correctly identified or reachable, causing all downstream WPC GM tests to error rather than skip. Because the full tgm XML output was truncated, the precise error message cannot be quoted directl</div>
+<br>
+<p style="margin:4px 0">_(truncated)_</p></div></details></div>
+<div id="suite-dualnicbcha+tbc" style="margin-top:12px;scroll-margin-top:20px"><details style="background:#0d1117;border:1px solid #30363d;border-radius:8px;overflow:hidden"><summary style="cursor:pointer;padding:10px 16px;background:#161b22;font-size:14px;font-weight:600;color:#58a6ff;border-bottom:1px solid #30363d">&#9654; dualnicbcha+tbc (2 failures)</summary><div style="padding:12px 16px"><hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
+<br>
+<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Suite: dualnicbcha+tbc — 2 failures</h4>
+<br>
+<p style="margin:4px 0"><strong>TL;DR:</strong> Both failed tests are reported as <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">result: error</code> in the JSON summary but the underlying XML evidence shows the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dualnicbcha-serial</code> phc2sys test and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">tbc-serial</code> reboot test were <strong>skipped</strong> in non-dualnicbcha/tbc suite runs, and the actual dualnicbcha/tbc XML artifacts were truncated — insufficient log evidence is available to determine the precise runtime error.</p>
+<br>
+<p style="margin:4px 0"><strong>Suite Issue Class:</strong> unknown</p>
+<p style="margin:4px 0"><strong>Suite Severity:</strong> MEDIUM</p>
+<br>
+<p style="margin:4px 0"><strong>Root Cause Groups:</strong></p>
+<br>
+<p style="margin:4px 0"><strong>Group 1: Missing dualnicbcha+tbc XML artifacts</strong> (2 tests)</p>
+<div style="padding-left:16px;margin:2px 0">&bull; Tests: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[dualnicbcha-serial] PTP ClockSync DualNICBCHA phc2sys switches to secondary ptp4l when primary interface fails</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">[tbc-serial] PTP Reboot discovery The slave node is rebooted and discovered and in sync</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Evidence: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">test_results.json: "result": "error"</code> for both; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-ptp-tests__test_results_dualnicbc.xml</code> and dualnicbcha XML truncated with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">(skipped — context limit reached)</code>; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">ci-operator-build-log.txt</code>, <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">investigation-summary.txt</code> all <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">(skipped — context limit reached)</code></div>
+<div style="padding-left:16px;margin:2px 0">&bull; Root Cause: The XML artifacts for the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dualnicbcha</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">tbc</code> suites were not provided in the evidence (context limit). The JSON shows 6 <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">error</code>-result tests total against 0 XML <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px"><failure></code> elements, indicating the errors surface at suite/harness level rather than individual assertion failures. Without the truncated files no specific code path or log line can be cited.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Breaking PR/Commit: Unknown — most recent commit <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">9b766f3</code> is an upstream sync; no cherry-pick to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.20</code> is evidenced.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Flake? Unknown — cannot confirm without the actual dualnicbcha/tbc run logs.</div>
+<div style="padding-left:16px;margin:2px 0">&bull; Fix: Retrieve and inspect <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-ptp-tests__test_results_dualnicbcha.xml</code> and <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">failure-log.txt</code> in full to identify the specific error message and determine whether this is a hardware/environment issue or a product regression in the <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">release-4.20</code> image.</div></div></details></div></div>
 </div>
 
 <div class="footer">

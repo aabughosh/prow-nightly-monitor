@@ -38,7 +38,7 @@
 
 <div class="header">
   <h1>AI Analysis — <code>5.1-telco5g-network-flow-matrix-single-node-bm</code></h1>
-  <div class="meta">Generated: 2026-09-01T01:02:54.546818+00:00 | Project: commatrix</div>
+  <div class="meta">Generated: 2026-09-01T23:43:40.404121+00:00 | Project: commatrix</div>
 </div>
 
 <div class="container">
@@ -88,39 +88,7 @@
   AI Analysis
 </h2>
 <div class="analysis-box">
-  <hr style="border:none;border-top:1px solid #21262d;margin:12px 0">
-<br>
-<p style="margin:4px 0"><strong>TL;DR:</strong> SNO cluster API became unreachable during setup; infrastructure failure, not a test regression.</p>
-<br>
-<p style="margin:4px 0"><strong>Overall Issue Class:</strong> infra_timeout</p>
-<p style="margin:4px 0"><strong>Overall Severity:</strong> HIGH</p>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Root Cause Groups</h3>
-<br>
-<h4 style="color:#58a6ff;margin:12px 0 4px;font-size:14px">Group A — Cluster API unreachable during SNO setup (all tests) (5 tests)</h4>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Tests:</strong> telco5g-sno-setup, telco5g-log-gather, gather-must-gather, gather-audit-logs, all retry tests</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Classification:</strong> infra_issue | <strong>Confidence:</strong> high</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Evidence:</strong></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">dial tcp 192.168.17.121:6443: connect: no route to host</code> (failure-log.txt)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">"telco5g-sno-setup" failed after 2h34m36s</code> (junit-failures.txt)</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-sno-setup__finished.json: "passed":false,"result":"FAILURE"</code> — but <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">telco5g-jobs-router__finished.json: "passed":true</code></div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Root Cause:</strong> The SNO cluster <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code> (<code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">api.cnfdu14.upstreamci.bos2.lab:6443</code>, IP <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.121</code>) failed to become reachable after installation. The <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">oc</code> readiness check exhausted all 60 retries with <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">no route to host</code>, indicating the OCP API server never came up or network routing to the node was broken. All subsequent gather steps also failed with TLS handshake timeouts for the same reason.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Breaking PR/Commit:</strong> Unknown — no code change implicated; this is a bare-metal lab infrastructure issue.</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Flake?</strong> Possibly yes — bare-metal SNO installs can transiently fail due to network/hardware issues; no code regression is evident in recent commits (only a Mintmaker/dockerfile dependency bump: <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">870b213</code>).</div>
-<div style="padding-left:16px;margin:2px 0">&bull; <strong>Fix:</strong> Re-run the job to confirm flake. If recurring, investigate network routing to <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.121</code> on the BOS2 lab bastion and check DHCP/PXE boot status of <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code>.</div>
-<br>
-<h3 style="color:#f0f6fc;margin:18px 0 8px;font-size:15px;background:linear-gradient(90deg,#1f6feb33,transparent);padding:8px 12px;border-left:3px solid #58a6ff;border-radius:4px">Summary Table</h3>
-<br>
-<table style="border-collapse:collapse;width:100%;font-size:12px;margin:8px 0">
-<tr><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">#</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Test</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Group</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Classification</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Confidence</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Root Cause (one line)</th><th style="border:1px solid #30363d;padding:6px 8px;background:#161b22;text-align:left">Fix</th></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">1</td><td style="border:1px solid #30363d;padding:6px 8px">telco5g-sno-setup (all retries)</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">SNO cluster API <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">192.168.17.121:6443</code> unreachable — <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">no route to host</code></td><td style="border:1px solid #30363d;padding:6px 8px">Check bare-metal node network and retry</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">2</td><td style="border:1px solid #30363d;padding:6px 8px">telco5g-log-gather</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">No test logs exist because cluster never came up</td><td style="border:1px solid #30363d;padding:6px 8px">Retry after infra fix</td></tr>
-<tr><td style="border:1px solid #30363d;padding:6px 8px">3</td><td style="border:1px solid #30363d;padding:6px 8px">gather-must-gather / gather-audit-logs</td><td style="border:1px solid #30363d;padding:6px 8px">A</td><td style="border:1px solid #30363d;padding:6px 8px">infra_issue</td><td style="border:1px solid #30363d;padding:6px 8px">high</td><td style="border:1px solid #30363d;padding:6px 8px">TLS handshake timeout — API still unreachable at gather phase</td><td style="border:1px solid #30363d;padding:6px 8px">Retry after infra fix</td></tr>
-</table>
-<br>
-<h3 style="color:#58a6ff;margin:14px 0 6px;font-size:15px;border-bottom:1px solid #21262d;padding-bottom:4px">Action Items</h3>
-<div style="padding-left:16px;margin:2px 0">1. <strong>Verify lab hardware/network:</strong> Check that <code style="background:#161b22;padding:1px 4px;border-radius:3px;font-size:12px">cnfdu14</code> (192.168.17.121) powered on, received a valid IP, and that routing from the bastion to the API VIP is functional. Review IPMI/console logs for the node.</div>
-<div style="padding-left:16px;margin:2px 0">2. <strong>Retry the periodic job</strong> to determine if this is a one-off infrastructure flake or a persistent lab issue before filing a bug against the OCP 5.1 release image.</div>
+  <div style="text-align:center;padding:40px 20px"><div style="font-size:48px;margin-bottom:12px">&#8987;</div><div style="font-size:18px;font-weight:600;color:#d29922">Not Yet Analyzed</div><div style="color:#8b949e;margin-top:8px">This failure has not been analyzed by AI yet. Analysis runs daily and will be available after the next scheduled run.</div></div>
 </div>
 
 <div class="footer">
